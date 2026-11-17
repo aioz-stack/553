@@ -1,4 +1,5 @@
 import CommissionsTable from '../../Components/CommissionsTable';
+import PayoutRequests from '../../Components/PayoutRequests';
 import PageShell from '../../Components/PageShell';
 import { Card } from '../../Components/ui';
 
@@ -7,6 +8,9 @@ export default function Commissions() {
     <PageShell title="Commissions">
       <Card title="Commission earnings" subtitle="Generated only from completed games. Approval and payouts are handled by the platform; cash payouts are disabled.">
         <CommissionsTable endpoint="/agent/commissions" />
+      </Card>
+      <Card className="mt-6" title="Payout requests">
+        <PayoutRequests mode="agent" />
       </Card>
     </PageShell>
   );

@@ -1,6 +1,6 @@
 # Pusoy 13 Platform — Development Guide
 
-Last updated: 2026-11-17
+Last updated: 2026-11-17 (round 2: concurrency fixes, push, payouts, frontend tests, Android build)
 
 This repository contains the **Laravel web application + shared backend** (repo root) and the
 **Next.js + Capacitor mobile application** (`mobile/`). Laravel is the single source of truth for
@@ -102,11 +102,54 @@ Icons/splash: edit `mobile/assets/*.svg`, re-render the PNGs, then `npm run asse
 ### Tests
 
 ```bash
-php artisan test --compact        # 155 tests (Pest), SQLite in-memory
-vendor/bin/pint --format agent    # PHP formatting
-npx tsc --noEmit                  # web TypeScript
-cd mobile && npx tsc --noEmit     # mobile TypeScript
+php artisan test --compact                 # 164 Pest tests (unit + feature), SQLite in-memory
+vendor/bin/pest -c phpunit.mysql.xml       # real-MySQL concurrency suite (parallel processes)
+npm test                                   # web Vitest + Testing Library
+cd mobile && npm test                      # mobile Vitest + Testing Library
+vendor/bin/pint --format agent             # PHP formatting
+npx tsc --noEmit && (cd mobile && npx tsc --noEmit)
 ```
+
+**Concurrency suite:** `tests/Concurrency` launches several PHP processes at the same moment
+(`tests/Concurrency/worker.php`) against the separate database **`553_testing`** (create it once:
+`CREATE DATABASE \`553_testing\``; your dev database `553` is never touched). It covers parallel
+debits (no overdraft), one idempotency key used concurrently, 8 simultaneous joins → exactly two
+full tables, duplicate joins by one player, and simultaneous final submissions/resolves → settled once.
+It found real races under MySQL's default REPEATABLE READ (stale snapshots after waiting on a lock);
+the fix is `isolation_level = READ COMMITTED` in `config/database.php` (env `DB_ISOLATION_LEVEL`)
+plus locking reads where decisions are made. Keep it at READ COMMITTED.
+
+### Android build (Windows)
+
+```bash
+# Android Studio's bundled JDK 25 needs Gradle 9.1+ (wrapper already bumped from 8.14.3)
+export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
+cd mobile && npm run build && npx cap sync android
+cd android && ./gradlew assembleDebug      # → android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Testing on the Android emulator against your local backend (plain http):
+
+```bash
+NEXT_PUBLIC_API_URL=http://10.0.2.2:8000 NEXT_PUBLIC_REVERB_HOST=10.0.2.2 npm run build
+CAP_DEV_HTTP=1 npx cap sync android        # LOCAL ONLY: allows cleartext http; never ship it
+```
+
+Run a normal `npm run build && npx cap sync` afterwards so the native project goes back to https-only.
+
+### Push notifications
+
+Backend: `app/Notifications/Channels/PushChannel.php` + `app/Services/Push/FcmClient.php`
+(FCM HTTP v1, service-account JWT signed with OpenSSL; no extra packages). Set `FCM_PROJECT_ID`
+and `FCM_CREDENTIALS` (absolute path to the service-account JSON, outside `public/` and git).
+Without them pushes are only logged. Pushes sent: room invitation, points received, cards dealt
+(no card data). Dead tokens are cleared automatically.
+
+Mobile: `@capacitor/push-notifications` registers the device token via
+`PUT /api/v1/auth/devices/push-token`. **Only set `NEXT_PUBLIC_PUSH_ENABLED=true` after** adding
+`mobile/android/app/google-services.json` (and enabling Push + uploading the APNs key in Firebase
+for iOS). Registering without Firebase crashes the Android app; this was reproduced on the
+emulator and is why the flag defaults to false.
 
 ---
 
@@ -122,7 +165,7 @@ cd mobile && npx tsc --noEmit     # mobile TypeScript
 | Ledger (only code that changes balances) | `app/Services/Wallet/LedgerService.php` |
 | Wallets, daily reward, reconciliation | `app/Services/Wallet/WalletService.php` |
 | Allocation / adjustments / freezing | `app/Services/Wallet/AllocationService.php` |
-| Commissions | `app/Services/Agent/CommissionService.php` |
+| Commissions / cash payout requests (flagged) | `app/Services/Agent/CommissionService.php`, `PayoutService.php` |
 | Users, hierarchy, referral codes | `app/Services/Users/UserManagementService.php` |
 | API | `routes/api.php`, `app/Http/Controllers/Api/V1/**`, `app/Http/Resources/*`, `app/Http/Requests/*` |
 | Web routes (Inertia) | `routes/web.php` |
@@ -285,6 +328,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Rooms | `GET rooms`, `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/preview`, `GET games/{id}/results` |
+| Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
 | Admin | `admin/users|players|agents|administrators` (GET/POST), `admin/users/{id}` (GET/PATCH, status, assign-agent, permissions, limits), `admin/rooms`, `admin/tables` (+close), `admin/games` (+cancel, retry), `admin/wallets` (+freeze), `admin/transactions` (+reverse), `admin/adjustments`, `admin/reconcile`, `admin/commissions` (+approve/reject/reverse), `admin/commission-rules`, `admin/reports/overview`, `admin/audit-logs`, `admin/settings` |
 
@@ -306,21 +350,23 @@ All timestamps are stored in UTC and shown in the viewer's local time zone.
 
 ## 10. Status & known gaps
 
-Verified (automated tests + manual runs in the browser on 2026-11-17): engine, ledger,
-allocation, commissions, access control, multiplayer flow, API, every web page route per role,
-a full 4-player game on the web client and on the mobile client (Reverb live), ledger reconciliation.
+Verified 2026-11-17:
 
-Not done / not verified yet:
+- 164 Pest tests (engine, ledger, allocation, commissions, payouts, push, access control,
+  multiplayer, API, every web page route per role), 5 real-MySQL concurrency tests (3 consecutive
+  green runs), 11 web and 9 mobile Vitest tests.
+- Manual: full 4-player games on the web client, the mobile client in a browser, and the **native
+  Android debug APK on the emulator** (login, lobby, live Reverb seating, touch arrangement with
+  server hand names, manual submit, results sheet). Ledger reconciliation passes.
 
-- **Native builds:** Android/iOS projects are generated and synced, but no APK/IPA was built
-  here (needs Android Studio / Xcode on macOS). Not tested on a physical device.
-- **Push notifications** (FCM/APNs) are not implemented; notifications are database + Reverb.
-- **True concurrency:** row locks are used on MySQL, but the test suite runs on SQLite
-  sequentially, so simultaneous-request tests simulate races (idempotency, overdraw attempts) rather
-  than running parallel processes.
-- **Frontend tests:** server-side Inertia page tests cover routing/permissions per role; there is
-  no JS unit or browser E2E runner yet (flows were verified manually).
-- **Cash features** are intentionally unimplemented beyond disabled flags/endpoints
-  (`agent_payout_requests` has a table but no workflow).
+Not done / not verified:
+
+- **iOS** build needs macOS + Xcode; the iOS project is generated but has never been compiled.
+- **Release signing** (Android AAB keystore, iOS provisioning) is yours to set up; only a debug APK
+  was built. The app was not tested on a physical phone.
+- **Real push delivery** needs your Firebase project; the FCM call path is tested with faked HTTP only.
+- **Browser E2E** (e.g. Playwright) is not set up; component tests + manual runs cover the UI.
+- **Cash features** remain disabled. The payout-request workflow exists and is tested, but only
+  activates when both `FEATURE_CP_COMMISSION_PAYOUTS` and `FEATURE_CASH_WITHDRAWALS` are true.
 - Local dev uses the `database` queue/cache/session drivers; production should use Redis
   (see `DEPLOYMENT.md`). The mail driver is `log` locally (reset links appear in `storage/logs`).

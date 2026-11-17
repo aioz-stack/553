@@ -55,7 +55,9 @@ class LedgerService
             return DB::transaction(fn () => $this->apply($request));
         } catch (UniqueConstraintViolationException $e) {
             // A concurrent request with the same idempotency key won the race.
-            if ($request->idempotencyKey && ($existing = $this->findIdempotent($request))) {
+            // Locking read: always sees the winner's committed row, even inside
+            // an enclosing transaction with an older snapshot.
+            if ($request->idempotencyKey && ($existing = $this->findIdempotent($request, locking: true))) {
                 return $existing;
             }
 
@@ -163,9 +165,12 @@ class LedgerService
         return $transaction;
     }
 
-    private function findIdempotent(TransferRequest $request): ?WalletTransaction
+    private function findIdempotent(TransferRequest $request, bool $locking = false): ?WalletTransaction
     {
-        $existing = WalletTransaction::query()->where('idempotency_key', $request->idempotencyKey)->first();
+        $existing = WalletTransaction::query()
+            ->where('idempotency_key', $request->idempotencyKey)
+            ->when($locking, fn ($q) => $q->sharedLock())
+            ->first();
 
         if ($existing === null) {
             return null;

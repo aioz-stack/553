@@ -13,6 +13,7 @@ enum TransactionType: string
     case GameReward = 'GAME_REWARD';
     case PlatformFee = 'PLATFORM_FEE';
     case CommissionPayment = 'COMMISSION_PAYMENT';
+    case CommissionPayout = 'COMMISSION_PAYOUT';
     case ManualAdjustment = 'MANUAL_ADJUSTMENT';
     case DailyReward = 'DAILY_REWARD';
     case Reversal = 'REVERSAL';

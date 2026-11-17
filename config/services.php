@@ -28,6 +28,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    | Firebase Cloud Messaging (HTTP v1) for mobile push notifications.
+    | FCM_CREDENTIALS = absolute path to the service-account JSON (keep it
+    | outside public/ and out of git). When unset, pushes are only logged.
+    | iOS delivery goes through FCM with an APNs key uploaded to Firebase.
+    */
+    'fcm' => [
+        'project_id' => env('FCM_PROJECT_ID'),
+        'credentials' => env('FCM_CREDENTIALS'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -65,8 +65,8 @@ aaPanel → Website → site → **Site directory**: set *Running directory* to 
 - `.env`: `REVERB_HOST=ws.your-domain`, `REVERB_PORT=443`, `REVERB_SCHEME=https`, while
   `REVERB_SERVER_HOST=127.0.0.1`, `REVERB_SERVER_PORT=8080` keep Reverb private.
   Rebuild assets after changing `VITE_REVERB_*` (`npm run build`).
-- In `config/reverb.php` restrict `allowed_origins` to your web domain plus the Capacitor origins
-  (`capacitor://localhost`, `https://localhost`) instead of `*`.
+- Set `REVERB_ALLOWED_ORIGINS` to your web domain plus the Capacitor origins
+  (`https://your-domain,capacitor://localhost,https://localhost`); the default `*` is for local dev only.
 
 ## 5. Supervisor (queue workers + Reverb)
 
@@ -131,7 +131,7 @@ cd mobile
 #   NEXT_PUBLIC_REVERB_HOST=ws.your-domain, NEXT_PUBLIC_REVERB_PORT=443, NEXT_PUBLIC_REVERB_SCHEME=https,
 #   NEXT_PUBLIC_REVERB_APP_KEY=<REVERB_APP_KEY>
 npm ci && npm run build && npx cap sync
-npx cap open android   # Android Studio → Build → Generate Signed Bundle (AAB)
+npx cap open android   # Android Studio → Build → Generate Signed Bundle (AAB); JDK 25 needs the Gradle 9.1 wrapper (included)
 npx cap open ios       # Xcode (macOS) → set Team/signing → Archive
 ```
 
@@ -145,6 +145,7 @@ server — it ships the static export. Make sure `CORS_ALLOWED_ORIGINS` includes
 - [ ] Strong DB/Redis credentials; MySQL/Redis/Reverb ports not public
 - [ ] `php artisan optimize` after each deploy; `queue:restart`; Reverb restarted
 - [ ] Cron `schedule:run` every minute; Supervisor programs running
-- [ ] Reverb `allowed_origins` restricted; Cloudflare Full (strict)
+- [ ] `REVERB_ALLOWED_ORIGINS` restricted; Cloudflare Full (strict)
+- [ ] `DB_ISOLATION_LEVEL` is READ COMMITTED (default); FCM credentials file is root/www-readable only and outside `public/`
 - [ ] Cash feature flags all `false`
 - [ ] `php artisan pusoy:reconcile` passes

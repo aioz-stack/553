@@ -104,6 +104,33 @@ class AuthController extends Controller
         return response()->json(['message' => __($status)]);
     }
 
+    /**
+     * Register (or clear) the FCM push token for the device behind the
+     * current bearer token. Called by the mobile app after login.
+     */
+    public function pushToken(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['present', 'nullable', 'string', 'max:4096'],
+            'platform' => ['nullable', 'in:android,ios,web'],
+        ]);
+
+        $accessToken = $request->user()->currentAccessToken();
+        abort_unless($accessToken && isset($accessToken->id), 422, 'Push tokens can only be registered from a mobile device session.');
+
+        // A push token belongs to one device: detach it from any other row first.
+        if ($data['token']) {
+            UserDevice::query()->where('push_token', $data['token'])->update(['push_token' => null]);
+        }
+
+        $device = UserDevice::query()->updateOrCreate(
+            ['user_id' => $request->user()->id, 'personal_access_token_id' => $accessToken->id],
+            ['device_name' => $accessToken->name, 'push_token' => $data['token'], 'platform' => $data['platform'] ?? null, 'last_used_at' => now()],
+        );
+
+        return response()->json(['data' => ['device_id' => $device->id, 'push_enabled' => $device->push_token !== null]]);
+    }
+
     public function devices(Request $request): JsonResponse
     {
         return response()->json(['data' => $request->user()->devices()->latest('last_used_at')->get(['id', 'device_name', 'platform', 'last_used_at', 'created_at'])]);

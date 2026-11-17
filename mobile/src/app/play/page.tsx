@@ -78,7 +78,7 @@ export default function Play() {
         )
       }
     >
-      <div className="-mx-4 -mt-4 min-h-[calc(100dvh-3.5rem)] bg-gradient-to-b from-emerald-800 to-emerald-950 px-3 pb-6 pt-3">
+      <div className="-mx-4 -mt-4 safe-bottom min-h-[calc(100dvh-3.5rem)] bg-gradient-to-b from-emerald-800 to-emerald-950 px-3 pt-3">
         {error && <Notice>{error}</Notice>}
         {actionError && <Notice>{actionError}</Notice>}
 
@@ -115,7 +115,9 @@ export default function Play() {
         )}
 
         {session?.status === 'ARRANGING' && session.my_cards && !session.my_submission && (
-          <ArrangeHands sessionId={session.id} cards={session.my_cards} allowFoul={session.config.allow_foul_submission} onSubmitted={refresh} />
+          <div className="pb-8">
+            <ArrangeHands sessionId={session.id} cards={session.my_cards} allowFoul={session.config.allow_foul_submission} onSubmitted={refresh} />
+          </div>
         )}
 
         {session?.my_submission && !session.arrangements && (

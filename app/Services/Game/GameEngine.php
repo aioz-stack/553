@@ -30,11 +30,13 @@ use App\Models\GameTable;
 use App\Models\PlayerProfile;
 use App\Models\User;
 use App\Models\WalletHold;
+use App\Notifications\GameStarted;
 use App\Services\Audit\AuditLogger;
 use App\Services\Wallet\LedgerService;
 use App\Services\Wallet\TransferRequest;
 use App\Services\Wallet\WalletService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * Server-authoritative game state machine.
@@ -105,6 +107,8 @@ class GameEngine
                 'deck_commitment' => $session->deck_commitment,
                 'arrangement_deadline' => $deadline->toIso8601String(),
             ]));
+
+            Notification::send(User::query()->whereIn('id', $players->pluck('user_id'))->get(), (new GameStarted($session))->afterCommit());
 
             foreach ($players as $player) {
                 event(new UserEvent($player->user_id, GameEvents::CARDS_DEALT, [

@@ -1,6 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import CommissionsTable from '../../Components/CommissionsTable';
+import PayoutRequests from '../../Components/PayoutRequests';
 import DataTable from '../../Components/DataTable';
 import PageShell from '../../Components/PageShell';
 import { Alert, Badge, Button, Card, Field, Input, Select } from '../../Components/ui';
@@ -68,6 +69,10 @@ export default function Commissions() {
             </div>
           )}
         />
+      </Card>
+
+      <Card className="mt-6" title="Agent payout requests">
+        <PayoutRequests mode="staff" />
       </Card>
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">

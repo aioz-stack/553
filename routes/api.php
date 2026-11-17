@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Admin\WalletController as AdminWalletController;
 use App\Http\Controllers\Api\V1\AgentController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\GameController;
+use App\Http\Controllers\Api\V1\PayoutController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\RoomController;
 use App\Http\Controllers\Api\V1\TableController;
@@ -36,6 +37,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::get('auth/devices', [AuthController::class, 'devices']);
+        Route::put('auth/devices/push-token', [AuthController::class, 'pushToken']);
         Route::delete('auth/devices/{device}', [AuthController::class, 'revokeDevice']);
 
         // Player
@@ -90,6 +92,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::get('referral-codes', [AgentController::class, 'referralCodes']);
             Route::post('referral-codes', [AgentController::class, 'createReferralCode']);
             Route::get('activity', [AgentController::class, 'activity']);
+            Route::get('payout-requests', [PayoutController::class, 'index']);
+            Route::post('payout-requests', [PayoutController::class, 'store'])->middleware('throttle:wallet-actions');
             Route::get('reports', [AgentController::class, 'dashboard']);
         });
 
@@ -131,6 +135,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('commissions/{commission}/reject', [AdminCommissionController::class, 'reject']);
             Route::post('commissions/{commission}/reverse', [AdminCommissionController::class, 'reverse']);
             Route::get('commission-rules', [AdminCommissionController::class, 'rules']);
+            Route::get('payout-requests', [PayoutController::class, 'index']);
+            Route::post('payout-requests/{payout}/approve', [PayoutController::class, 'approve']);
+            Route::post('payout-requests/{payout}/reject', [PayoutController::class, 'reject']);
             Route::post('commission-rules', [AdminCommissionController::class, 'storeRule']);
 
             Route::get('reports/overview', [AdminReportController::class, 'overview']);

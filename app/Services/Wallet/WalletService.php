@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletHold;
 use App\Models\WalletTransaction;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 class WalletService
@@ -19,17 +20,38 @@ class WalletService
 
     public function for(User $user, Currency $currency, WalletType $type = WalletType::Player): Wallet
     {
-        return Wallet::query()->createOrFirst(
-            ['user_id' => $user->id, 'currency' => $currency->value, 'type' => $type->value],
-        );
+        return $this->findOrCreate(['user_id' => $user->id, 'currency' => $currency->value, 'type' => $type->value]);
     }
 
     public function system(WalletType $type, Currency $currency): Wallet
     {
-        return Wallet::query()->createOrFirst(
+        return $this->findOrCreate(
             ['system_key' => $type->value.':'.$currency->value],
             ['currency' => $currency->value, 'type' => $type->value],
         );
+    }
+
+    /**
+     * Race-safe get-or-create: read first (hot path), insert inside a
+     * savepoint if missing, and on a unique-key race fall back to a locking
+     * read, which always sees the row committed by the competing request.
+     *
+     * @param  array<string, mixed>  $keys
+     * @param  array<string, mixed>  $values
+     */
+    private function findOrCreate(array $keys, array $values = []): Wallet
+    {
+        $existing = Wallet::query()->where($keys)->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        try {
+            return DB::transaction(fn () => Wallet::query()->create($keys + $values));
+        } catch (UniqueConstraintViolationException) {
+            return Wallet::query()->where($keys)->sharedLock()->firstOrFail();
+        }
     }
 
     public function escrow(Currency $currency): Wallet

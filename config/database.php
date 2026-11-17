@@ -59,6 +59,11 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // READ COMMITTED: a transaction that waited on a row lock sees rows
+            // committed by the transaction it waited for (REPEATABLE READ would
+            // keep a stale snapshot). Required by the wallet ledger and seating;
+            // verified by tests/Concurrency (phpunit.mysql.xml).
+            'isolation_level' => env('DB_ISOLATION_LEVEL', 'READ COMMITTED'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],

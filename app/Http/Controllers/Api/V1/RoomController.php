@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\RoomResource;
 use App\Models\GameInvitation;
 use App\Models\GameRoom;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Notifications\RoomInvitation;
 use App\Services\Game\GameStatePresenter;
@@ -32,7 +33,10 @@ class RoomController extends Controller
             ->orderBy('currency')->orderBy('entry_amount')
             ->get();
 
-        return RoomResource::collection($rooms);
+        return RoomResource::collection($rooms)->additional(['meta' => [
+            'announcement' => SystemSetting::get('lobby_announcement'),
+            'maintenance_message' => SystemSetting::get('maintenance_message'),
+        ]]);
     }
 
     public function show(Request $request, GameRoom $room): RoomResource

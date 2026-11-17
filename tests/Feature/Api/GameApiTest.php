@@ -4,6 +4,7 @@ use App\Game\AutoArranger;
 use App\Game\Deck;
 use App\Models\AuditLog;
 use App\Models\GameRoom;
+use App\Models\SystemSetting;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -128,4 +129,11 @@ test('admins manage rooms through the API and edits are audited', function () {
     $this->actingAs(User::factory()->create())->postJson('/api/v1/admin/rooms', [])->assertForbidden();
 
     expect(AuditLog::query()->where('action', 'room.create')->where('subject_id', $room['id'])->exists())->toBeTrue();
+});
+
+test('the lobby room list carries the admin announcement', function () {
+    SystemSetting::create(['key' => 'lobby_announcement', 'value' => 'Weekend VC bonus!']);
+
+    $this->actingAs(User::factory()->create())->getJson('/api/v1/rooms')
+        ->assertOk()->assertJsonPath('meta.announcement', 'Weekend VC bonus!');
 });

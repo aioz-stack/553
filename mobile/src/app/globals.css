@@ -33,10 +33,12 @@ body {
 }
 
 /* Safe areas for notches / home indicators (viewport-fit=cover). */
+/* env() for iOS/modern WebViews; --safe-area-inset-* is injected by Capacitor
+   on Android edge-to-edge. The minimum keeps controls clear of gesture bars. */
 .safe-top {
-  padding-top: env(safe-area-inset-top);
+  padding-top: max(env(safe-area-inset-top), var(--safe-area-inset-top, 0px));
 }
 
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(env(safe-area-inset-bottom), var(--safe-area-inset-bottom, 0px), 12px);
 }

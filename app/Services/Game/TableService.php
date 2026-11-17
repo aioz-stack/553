@@ -67,7 +67,8 @@ class TableService
                 ->first(fn (GameTable $t) => $t->players_count < 4)
                 ?? GameTable::create(['game_room_id' => $room->id, 'status' => TableStatus::WaitingForPlayers, 'seat_count' => 4]);
 
-            $taken = GamePlayer::query()->where('game_table_id', $table->id)->pluck('seat')->all();
+            // Locking read: sees seats committed by joins that held the room lock before us.
+            $taken = GamePlayer::query()->where('game_table_id', $table->id)->lockForUpdate()->pluck('seat')->all();
             $seat = min(array_diff([1, 2, 3, 4], $taken));
 
             $wallet = $this->wallets->for($user, $room->currency);

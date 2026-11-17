@@ -13,6 +13,7 @@ use App\Models\Wallet;
 use App\Models\WalletAdjustment;
 use App\Models\WalletAllocation;
 use App\Models\WalletTransaction;
+use App\Notifications\PointsReceived;
 use App\Services\Audit\AuditLogger;
 use Illuminate\Support\Facades\DB;
 
@@ -83,6 +84,8 @@ class AllocationService
                     'amount' => $amount,
                     'target' => $targetType->value,
                 ]);
+
+                $recipient->notify((new PointsReceived($transaction))->afterCommit());
             }
 
             return $transaction;

@@ -11,7 +11,7 @@ import { useApi } from '../../lib/useApi';
  * Game lobby: resume an active seat, or jump into a featured VC room.
  */
 export default function Lobby() {
-  const rooms = useApi<{ data: Room[] }>('/rooms', { currency: 'VC' });
+  const rooms = useApi<{ data: Room[]; meta?: { announcement?: string | null; maintenance_message?: string | null } }>('/rooms', { currency: 'VC' });
   const [seat, setSeat] = useState<TableState | null>(null);
 
   useEffect(() => {
@@ -20,6 +20,8 @@ export default function Lobby() {
 
   return (
     <PageShell title="Game Lobby">
+      {rooms.data?.meta?.maintenance_message && <Alert tone="warning">{rooms.data.meta.maintenance_message}</Alert>}
+      {rooms.data?.meta?.announcement && <Alert tone="info">{rooms.data.meta.announcement}</Alert>}
       {seat && (
         <Alert tone="info">
           You already have a seat at <strong>{seat.room.name}</strong>.{' '}

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import NativeShell from '@/components/NativeShell';
+import PushRegistration from '@/components/PushRegistration';
 import { AuthProvider } from '@/lib/auth';
 import './globals.css';
 
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="antialiased">
         <AuthProvider>
           <NativeShell />
+          <PushRegistration />
           {children}
         </AuthProvider>
       </body>
