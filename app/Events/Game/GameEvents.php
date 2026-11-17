@@ -37,6 +37,25 @@ final class GameEvents
 
     public const GAME_CANCELLED = 'game.cancelled';
 
+    // banker modes (table channel)
+    public const MATCH_STARTED = 'match.started';
+
+    public const ROUND_STARTED = 'round.started';
+
+    public const BANKER_ASSIGNED = 'banker.assigned';
+
+    public const PLAYER_BET = 'player.bet';
+
+    public const BETTING_CLOSED = 'betting.closed';
+
+    public const PLAYER_LUCKY = 'player.lucky';
+
+    public const ROUND_COMPLETED = 'round.completed';
+
+    public const MATCH_COMPLETED = 'match.completed';
+
     // private channel: user.{userId}
+    public const WALLET_UPDATED = 'wallet.updated';
+
     public const CARDS_DEALT = 'cards.dealt';
 }

@@ -52,6 +52,40 @@ return [
     ],
 
     /*
+    | Banker modes (Round Bank = rotating banker, Banker Mode = fixed banker).
+    | Settlement is per player vs the banker, in multiples of the player's bet,
+    | keyed by "wins-losses-ties" across Front/Middle/Back. Missing keys pay 0
+    | (so any result containing a tie pays nothing by default).
+    */
+    'banker' => [
+        'rounds' => (int) env('BANKER_ROUNDS', 12),
+        'settlement' => [
+            '3-0-0' => 2,
+            '0-3-0' => -2,
+            '2-1-0' => 1,
+            '1-2-0' => -1,
+        ],
+        // Each side reserves this multiple of the bet in escrow (the worst case).
+        'reserve_multiplier' => 2,
+        // Lucky Hand (six pairs / three flushes / three straights) pays this multiple.
+        'lucky_multiplier' => 2,
+        'default_betting_seconds' => (int) env('BANKER_BETTING_SECONDS', 15),
+        // Pause between rounds so players can see the result.
+        'intermission_seconds' => (int) env('BANKER_INTERMISSION_SECONDS', 8),
+        // Default max bet when a room sets none: minimum bet × this.
+        'max_bet_multiple' => 10,
+        // A seated player offline at the start of this many rounds in a row is removed.
+        'max_missed_rounds' => 2,
+        'min_players' => 2,
+    ],
+
+    // Player levels: xp per round played, bonus per round won, xp per level.
+    'xp' => ['per_round' => 10, 'per_win' => 15, 'per_level' => 100],
+
+    // A user counts as online when seen within this many seconds.
+    'online_seconds' => 120,
+
+    /*
     | Development helpers (seat demo players at a table, etc). Only honoured
     | when APP_ENV=local.
     */

@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
-import { api } from '@/lib/api';
+import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useOnline } from '@/lib/hooks';
-import type { Wallet } from '@/lib/types';
+import { springStyle } from '@/lib/spring';
+import { useBalance } from '@/lib/useBalance';
 import { Avatar, CoinPill, GameButton, GlassCard } from './game';
 import { IconBack, IconBell, IconHome, IconSpade, IconTrophy, IconUser, IconWallet } from './icons';
 
@@ -21,19 +21,8 @@ const TABS = [
 ];
 
 /** Player's own balances for the HUD (never other players' balances). */
-function useHudBalances(enabled: boolean) {
-  const [wallets, setWallets] = useState<Wallet[] | null>(null);
-
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-    api<{ data: Wallet[] }>('/wallet').then((r) => setWallets(r.data)).catch(() => undefined);
-  }, [enabled]);
-
-  const find = (c: string) => wallets?.find((w) => w.type === 'player' && w.currency === c)?.balance;
-
-  return { vc: find('VC'), cp: find('CP') };
+function useHudBalances(enabled: boolean, userId?: number) {
+  return useBalance(enabled ? userId : undefined);
 }
 
 /**
@@ -41,12 +30,12 @@ function useHudBalances(enabled: boolean) {
  * back/title bar, offline banner and the bottom tab bar with a raised Play
  * button. Redirects to /login when there is no session.
  */
-export function Screen({ title, children, back, tabs = true, action, hud = true, bare }: { title: string; children: ReactNode; back?: boolean; tabs?: boolean; action?: ReactNode; hud?: boolean; bare?: boolean }) {
+export function Screen({ title, children, back, tabs = true, action, hud = true, bare, immersive }: { title: string; children: ReactNode; back?: boolean; tabs?: boolean; action?: ReactNode; hud?: boolean; bare?: boolean; immersive?: boolean }) {
   const { user, ready } = useAuth();
   const router = useRouter();
   const path = usePathname();
   const online = useOnline();
-  const balances = useHudBalances(!!user && hud && !back);
+  const balances = useHudBalances(!!user && hud && !back && !immersive, user?.id);
 
   useEffect(() => {
     if (ready && !user) {
@@ -63,6 +52,16 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
   }
 
   const name = user.display_name ?? user.name;
+
+  // Full-bleed screens (the beach home) draw their own chrome.
+  if (immersive) {
+    return (
+      <div className="relative min-h-dvh overflow-hidden text-white">
+        {!online && <div className="safe-top relative z-30 bg-warning-500 px-4 py-1 text-center text-xs font-bold text-white">Offline — reconnecting when the network returns</div>}
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className="game-bg flex min-h-dvh flex-col text-white">
@@ -111,7 +110,7 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
                 return (
                   <li key={href} className="flex justify-center">
                     <Link href={href} aria-label={label} className="-mt-7 flex flex-col items-center">
-                      <span className="btn-3d flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-b from-gold-300 via-gold-400 to-gold-600 text-night-900" style={{ ['--lip' as string]: '#9a5b03' }}>
+                      <span className="btn-3d lx-gloss lx-spring relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-b from-gold-300 via-gold-400 to-gold-600 text-night-900" style={{ ...springStyle('play-tab', 2.8, 0.6), ['--lip' as string]: '#9a5b03' }}>
                         <IconSpade className="h-8 w-8" />
                       </span>
                       <span className={cx('mt-0.5 font-display text-[11px] font-extrabold', active ? 'text-gold-300' : 'text-white/70')}>{label}</span>

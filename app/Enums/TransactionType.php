@@ -16,5 +16,6 @@ enum TransactionType: string
     case CommissionPayout = 'COMMISSION_PAYOUT';
     case ManualAdjustment = 'MANUAL_ADJUSTMENT';
     case DailyReward = 'DAILY_REWARD';
+    case LuckyBonus = 'LUCKY_BONUS';
     case Reversal = 'REVERSAL';
 }

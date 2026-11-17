@@ -19,6 +19,9 @@ use App\Models\PlatformFee;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
+use App\Services\Game\BankerMatchService;
+use App\Services\Game\TableService;
+use App\Support\Level;
 use App\Support\Points;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -133,7 +136,40 @@ class ReportService
         $profile = $user->profile;
         $results = GameResult::query()->where('user_id', $user->id);
 
+        $rounds = GameResult::query()->where('user_id', $user->id)->whereNotNull('role')
+            ->whereHas('session', fn ($q) => $q->where('status', 'COMPLETED'));
+        $asPlayer = (clone $rounds)->where('role', 'player');
+        $asBanker = (clone $rounds)->where('role', 'banker');
+        $sum = fn ($q, string $expr) => (int) (clone $q)->sum(DB::raw($expr));
+        $seat = app(TableService::class)->activeSeat($user);
+
+        $banker = [
+            'rounds' => (clone $asBanker)->count(),
+            'bets_received' => Points::decimal($sum($asBanker, 'bet_amount')),
+            // What the banker paid to winning players (sum of their gross wins this banker covered).
+            'payouts' => Points::decimal((int) GameResult::query()->where('role', 'player')->where('net_amount', '>', 0)
+                ->whereIn('game_session_id', (clone $asBanker)->select('game_session_id'))->sum(DB::raw('net_amount + platform_fee'))),
+            'winnings' => Points::decimal($sum($asBanker, 'CASE WHEN net_amount > 0 THEN net_amount ELSE 0 END')),
+            'losses' => Points::decimal(-$sum($asBanker, 'CASE WHEN net_amount < 0 THEN net_amount ELSE 0 END')),
+            'remaining_rounds' => $seat ? app(BankerMatchService::class)->remainingBankerRounds($seat->table, $user->id) : 0,
+        ];
+
         return [
+            'level' => Level::fromXp((int) ($profile?->xp ?? 0)),
+            'rounds' => [
+                'played' => (clone $rounds)->count(),
+                'won' => (clone $rounds)->where('net_amount', '>', 0)->count(),
+                'lost' => (clone $rounds)->where('net_amount', '<', 0)->count(),
+                'tied' => (clone $rounds)->where('net_amount', 0)->count(),
+                'total_bets' => Points::decimal($sum($asPlayer, 'bet_amount')),
+                'total_winnings' => Points::decimal($sum($rounds, 'CASE WHEN net_amount > 0 THEN net_amount ELSE 0 END')),
+                'total_losses' => Points::decimal(-$sum($rounds, 'CASE WHEN net_amount < 0 THEN net_amount ELSE 0 END')),
+                'lucky_hands' => (clone $rounds)->whereNotNull('lucky_type')->count(),
+                'lucky_bonuses' => Points::decimal($sum($rounds, 'lucky_bonus')),
+            ],
+            'banker' => $banker,
+            'balances' => Wallet::query()->where('user_id', $user->id)->where('type', 'player')->pluck('balance', 'currency')
+                ->map(fn ($b) => Points::decimal((int) $b)),
             'games_played' => $profile?->games_played ?? 0,
             'games_won' => $profile?->games_won ?? 0,
             'total_score' => $profile?->total_score ?? 0,

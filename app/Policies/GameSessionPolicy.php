@@ -14,7 +14,18 @@ class GameSessionPolicy
      */
     public function view(User $user, GameSession $session): bool
     {
-        return $session->hasParticipant($user) || $user->hasAbility(Ability::ManageGames);
+        return $session->hasParticipant($user)
+            || $session->table?->hasPlayer($user)
+            || $user->hasAbility(Ability::ManageGames);
+    }
+
+    /**
+     * Banker rounds: seated players may bet before cards are dealt (the
+     * service checks they are a participant of this round).
+     */
+    public function bet(User $user, GameSession $session): bool
+    {
+        return $user->isActive() && $session->isBankerRound() && (bool) $session->table?->hasPlayer($user);
     }
 
     public function play(User $user, GameSession $session): bool

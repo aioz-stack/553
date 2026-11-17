@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Currency;
+use App\Enums\GameMode;
 use App\Enums\PayoutMode;
 use App\Enums\RoomStatus;
 use App\Enums\RoomVisibility;
@@ -22,6 +23,18 @@ class GameRoom extends Model
 
     protected $guarded = ['id', 'carry_over_amount'];
 
+    /**
+     * Same defaults as the migration, so unsaved/new models behave alike.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'game_mode' => 'classic',
+        'rounds_total' => 12,
+        'betting_seconds' => 15,
+        'lucky_hands_enabled' => true,
+    ];
+
     protected function casts(): array
     {
         return [
@@ -36,7 +49,17 @@ class GameRoom extends Model
             'platform_fee_bps' => 'integer',
             'carry_over_amount' => 'integer',
             'allow_foul_submission' => 'boolean',
+            'game_mode' => GameMode::class,
+            'max_bet' => 'integer',
+            'rounds_total' => 'integer',
+            'betting_seconds' => 'integer',
+            'lucky_hands_enabled' => 'boolean',
         ];
+    }
+
+    public function maxBet(): int
+    {
+        return $this->max_bet ?? $this->entry_amount * (int) config('pusoy.banker.max_bet_multiple', 10);
     }
 
     public function tables(): HasMany
@@ -90,6 +113,19 @@ class GameRoom extends Model
             'timeout_policy' => $this->timeout_policy->value,
             'allow_foul_submission' => $this->allow_foul_submission,
             'seats' => 4,
+            'game_mode' => $this->game_mode->value,
+            'rounds_total' => $this->game_mode->hasBanker() ? $this->rounds_total : 1,
+            'min_bet' => $this->entry_amount,
+            'max_bet' => $this->maxBet(),
+            'betting_seconds' => $this->betting_seconds,
+            'lucky_hands_enabled' => $this->lucky_hands_enabled,
+            'banker' => $this->game_mode->hasBanker() ? [
+                'settlement' => config('pusoy.banker.settlement'),
+                'reserve_multiplier' => (int) config('pusoy.banker.reserve_multiplier'),
+                'lucky_multiplier' => (int) config('pusoy.banker.lucky_multiplier'),
+                'foul' => 'fouled_hand_loses_every_lane_vs_valid_hand',
+                'fee' => 'platform_fee_bps_of_each_positive_net_win',
+            ] : null,
             'scoring' => [
                 'win' => config('pusoy.game.score_win'),
                 'loss' => config('pusoy.game.score_loss'),

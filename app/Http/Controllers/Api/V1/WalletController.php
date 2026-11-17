@@ -38,6 +38,7 @@ class WalletController extends Controller
             'currency' => ['nullable', 'in:CP,VC'],
             'type' => ['nullable', 'string', 'max:32'],
             'wallet_type' => ['nullable', 'in:player,allocation,commission'],
+            'role' => ['nullable', 'in:banker,player'],
         ]);
 
         $walletIds = $request->user()->wallets()
@@ -48,6 +49,8 @@ class WalletController extends Controller
         $transactions = WalletTransaction::query()
             ->forWallets($walletIds)
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->input('type')))
+            // Banker transaction history: covers and settlements made as banker.
+            ->when($request->filled('role'), fn ($q) => $q->where('metadata->role', $request->input('role')))
             ->latest('id')
             ->paginate(min((int) $request->integer('per_page', 20), 100));
 

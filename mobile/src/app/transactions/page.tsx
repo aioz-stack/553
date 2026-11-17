@@ -4,16 +4,17 @@ import { useState } from 'react';
 import { Coin, GameButton } from '@/components/game';
 import { Screen, Spinner } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
-import { points, titleCase, useFetch, when } from '@/lib/hooks';
+import { points, titleCase, useFetch, useQueryParam, when } from '@/lib/hooks';
 import type { Transaction } from '@/lib/types';
 
 export default function Transactions() {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
-  const { data, loading } = useFetch<{ data: Transaction[]; meta: { current_page: number; last_page: number } }>(user ? '/wallet/transactions' : null, { page });
+  const role = useQueryParam('role');
+  const { data, loading } = useFetch<{ data: Transaction[]; meta: { current_page: number; last_page: number } }>(user ? '/wallet/transactions' : null, { page, role: role ?? undefined });
 
   return (
-    <Screen title="Transactions" back>
+    <Screen title={role === 'banker' ? 'Banker history' : 'Transactions'} back>
       {loading && <Spinner />}
       {data?.data.length === 0 && <p className="pt-10 text-center text-white/60">No transactions yet.</p>}
       <ul className="space-y-2">

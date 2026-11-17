@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Admin\WalletController as AdminWalletController;
 use App\Http\Controllers\Api\V1\AgentController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\GameController;
 use App\Http\Controllers\Api\V1\PayoutController;
 use App\Http\Controllers\Api\V1\PlayerController;
@@ -63,6 +64,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Rooms & tables
         Route::get('rooms', [RoomController::class, 'index']);
         Route::post('rooms/private', [RoomController::class, 'storePrivate']);
+        Route::post('rooms/host', [RoomController::class, 'host'])->middleware('throttle:game-actions');
         Route::get('rooms/{room}', [RoomController::class, 'show']);
         Route::post('rooms/{room}/join', [RoomController::class, 'join'])->middleware('throttle:game-actions');
         Route::post('rooms/{room}/invite', [RoomController::class, 'invite']);
@@ -78,6 +80,15 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::get('games/{session}/cards', [GameController::class, 'cards']);
         Route::post('games/{session}/submit', [GameController::class, 'submit'])->middleware('throttle:game-actions');
         Route::post('games/{session}/preview', [GameController::class, 'preview']);
+        Route::post('games/{session}/bet', [GameController::class, 'bet'])->middleware('throttle:game-actions');
+        Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
+
+        // Friends
+        Route::get('friends', [FriendController::class, 'index']);
+        Route::post('friends', [FriendController::class, 'store'])->middleware('throttle:game-actions');
+        Route::post('friends/{friendship}/accept', [FriendController::class, 'accept']);
+        Route::delete('friends/{friendship}', [FriendController::class, 'destroy']);
+        Route::post('friends/{user}/invite', [FriendController::class, 'invite'])->middleware('throttle:game-actions');
         Route::get('games/{session}/results', [GameController::class, 'results']);
 
         // Agent

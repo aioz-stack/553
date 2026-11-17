@@ -2,6 +2,9 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { points } from '@/lib/hooks';
+import { springStyle } from '@/lib/spring';
+import { useId } from 'react';
+import { Glitter, RimGlint } from './Sparkles';
 
 /*
  * Game-style primitives: coins, coin pills, avatar rings, chunky 3D buttons,
@@ -13,10 +16,11 @@ const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean)
 /** Gold (VC) or silver-blue (CP) coin drawn in SVG. */
 export function Coin({ currency = 'VC', size = 22, className }: { currency?: 'VC' | 'CP' | string; size?: number; className?: string }) {
   const id = `coin-${currency}`;
+  const springId = useId();
   const [a, b, c] = currency === 'CP' ? ['#e8f1ff', '#8fb3e8', '#3f6aa8'] : ['#fff3b0', '#ffc83a', '#c27a04'];
 
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" className={className} aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 32 32" className={cx('lx-spring-icon', className)} style={springStyle(springId, 2.6, 1.6)} aria-hidden="true">
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={a} />
@@ -84,15 +88,23 @@ const TONES: Record<Tone, { cls: string; lip: string }> = {
   glass: { cls: 'bg-white/12 text-white backdrop-blur', lip: 'rgba(0,0,0,0.35)' },
 };
 
-export function GameButton({ tone = 'gold', size = 'md', className, style, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; size?: 'sm' | 'md' | 'lg' }) {
+export function GameButton({ tone = 'gold', size = 'md', className, style, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; size?: 'sm' | 'md' | 'lg' }) {
   const sizes = { sm: 'min-h-10 px-4 text-sm', md: 'min-h-12 px-5 text-base', lg: 'min-h-14 px-6 text-lg' };
+  const id = useId();
 
   return (
     <button
       {...props}
-      className={cx('btn-3d', TONES[tone].cls, sizes[size], className)}
-      style={{ ['--lip' as string]: TONES[tone].lip, ...style }}
-    />
+      className={cx('btn-3d lx-gloss lx-spring', TONES[tone].cls, sizes[size], className)}
+      style={{ ...springStyle(id, 3, 1.4), ['--lip' as string]: TONES[tone].lip, ['--sweep-delay' as string]: `${(tone.length % 4) * 0.7}s`, ...style }}
+    >
+      <RimGlint width={2} delay={(tone.length % 5) * 0.6} />
+      {tone !== 'glass' && <Glitter count={3} seed={tone.length * 7} size={0.55} />}
+      {/* Above the glossy dome so labels stay crisp. */}
+      <span className="relative z-[4] inline-flex items-center justify-center" style={{ gap: 'inherit' }}>
+        {children}
+      </span>
+    </button>
   );
 }
 
@@ -100,14 +112,14 @@ export function GameButton({ tone = 'gold', size = 'md', className, style, ...pr
 export function Ribbon({ children, tone = 'pink', className }: { children: ReactNode; tone?: 'pink' | 'gold' | 'green' | 'blue'; className?: string }) {
   const tones = {
     pink: 'from-candy-400 to-candy-500',
-    gold: 'from-gold-300 to-gold-600 text-night-900',
+    gold: 'from-gold-300 to-gold-600',
     green: 'from-mint-400 to-mint-600',
     blue: 'from-sky-400 to-brand-600',
   };
 
   return (
-    <span className={cx('inline-block -skew-x-6 rounded-lg bg-gradient-to-b px-4 py-1 font-display text-sm font-black uppercase tracking-wide text-white shadow-[0_4px_0_rgb(0_0_0/0.3)]', tones[tone], className)}>
-      <span className="inline-block skew-x-6">{children}</span>
+    <span className={cx('lx-gloss relative inline-block -skew-x-6 rounded-lg bg-gradient-to-b px-4 py-1 font-display text-sm font-black uppercase tracking-wide shadow-[0_4px_0_rgb(0_0_0/0.3),inset_0_1px_0_rgb(255_255_255/0.5)]', tone === 'gold' ? 'text-night-900' : 'text-white', tones[tone], className)}>
+      <span className="relative z-[4] inline-block skew-x-6">{children}</span>
     </span>
   );
 }
@@ -115,7 +127,8 @@ export function Ribbon({ children, tone = 'pink', className }: { children: React
 /** Rounded glossy container used across screens. */
 export function GlassCard({ children, className, title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
   return (
-    <section className={cx('glass mb-4 rounded-3xl p-4', className)}>
+    <section className={cx('glass lx-sheen mb-4 rounded-3xl p-4', className)}>
+      <Glitter count={4} seed={7} size={0.5} />
       {(title || action) && (
         <div className="mb-3 flex items-center justify-between gap-2">
           {title && <h2 className="font-display text-lg font-extrabold text-white">{title}</h2>}
@@ -145,5 +158,48 @@ export function Confetti({ count = 28 }: { count?: number }) {
         />
       ))}
     </div>
+  );
+}
+
+/** Faceted diamond gem (the home screen shows the VC balance as diamonds). */
+export function Diamond({ size = 24, className }: { size?: number; className?: string }) {
+  const springId = useId();
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" className={cx('lx-spring-icon', className)} style={springStyle(springId, 2.6, 1.6)} aria-hidden="true">
+      <defs>
+        <linearGradient id="gem-a" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#d9fbff" />
+          <stop offset="1" stopColor="#38c8ff" />
+        </linearGradient>
+        <linearGradient id="gem-b" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#6fe3ff" />
+          <stop offset="1" stopColor="#1b7fe0" />
+        </linearGradient>
+      </defs>
+      <path d="M8 5h16l6 8-14 15L2 13l6-8Z" fill="#0f5fb8" />
+      <path d="M8 5h16l6 8H2l6-8Z" fill="url(#gem-a)" />
+      <path d="M2 13h28L16 28 2 13Z" fill="url(#gem-b)" />
+      <path d="M11 13 16 5l5 8-5 15-5-15Z" fill="#fff" fillOpacity="0.35" />
+      <path d="M9.5 8.5h4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Gold-rimmed level shield with the level number. */
+export function LevelBadge({ level, size = 30 }: { level: number; size?: number }) {
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }} aria-label={`Level ${level}`}>
+      <svg viewBox="0 0 32 32" width={size} height={size} aria-hidden="true">
+        <path d="M16 1.5 29 7v9c0 7.4-5.6 12.6-13 14.5C8.6 28.6 3 23.4 3 16V7l13-5.5Z" fill="#9a5b03" />
+        <path d="M16 3.5 27 8.2V16c0 6.2-4.6 10.7-11 12.4C9.6 26.7 5 22.2 5 16V8.2L16 3.5Z" fill="url(#lvl)" />
+        <defs>
+          <linearGradient id="lvl" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ff8ac0" />
+            <stop offset="1" stopColor="#c21e68" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center font-display text-[13px] font-black text-white drop-shadow-[0_1px_0_rgb(0_0_0/0.5)]">{level}</span>
+    </span>
   );
 }

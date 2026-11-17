@@ -20,6 +20,7 @@ use App\Models\WalletHold;
 use App\Services\Wallet\LedgerService;
 use App\Services\Wallet\TransferRequest;
 use App\Services\Wallet\WalletService;
+use App\Support\Points;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -36,6 +37,7 @@ class TableService
         private readonly LedgerService $ledger,
         private readonly WalletService $wallets,
         private readonly GameEngine $engine,
+        private readonly BankerMatchService $match,
     ) {}
 
     public function join(User $user, GameRoom $room, ?string $inviteCode = null): GamePlayer
@@ -56,6 +58,10 @@ class TableService
             }
 
             $room = GameRoom::query()->whereKey($room->id)->lockForUpdate()->firstOrFail();
+
+            if ($room->game_mode->hasBanker()) {
+                return $this->joinBankerTable($user, $room);
+            }
 
             $table = GameTable::query()
                 ->where('game_room_id', $room->id)
@@ -117,10 +123,79 @@ class TableService
         });
     }
 
+    /**
+     * Banker modes: no entry fee (money moves per bet). Join an open table or
+     * a running match with a free seat and rounds left — new arrivals are
+     * dealt in from the next round. The first player at a new table is its
+     * creator (the banker in Banker Mode).
+     */
+    private function joinBankerTable(User $user, GameRoom $room): GamePlayer
+    {
+        $table = GameTable::query()
+            ->where('game_room_id', $room->id)
+            ->whereIn('status', [TableStatus::WaitingForPlayers->value, TableStatus::Ready->value, TableStatus::InGame->value])
+            ->withCount('players')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->first(fn (GameTable $t) => $t->players_count < 4 && $t->rounds_played < $t->rounds_total);
+
+        if ($table === null) {
+            if ($room->owner_id !== null && GameTable::query()->where('game_room_id', $room->id)->exists()) {
+                throw new BusinessRuleException('This hosted table is full or finished.', 409, 'table_unavailable');
+            }
+
+            $table = GameTable::create([
+                'game_room_id' => $room->id,
+                'status' => TableStatus::WaitingForPlayers,
+                'seat_count' => 4,
+                'game_mode' => $room->game_mode,
+                'rounds_total' => $room->rounds_total,
+                'creator_user_id' => $user->id,
+            ]);
+        }
+
+        $taken = GamePlayer::query()->where('game_table_id', $table->id)->lockForUpdate()->pluck('seat')->all();
+
+        $player = GamePlayer::create([
+            'game_table_id' => $table->id,
+            'user_id' => $user->id,
+            'seat' => min(array_diff([1, 2, 3, 4], $taken)),
+            // Joining a running match means you are ready for the next round.
+            'is_ready' => $table->status === TableStatus::InGame,
+            'is_connected' => true,
+            'last_seen_at' => now(),
+        ]);
+
+        event(new TableEvent($table->id, GameEvents::PLAYER_JOINED, ['player' => $this->summary($player, $user)]));
+
+        if (count($taken) + 1 === 4) {
+            event(new TableEvent($table->id, GameEvents::TABLE_FULL, ['ready_timeout_seconds' => config('pusoy.game.ready_timeout_seconds')]));
+        }
+
+        return $player->setRelation('table', $table);
+    }
+
     public function leave(User $user, GameTable $table): void
     {
         DB::transaction(function () use ($user, $table) {
             $table = GameTable::query()->whereKey($table->id)->lockForUpdate()->firstOrFail();
+
+            if ($table->hasBanker()) {
+                $player = GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $user->id)->first()
+                    ?? throw new BusinessRuleException('You are not seated at this table.', 404, 'not_seated');
+
+                if ($table->status === TableStatus::Closed) {
+                    throw new BusinessRuleException('This match has ended.', 409, 'invalid_state');
+                }
+
+                $this->match->assertCanLeave($table, $user);
+                $player->delete();
+                event(new TableEvent($table->id, GameEvents::PLAYER_LEFT, ['user_id' => $user->id, 'reason' => 'left']));
+                $this->match->afterLeave($table);
+
+                return;
+            }
 
             if (! in_array($table->status, [TableStatus::WaitingForPlayers, TableStatus::Ready], true)) {
                 throw new BusinessRuleException('The game has started; you cannot leave now. Unsubmitted hands are auto-resolved when the timer ends.', 409, 'game_in_progress');
@@ -149,6 +224,12 @@ class TableService
             $player->forceFill(['is_ready' => $ready, 'last_seen_at' => now(), 'is_connected' => true])->save();
 
             event(new TableEvent($table->id, GameEvents::PLAYER_READY, ['user_id' => $user->id, 'is_ready' => $ready]));
+
+            if ($table->hasBanker()) {
+                $this->match->maybeStart($table);
+
+                return $player;
+            }
 
             $players = GamePlayer::query()->where('game_table_id', $table->id)->get();
 
@@ -290,9 +371,15 @@ class TableService
         }
 
         $balance = $this->wallets->for($user, $room->currency)->balance;
+        // Banker modes: enough to cover the minimum bet's 2× reserve.
+        $needed = $room->game_mode->hasBanker()
+            ? $room->entry_amount * (int) config('pusoy.banker.reserve_multiplier', 2)
+            : $room->entry_amount;
 
-        if ($balance < $room->entry_amount && ! $this->activeSeat($user)) {
-            throw new BusinessRuleException('Insufficient balance for this room entry.', 422, 'insufficient_balance');
+        if ($balance < $needed && ! $this->activeSeat($user)) {
+            throw new BusinessRuleException($room->game_mode->hasBanker()
+                ? 'You need at least '.Points::decimal($needed).' '.$room->currency->value.' to cover the minimum bet.'
+                : 'Insufficient balance for this room entry.', 422, 'insufficient_balance');
         }
     }
 

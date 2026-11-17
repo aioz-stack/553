@@ -1,15 +1,20 @@
-import type { SVGProps } from 'react';
+import { useId, type SVGProps } from 'react';
+import { springStyle } from '@/lib/spring';
 
 /**
  * Original filled icon set for the mobile app (24×24, currentColor).
  */
 type P = SVGProps<SVGSVGElement>;
 
-const Svg = ({ children, ...p }: P) => (
-  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true" {...p}>
-    {children}
-  </svg>
-);
+/** Every icon does a small idle spring bounce with its own timing. */
+const Svg = ({ children, className, style, ...p }: P) => {
+  const id = useId();
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true" {...p} className={`lx-spring-icon ${className ?? ''}`} style={{ ...springStyle(id, 2.4, 1.8), ...style }}>
+      {children}
+    </svg>
+  );
+};
 
 export const IconHome = (p: P) => (
   <Svg {...p}>
@@ -122,5 +127,59 @@ export const IconShield = (p: P) => (
 export const IconPlus = (p: P) => (
   <Svg {...p}>
     <path d="M10.5 4h3v6.5H20v3h-6.5V20h-3v-6.5H4v-3h6.5V4Z" />
+  </Svg>
+);
+
+export const IconSoundOn = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 9h3.5L12 5v14l-4.5-4H4V9Zm11.5-1.8a6 6 0 0 1 0 9.6l-1.2-1.6a4 4 0 0 0 0-6.4l1.2-1.6Zm2.6-3a9.6 9.6 0 0 1 0 15.6l-1.2-1.6a7.6 7.6 0 0 0 0-12.4l1.2-1.6Z" />
+  </Svg>
+);
+
+export const IconSoundOff = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 9h3.5L12 5v14l-4.5-4H4V9Zm11.3.1 1.4-1.4 2.3 2.3 2.3-2.3 1.4 1.4-2.3 2.3 2.3 2.3-1.4 1.4-2.3-2.3-2.3 2.3-1.4-1.4 2.3-2.3-2.3-2.3Z" />
+  </Svg>
+);
+
+export const IconLogout = (p: P) => (
+  <Svg {...p}>
+    <path d="M10 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-8v-2h8V5h-8V3Zm-.6 4.6 1.4 1.4L8.8 11H16v2H8.8l2 2-1.4 1.4L5 12l4.4-4.4Z" />
+  </Svg>
+);
+
+export const IconRotate = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 4a8 8 0 0 1 7.4 5H22l-3.5 4.5L15 9h2.2A6 6 0 0 0 6.3 10l-1.9-.6A8 8 0 0 1 12 4Zm-6.5 6.5L9 15H6.8a6 6 0 0 0 10.9 1l1.9.6A8 8 0 0 1 4.6 15H2l3.5-4.5Z" />
+  </Svg>
+);
+
+export const IconUserPlus = (p: P) => (
+  <Svg {...p}>
+    <path d="M9 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 10c4.4 0 8 2 8 4.5V20H1v-1.5C1 16 4.6 14 9 14Zm10-7h2v2.5h2.5v2H21V14h-2v-2.5h-2.5v-2H19V7Z" />
+  </Svg>
+);
+
+export const IconCheck = (p: P) => (
+  <Svg {...p}>
+    <path d="m9.5 15.6 9.2-9.2 1.6 1.6L9.5 18.8 3.7 13l1.6-1.6 4.2 4.2Z" />
+  </Svg>
+);
+
+export const IconClose = (p: P) => (
+  <Svg {...p}>
+    <path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z" />
+  </Svg>
+);
+
+export const IconSend = (p: P) => (
+  <Svg {...p}>
+    <path d="M3 20.5 21.5 12 3 3.5V10l13 2-13 2v6.5Z" />
+  </Svg>
+);
+
+export const IconStar = (p: P) => (
+  <Svg {...p}>
+    <path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9L12 2.8Z" />
   </Svg>
 );

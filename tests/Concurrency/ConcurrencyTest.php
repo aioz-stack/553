@@ -12,6 +12,7 @@
 use App\Enums\Currency;
 use App\Enums\GameStatus;
 use App\Enums\WalletType;
+use App\Models\GameBet;
 use App\Models\GameCard;
 use App\Models\GamePayout;
 use App\Models\GamePlayer;
@@ -160,5 +161,38 @@ test('simultaneous final submissions and resolves settle the game exactly once',
         ->and(WalletTransaction::query()->where('type', 'GAME_REWARD')->count())->toBeLessThanOrEqual(4)
         ->and(WalletTransaction::query()->where('type', 'PLATFORM_FEE')->count())->toBe(1)
         ->and($session->results()->sum('score'))->toBe(0)
+        ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
+});
+
+test('simultaneous bets against one banker never over-commit the banker cover', function () {
+    $room = GameRoom::factory()->create([
+        'game_mode' => 'round_bank', 'entry_amount' => 1_000, 'max_bet' => 5_000, 'min_players' => 2, 'platform_fee_bps' => 0,
+    ]);
+    $tables = app(TableService::class);
+    $players = User::factory()->player()->count(4)->create();
+
+    foreach ($players as $i => $p) {
+        // Seat 1 banks round 1 with only 120.00: enough to cover one 50.00 bet (100.00) plus one 10.00 bet (20.00).
+        fund($p, $i === 0 ? 12_000 : 100_000);
+        $seat = $tables->join($p, $room);
+    }
+
+    foreach ($players as $p) {
+        $tables->setReady($p, $seat->table->fresh(), true);
+    }
+
+    $session = $seat->table->fresh()->currentSession;
+    $banker = User::findOrFail($session->banker_user_id);
+    expect($banker->id)->toBe($players[0]->id);
+
+    $jobs = collect($session->config['participants'])->map(fn ($id) => ['bet', ['user' => $id, 'session' => $session->id, 'amount' => 5_000]])->all();
+    $results = race([...$jobs, ...$jobs]); // each player fires twice at once
+
+    $bets = GameBet::query()->where('game_session_id', $session->id)->get();
+
+    expect(collect($results)->where('ok', true))->toHaveCount(1)
+        ->and($bets)->toHaveCount(1)
+        ->and(balance($banker))->toBe(2_000)
+        ->and((int) WalletHold::query()->where('game_session_id', $session->id)->sum('amount'))->toBe(20_000)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });

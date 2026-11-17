@@ -6,6 +6,7 @@ enum GameStatus: string
 {
     case WaitingForPlayers = 'WAITING_FOR_PLAYERS';
     case Ready = 'READY';
+    case Betting = 'BETTING';
     case Dealing = 'DEALING';
     case Arranging = 'ARRANGING';
     case Submitted = 'SUBMITTED';

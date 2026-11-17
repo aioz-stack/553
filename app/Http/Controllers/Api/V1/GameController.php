@@ -8,8 +8,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitArrangementRequest;
 use App\Models\GameCard;
 use App\Models\GameSession;
+use App\Services\Game\BankerMatchService;
 use App\Services\Game\GameEngine;
 use App\Services\Game\GameStatePresenter;
+use App\Support\Points;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -75,6 +77,38 @@ class GameController extends Controller
         $foul = $complete && ($values['back']->compare($values['middle']) < 0 || $values['middle']->compare($values['front']) < 0);
 
         return response()->json(['data' => ['labels' => $labels, 'complete' => $complete, 'is_foul' => $foul]]);
+    }
+
+    /**
+     * Banker rounds: place this round's bet (minor-unit validation server side).
+     */
+    public function bet(Request $request, GameSession $session, BankerMatchService $match, GameStatePresenter $presenter): JsonResponse
+    {
+        $this->authorize('bet', $session);
+        $data = $request->validate(['amount' => ['required', 'regex:/^\d{1,9}(\.\d{1,2})?$/']]);
+
+        $match->placeBet($request->user(), $session, Points::toMinor($data['amount']));
+
+        return response()->json([
+            'message' => 'Bet placed.',
+            'data' => $presenter->session($session->refresh(), $request->user()),
+        ], 201);
+    }
+
+    /**
+     * Declare a Lucky Hand. The server validates the dealt cards; the hand is
+     * locked in as this round's submission.
+     */
+    public function lucky(Request $request, GameSession $session, BankerMatchService $match, GameEngine $engine, GameStatePresenter $presenter): JsonResponse
+    {
+        $this->authorize('play', $session);
+
+        $match->declareLucky($request->user(), $session, $engine);
+
+        return response()->json([
+            'message' => 'Lucky Hand declared!',
+            'data' => $presenter->session($session->refresh(), $request->user()),
+        ], 201);
     }
 
     public function results(Request $request, GameSession $session, GameStatePresenter $presenter): JsonResponse

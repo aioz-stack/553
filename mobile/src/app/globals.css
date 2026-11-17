@@ -138,6 +138,9 @@ body {
       0 1px 0 var(--lip, #8a5a00),
       0 3px 6px rgb(0 0 0 / 0.35);
   }
+  &:hover:not(:disabled) {
+    filter: brightness(1.07) saturate(1.08);
+  }
   &:disabled {
     filter: grayscale(0.7) brightness(0.8);
     cursor: not-allowed;
@@ -148,6 +151,7 @@ body {
 @utility glass {
   background: linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.04));
   border: 1px solid rgb(255 255 255 / 0.14);
+  border-top-color: rgb(255 214 102 / 0.45);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.18),
     0 10px 30px rgb(0 0 0 / 0.35);
@@ -156,7 +160,24 @@ body {
 
 /* Gold rim used around avatars, tables and featured tiles. */
 @utility gold-rim {
-  background: linear-gradient(160deg, var(--color-gold-200), var(--color-gold-500) 45%, var(--color-gold-700));
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: inherit;
+    background: conic-gradient(from var(--lx-a), transparent 0deg 95deg, rgb(255 255 255 / 0.5) 112deg, #fff 120deg, rgb(255 255 255 / 0.5) 128deg, transparent 145deg 255deg, rgb(255 236 150 / 0.55) 285deg, #fff 312deg, #ffffff 328deg, #fff3a0 336deg, rgb(255 236 150 / 0.4) 350deg, transparent 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation: lx-orbit 4.2s linear infinite;
+    pointer-events: none;
+    z-index: 6;
+  }
+  background: linear-gradient(110deg, var(--color-gold-700) 0%, var(--color-gold-400) 18%, #fff7c2 26%, var(--color-gold-400) 36%, var(--color-gold-700) 55%, var(--color-gold-300) 72%, #fff3a6 80%, var(--color-gold-700) 100%);
+  background-size: 260% 100%;
+  animation: lx-shimmer 6s linear infinite;
 }
 
 @utility text-gold {
@@ -180,12 +201,236 @@ body {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
+/* Reduced motion is decided by lib/motion.ts (device setting or the in-app Motion choice). */
+:root[data-motion='reduce'] *,
+:root[data-motion='reduce'] *::before,
+:root[data-motion='reduce'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ------------------------------------------------------------------
+ * Luxury home: lively, glossy, gold. Plain classes (lx-*) so they can be
+ * used on HTML and SVG. SVG parts animate around their own centre.
+ * All motion is disabled when :root[data-motion=reduce] (see lib/motion.ts).
+ * ------------------------------------------------------------------ */
+.lx-svg-part { transform-box: fill-box; transform-origin: center; }
+.lx-bob { animation: lx-bob 3.2s ease-in-out infinite; }
+.lx-bob-slow { animation: lx-bob 5s ease-in-out infinite; }
+.lx-sway { animation: lx-sway 4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.lx-sway-card { animation: lx-sway-card 3.6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.lx-coin { animation: lx-coin 2.4s cubic-bezier(.3,1.4,.5,1) infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.lx-twinkle { animation: lx-twinkle 2.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.lx-spin { animation: lx-spin 9s linear infinite; transform-box: fill-box; transform-origin: center; }
+.lx-wave { animation: lx-wave 1.4s ease-in-out infinite; }
+.lx-nudge { animation: lx-nudge 1.8s ease-in-out infinite; }
+.lx-wiggle { animation: lx-wiggle 2.6s ease-in-out infinite; transform-origin: 50% 60%; }
+.lx-ring { animation: lx-ring 3s ease-in-out infinite; transform-origin: 50% 10%; }
+.lx-glint { animation: lx-glint 3.5s ease-in-out infinite; }
+.lx-glow { animation: lx-glow 2.8s ease-in-out infinite; }
+.lx-drift { animation: lx-drift 18s ease-in-out infinite; }
+.lx-drift-rev { animation: lx-drift 24s ease-in-out infinite reverse; }
+.lx-sea { animation: lx-sea 4s ease-in-out infinite; }
+.lx-palm { animation: lx-palm 6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.lx-pulse-dot { animation: lx-pulse-dot 1.8s ease-out infinite; }
+.lx-breathe { animation: lx-breathe 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.lx-in { animation: lx-in .45s cubic-bezier(.2,1.3,.4,1) both; }
+
+/* Moving gold shimmer for rims, bars and pills. */
+.lx-gold {
+  background: linear-gradient(110deg, #b86a00 0%, #ffd34d 18%, #fff7c2 26%, #ffc531 36%, #c97a00 55%, #ffd95e 72%, #fff3a6 80%, #c47300 100%);
+  background-size: 260% 100%;
+  animation: lx-shimmer 5s linear infinite;
+}
+/* Glossy dome highlight + a gloss sweep that crosses every few seconds. */
+/* Callers set position (relative/absolute). */
+.lx-gloss { overflow: hidden; isolation: isolate; }
+.lx-gloss::before {
+  content: '';
+  position: absolute; inset: 3% 5% auto; height: 42%;
+  border-radius: 999px 999px 40% 40% / 100% 100% 30% 30%;
+  background: linear-gradient(180deg, rgb(255 255 255 / .55), rgb(255 255 255 / 0));
+  pointer-events: none; z-index: 2;
+}
+.lx-gloss::after {
+  content: '';
+  position: absolute; top: -20%; bottom: -20%; left: 0; width: 28%;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / .55), rgb(255 255 255 / 0));
+  transform: translateX(-160%) skewX(-18deg);
+  animation: lx-sweep 4.8s ease-in-out infinite;
+  animation-delay: var(--sweep-delay, 0s);
+  pointer-events: none; z-index: 3;
+}
+/* Interactive tile: tilts toward the finger/mouse, lifts, squishes on press. */
+.lx-tile {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--lift, 0px)) scale(var(--s, 1));
+  transition: transform .25s cubic-bezier(.2,1.4,.4,1), filter .25s;
+  will-change: transform;
+}
+.lx-tile:hover { --lift: -8px; filter: brightness(1.08) saturate(1.1); }
+.lx-tile:active { --s: .95; --lift: 4px; filter: brightness(1.15); transition-duration: .08s; }
+.lx-burst-star {
+  position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; pointer-events: none; z-index: 30;
+  animation: lx-burst .7s cubic-bezier(.1,.8,.3,1) forwards;
+}
+
+@keyframes lx-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes lx-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes lx-sway-card { 0%, 100% { transform: rotate(var(--r, 0deg)) translateY(0); } 50% { transform: rotate(calc(var(--r, 0deg) + 4deg)) translateY(-8px); } }
+@keyframes lx-coin { 0%, 70%, 100% { transform: translateY(0) scale(1, 1); } 80% { transform: translateY(-16px) scale(.96, 1.06); } 90% { transform: translateY(0) scale(1.06, .92); } }
+@keyframes lx-twinkle { 0%, 100% { transform: scale(.35) rotate(0deg); opacity: .2; } 50% { transform: scale(1.15) rotate(45deg); opacity: 1; } }
+@keyframes lx-spin { to { transform: rotate(360deg); } }
+@keyframes lx-wave { 0%, 100% { opacity: .35; transform: translateX(0); } 50% { opacity: 1; transform: translateX(5px); } }
+@keyframes lx-nudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(10px); } }
+@keyframes lx-wiggle { 0%, 60%, 100% { transform: rotate(0); } 66% { transform: rotate(-14deg) scale(1.1); } 74% { transform: rotate(12deg) scale(1.1); } 82% { transform: rotate(-8deg); } 90% { transform: rotate(5deg); } }
+@keyframes lx-ring { 0%, 70%, 100% { transform: rotate(0); } 74% { transform: rotate(18deg); } 80% { transform: rotate(-16deg); } 86% { transform: rotate(10deg); } 92% { transform: rotate(-6deg); } }
+@keyframes lx-glint { 0%, 100% { transform: rotate(-6deg) scale(1); filter: brightness(1) drop-shadow(0 0 0 rgb(120 220 255 / 0)); } 50% { transform: rotate(6deg) scale(1.08); filter: brightness(1.25) drop-shadow(0 0 14px rgb(120 220 255 / .9)); } }
+@keyframes lx-glow { 0%, 100% { filter: drop-shadow(0 0 0 rgb(255 210 80 / 0)); } 50% { filter: drop-shadow(0 0 18px rgb(255 210 80 / .85)); } }
+@keyframes lx-drift { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(70px); } }
+@keyframes lx-sea { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-26px); } }
+@keyframes lx-palm { 0%, 100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+@keyframes lx-pulse-dot { 0% { box-shadow: 0 0 0 0 rgb(47 209 79 / .7); } 100% { box-shadow: 0 0 0 14px rgb(47 209 79 / 0); } }
+@keyframes lx-breathe { 0%, 100% { transform: scale(1); opacity: .8; } 50% { transform: scale(1.1); opacity: 1; } }
+@keyframes lx-in { from { transform: translateX(-24px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes lx-shimmer { from { background-position: 0% 50%; } to { background-position: 260% 50%; } }
+@keyframes lx-sweep { 0% { transform: translateX(-160%) skewX(-18deg); } 55%, 100% { transform: translateX(520%) skewX(-18deg); } }
+@keyframes lx-burst { 0% { transform: translate(0, 0) scale(.3) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(1.1) rotate(160deg); opacity: 0; } }
+
+:root[data-motion='reduce'] [class*='lx-'], :root[data-motion='reduce'] .lx-gloss::after { animation: none !important; }
+:root[data-motion='reduce'] .lx-tile { transition: none; }
+
+/* ------------------------------------------------------------------
+ * Sparkle layer: travelling border glints, glitter, text shine, sheen.
+ * ------------------------------------------------------------------ */
+@property --lx-a {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* A bright glint that orbits along a frame. Drawn only on the ring between the
+ * element's edge and its padding (gold frames), or on a --rim-wide ring (.lx-rim). */
+.lx-gold::after,
+.lx-rim {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: inherit;
+  background: conic-gradient(from var(--lx-a), transparent 0deg 95deg, rgb(255 255 255 / 0.5) 112deg, #fff 120deg, rgb(255 255 255 / 0.5) 128deg, transparent 145deg 255deg, rgb(255 236 150 / 0.55) 285deg, #fff 312deg, #ffffff 328deg, #fff3a0 336deg, rgb(255 236 150 / 0.4) 350deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: lx-orbit 4.2s linear infinite;
+  animation-delay: var(--glint-delay, 0s);
+  filter: drop-shadow(0 0 3px rgb(255 245 200 / 0.9));
+  pointer-events: none;
+  z-index: 6;
+}
+.lx-rim { padding: var(--rim, 3px); }
+
+/* Glitter flecks (positioned by the Glitter component). */
+.lx-fleck {
+  position: absolute;
+  pointer-events: none;
+  background: radial-gradient(circle, #fff 0 30%, rgb(255 246 184 / 0.9) 45%, transparent 70%);
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  animation: lx-fleck 2.4s ease-in-out infinite;
+  z-index: 5;
+}
+.lx-dot {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 6px 2px rgb(255 240 170 / 0.9);
+  animation: lx-fleck 3.1s ease-in-out infinite;
+  z-index: 5;
+}
+
+/* Metallic shine travelling across text (set --c to the base colour). */
+.lx-text-shine {
+  --c: #fff;
+  background: linear-gradient(100deg, var(--c) 0 40%, #fff7c2 47%, #ffffff 50%, #fff7c2 53%, var(--c) 60% 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: lx-text-sweep 4.5s ease-in-out infinite;
+  animation-delay: var(--sweep-delay, 0s);
+}
+.lx-text-glow { animation: lx-text-glow 3s ease-in-out infinite; }
+
+/* Soft diagonal reflection slowly crossing a panel. */
+.lx-sheen { position: relative; overflow: hidden; }
+.lx-sheen::after {
+  content: '';
+  position: absolute;
+  inset: -60%;
+  background: linear-gradient(115deg, transparent 42%, rgb(255 255 255 / 0.06) 47%, rgb(255 255 255 / 0.16) 50%, rgb(255 255 255 / 0.06) 53%, transparent 58%);
+  animation: lx-sheen 8s ease-in-out infinite;
+  animation-delay: var(--sheen-delay, 0s);
+  pointer-events: none;
+}
+
+@keyframes lx-orbit { to { --lx-a: 360deg; } }
+@keyframes lx-fleck {
+  0%, 100% { transform: scale(0.2) rotate(0deg); opacity: 0; }
+  45% { transform: scale(1) rotate(45deg); opacity: 1; }
+  60% { transform: scale(0.85) rotate(60deg); opacity: 0.9; }
+}
+@keyframes lx-text-sweep { 0% { background-position: 100% 0; } 60%, 100% { background-position: -50% 0; } }
+@keyframes lx-text-glow {
+  0%, 100% { text-shadow: 0 3px 0 rgb(0 0 0 / 0.45), 0 0 0 rgb(255 214 90 / 0); }
+  50% { text-shadow: 0 3px 0 rgb(0 0 0 / 0.45), 0 0 16px rgb(255 214 90 / 0.9); }
+}
+@keyframes lx-sheen { 0% { transform: translateX(-35%); } 55%, 100% { transform: translateX(35%); } }
+
+:root[data-motion='reduce'] .lx-gold::after, :root[data-motion='reduce'] .lx-rim, :root[data-motion='reduce'] .lx-fleck, :root[data-motion='reduce'] .lx-dot, :root[data-motion='reduce'] .lx-text-shine, :root[data-motion='reduce'] .lx-text-glow, :root[data-motion='reduce'] .lx-sheen::after { animation: none !important; }
+:root[data-motion='reduce'] .lx-fleck, :root[data-motion='reduce'] .lx-dot, :root[data-motion='reduce'] .lx-gold::after, :root[data-motion='reduce'] .lx-rim { opacity: 0; }
+
+/* ------------------------------------------------------------------
+ * Idle spring bounce. Runs continuously with per-element timing
+ * (--spring-dur / --spring-delay, see lib/spring.ts). Uses the separate
+ * `translate` and `scale` properties so it stacks with transform-based
+ * hover, press and tilt effects. Off under data-motion="reduce".
+ * ------------------------------------------------------------------ */
+.lx-spring,
+.lx-spring-icon,
+.lx-spring-soft {
+  transform-origin: 50% 100%;
+  animation-duration: var(--spring-dur, 3.2s);
+  animation-delay: var(--spring-delay, 0s);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
+}
+.lx-spring { animation-name: lx-spring; }
+.lx-spring-icon { animation-name: lx-spring-icon; transform-box: fill-box; }
+.lx-spring-soft { animation-name: lx-spring-soft; }
+
+/* hop up (stretch) → land (squash) → small rebound → settle → rest */
+@keyframes lx-spring {
+  0% { translate: 0 0; scale: 1 1; }
+  9% { translate: 0 -4%; scale: 0.985 1.02; }
+  18% { translate: 0 0; scale: 1.025 0.97; }
+  25% { translate: 0 -1.2%; scale: 0.995 1.008; }
+  32% { translate: 0 0; scale: 1.008 0.993; }
+  40%, 100% { translate: 0 0; scale: 1 1; }
+}
+@keyframes lx-spring-icon {
+  0% { translate: 0 0; scale: 1 1; }
+  9% { translate: 0 -14%; scale: 0.94 1.08; }
+  18% { translate: 0 0; scale: 1.1 0.88; }
+  25% { translate: 0 -5%; scale: 0.98 1.03; }
+  32% { translate: 0 0; scale: 1.03 0.97; }
+  40%, 100% { translate: 0 0; scale: 1 1; }
+}
+/* Large panels: a slow, barely-there breathe-bounce. */
+@keyframes lx-spring-soft {
+  0%, 100% { translate: 0 0; scale: 1 1; }
+  12% { translate: 0 -1.2%; scale: 0.997 1.006; }
+  24% { translate: 0 0; scale: 1.006 0.995; }
+  34%, 99% { translate: 0 0; scale: 1 1; }
 }

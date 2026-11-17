@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useMotionSync } from '@/lib/motion';
 
 /**
  * Native integration on device: status bar style, splash hide, keyboard
  * accessory bar, and the Android hardware back button.
  */
 export default function NativeShell() {
+  useMotionSync();
   useEffect(() => {
     (async () => {
       const { Capacitor } = await import('@capacitor/core');

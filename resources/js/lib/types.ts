@@ -68,6 +68,15 @@ export interface Room {
   waiting_players?: number;
   active_tables?: number;
   enabled: boolean;
+  game_mode?: 'classic' | 'round_bank' | 'banker';
+  game_mode_label?: string;
+  rounds_total?: number;
+  min_bet?: string;
+  max_bet?: string | null;
+  betting_seconds?: number;
+  lucky_hands_enabled?: boolean;
+  min_players?: number;
+  is_hosted?: boolean;
 }
 
 export interface SeatPlayer {

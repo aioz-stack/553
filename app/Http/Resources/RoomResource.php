@@ -41,6 +41,19 @@ class RoomResource extends JsonResource
                 ->whereIn('status', [TableStatus::WaitingForPlayers, TableStatus::Ready])
                 ->sum(fn ($t) => $t->players_count ?? $t->players->count())),
             'active_tables' => $this->whenLoaded('tables', fn () => $this->tables->where('status', TableStatus::InGame)->count()),
+            'game_mode' => $this->game_mode->value,
+            'game_mode_label' => $this->game_mode->label(),
+            'rounds_total' => $this->game_mode->hasBanker() ? $this->rounds_total : 1,
+            'min_bet' => Points::decimal($this->entry_amount),
+            'max_bet' => Points::decimal($this->maxBet()),
+            'betting_seconds' => $this->betting_seconds,
+            'lucky_hands_enabled' => $this->lucky_hands_enabled,
+            'is_hosted' => $this->owner_id !== null,
+            'host' => $this->when($this->owner_id !== null && $this->relationLoaded('owner'), fn () => $this->owner?->only(['id', 'username', 'name'])),
+            // Players seated at tables that can still take a seat (banker matches accept mid-match joins).
+            'seated_players' => $this->whenLoaded('tables', fn () => $this->tables
+                ->where('status', '!=', TableStatus::Closed)
+                ->sum(fn ($t) => $t->players_count ?? $t->players->count())),
             'enabled' => $this->currency->value === 'VC' || (bool) config('pusoy.features.cp_wagering'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

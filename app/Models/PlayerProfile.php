@@ -11,7 +11,7 @@ class PlayerProfile extends Model
 
     protected function casts(): array
     {
-        return ['last_daily_reward_on' => 'date'];
+        return ['last_daily_reward_on' => 'date', 'xp' => 'integer'];
     }
 
     public function user(): BelongsTo

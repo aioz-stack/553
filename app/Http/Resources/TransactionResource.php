@@ -38,6 +38,9 @@ class TransactionResource extends JsonResource
             'reason' => $this->reason,
             'game_session_id' => $this->game_session_id,
             'reversal_of_id' => $this->reversal_of_id,
+            // Game context only (role in a banker round, round number) — no other users' data.
+            'game_role' => $this->metadata['role'] ?? null,
+            'round' => $this->metadata['round'] ?? null,
             'created_at' => $this->created_at?->toIso8601String(),
         ];
 

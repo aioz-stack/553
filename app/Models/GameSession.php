@@ -29,6 +29,8 @@ class GameSession extends Model
             'pot' => 'integer',
             'platform_fee' => 'integer',
             'arrangement_deadline' => 'datetime',
+            'betting_deadline' => 'datetime',
+            'round_number' => 'integer',
             'started_at' => 'datetime',
             'revealed_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -74,6 +76,16 @@ class GameSession extends Model
     public function holds(): HasMany
     {
         return $this->hasMany(WalletHold::class);
+    }
+
+    public function bets(): HasMany
+    {
+        return $this->hasMany(GameBet::class);
+    }
+
+    public function isBankerRound(): bool
+    {
+        return ($this->config['game_mode'] ?? 'classic') !== 'classic';
     }
 
     public function hasParticipant(User $user): bool

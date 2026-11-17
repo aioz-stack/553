@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\User;
+use App\Support\Level;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -24,6 +25,7 @@ class UserResource extends JsonResource
             'status' => $this->status->value,
             'profile_picture' => $this->profile_picture,
             'display_name' => $this->whenLoaded('profile', fn () => $this->profile?->display_name),
+            'level' => $this->whenLoaded('profile', fn () => Level::fromXp((int) ($this->profile?->xp ?? 0))),
             'abilities' => $this->when($request->user()?->id === $this->id, fn () => $this->abilityKeys()),
             'permissions' => $this->whenLoaded('permissions', fn () => $this->permissions->pluck('key')->values()),
             'agent' => $this->whenLoaded('agent', fn () => $this->agent ? ['id' => $this->agent->id, 'code' => $this->agent->code, 'status' => $this->agent->status] : null),

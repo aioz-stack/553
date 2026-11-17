@@ -283,6 +283,86 @@ attributed to that winner. Strategy classes: `app/Game/Payout/*`; each result as
 Players cannot choose payout modes. Player-created private rooms are VC-only, fee-free, and use
 `PRIVATE_ROOM_PAYOUT_MODE`.
 
+These two payout modes belong to **classic** rooms (`game_mode = classic`). The seeded classic
+pooled-bank room is now called "Points Bank" so it is not confused with the Round Bank game mode below.
+
+### Game modes: Round Bank and Banker Mode (`game_rooms.game_mode`)
+
+| `game_mode` | Who banks | Match |
+| --- | --- | --- |
+| `classic` | nobody — 4 players, pairwise ±1 scoring, payout mode decides the pot | one deal |
+| `round_bank` | rotates by seat after every round (first eligible seat starts; never the same player twice in a row while someone else is eligible) | `rounds_total` rounds (12) |
+| `banker` | the table creator (player who hosts, or first to sit at an admin room) every round | `rounds_total` rounds (12) |
+
+A **match is one `game_tables` row; each round is one `game_sessions` row** (`round_number`,
+`banker_user_id`). Service: `App\Services\Game\BankerMatchService`; pure maths:
+`App\Game\Banker\BankerRound`; Lucky Hands: `App\Game\LuckyHand`.
+
+Round flow: `BETTING → ARRANGING → SUBMITTED → REVEALING → SCORING → COMPLETED`, then an
+intermission (`BANKER_INTERMISSION_SECONDS`, 8) and the next round (`StartNextRound` job; the
+sweep is the safety net). The match ends after the last round, when fewer than 2 eligible
+players remain, if nobody bets, or if staff cancel a round (that round is refunded; earlier rounds
+stay settled). Hosted rooms are retired with their table.
+
+- **Start:** 2–4 seated (room `min_players`, default 2) and everyone ready. Players may join a
+  running match while a seat is free; they are dealt in from the next round.
+- **Eligibility each round:** connected and holding at least 2 × minimum bet. Offline players sit
+  the round out; offline at the start of 2 rounds in a row → removed.
+- **Banker replacement (Banker Mode):** if the banker left or is offline/short of funds at the
+  start of a round, the eligible player with the **highest available wallet balance** (ties: lowest
+  seat) becomes banker. It only happens between rounds, so the current round always settles first.
+- **Bets:** each non-banker picks a bet in `[min_bet = entry_amount, max_bet]` (default max 10 ×
+  min). The player moves **2 × bet** into escrow and the banker moves **2 × bet** of cover (two wallet
+  holds, idempotency keys `bet:` / `cover:`). A bet the banker cannot cover is refused. Wallet rows
+  are locked in id order before the cover check, so concurrent bets can never over-commit the
+  banker (MySQL concurrency test). Connected players who don't bet by the deadline get the
+  minimum bet automatically; if they can't afford it they sit out.
+- **Lanes vs the banker** (fouled hand loses every lane vs a valid hand; two fouls tie):
+
+  | Result | Pays (× bet) |
+  | --- | --- |
+  | 3 wins / 3 losses | +2 / −2 |
+  | 2 wins 1 loss / 1 win 2 losses | +1 / −1 |
+  | anything with a tie | 0 |
+
+  Configured in `config('pusoy.banker.settlement')` and snapshotted into each round. The banker
+  receives the opposite of all players combined.
+- **Lucky Hands:** six pairs (trips = 1 pair, quads = 2), three flushes (3/5/5 single-suit lanes),
+  three straights (A low or high). Detected on the server from the dealt cards; `POST
+  games/{id}/lucky` re-checks and locks the hand as the submission before any reveal. Lucky vs
+  non-lucky pays 2 × bet (either direction); lucky vs lucky = 0. Paid with ledger type
+  `LUCKY_BONUS`.
+- **Fee:** room `platform_fee_bps` of each positive net win (player or banker), attributed to the
+  winner for agent commissions. Every settlement asserts `Σ payouts + fees = Σ reserves`.
+- **Stats:** `GET profile/stats` → `rounds` (played/won/lost/tied, total bets, winnings, losses,
+  lucky hands & bonuses), `banker` (rounds, bets received, payouts, winnings, losses, remaining
+  rounds in the current match), balances, level. `GET wallet/transactions?role=banker` is the
+  banker transaction history.
+
+### Friends & levels
+
+`friendships` (request → accept). `GET/POST friends`, `POST friends/{id}/accept`,
+`DELETE friends/{id}`, `POST friends/{user}/invite` (invites a friend to the room you are seated
+in). "Online" = `users.last_seen_at` within 2 minutes (written by `TouchLastSeen`, at most once a
+minute). Levels come from `player_profiles.xp` (+10 per round, +15 per win; level n needs 100·n
+more XP). The friends list shows names, level and status only — never balances.
+
+### Mobile landscape home
+
+`mobile/src/app/home/page.tsx` is laid out on a fixed 1600×900 stage (`LandscapeStage`) that
+scales to the screen like a game canvas; artwork is original SVG (`BeachLandscape`, `HomeArt`).
+In the native app the home locks to landscape (`@capacitor/screen-orientation`, status bar hidden)
+and returns to portrait when you leave it; in a portrait browser the stage is rotated 90°. Every
+control is live: profile/level, diamond (VC) balance with live `wallet.updated`, daily bonus,
+leaderboard, notifications, Friends List (search, add, accept/decline, online/last seen, invite),
+Round Bank, Banker Mode, Sound ON/OFF, Settings, Logout.
+
+### Local testing with bots
+
+`php artisan pusoy:bots {room} --players=2 --skip=demo4` seats demo players who heartbeat, ready,
+bet, declare Lucky when they can, and submit the server's auto-arrangement until the match ends
+(local only).
+
 ### Commissions
 
 `commission = floor(fee_attributed_to_player × rate_bps / 10000)` for each player who belongs to an
@@ -305,7 +385,10 @@ Auth endpoint: `/api/v1/broadcasting/auth` (session cookie or bearer token).
 Events (`App\Events\Game\GameEvents`, client listens with a leading dot):
 `player.joined`, `player.left`, `player.ready`, `table.full`, `game.started`, `game.timer`,
 `player.submitted`, `game.all_submitted`, `game.revealed`, `game.scored`, `game.results`,
-`player.disconnected`, `player.reconnected`, `game.cancelled`, and private `cards.dealt`.
+`player.disconnected`, `player.reconnected`, `game.cancelled`; banker modes add `match.started`,
+`round.started`, `banker.assigned`, `player.bet`, `betting.closed`, `player.lucky`,
+`round.completed`, `match.completed`. Private: `cards.dealt` (own cards + own Lucky Hand type) and
+`wallet.updated` (own balance only).
 Events dispatch **after commit**, never contain other players' cards before `REVEALING`, and never
 contain wallet balances.
 
@@ -325,9 +408,10 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Auth | `POST auth/register`, `auth/login`, `auth/logout`, `GET auth/me`, `POST auth/forgot-password`, `auth/reset-password`, `GET/DELETE auth/devices` |
 | Player | `GET/PATCH profile`, `PUT profile/password`, `GET profile/stats`, `profile/games`, `leaderboard`, `notifications`, `POST notifications/read` |
 | Wallet | `GET wallet`, `wallet/transactions`, `POST wallet/daily-reward`, `wallet/allocate` (admin/agent), `wallet/deposit|withdraw` (disabled) |
-| Rooms | `GET rooms`, `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/{id}/invite` |
+| Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
-| Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/preview`, `GET games/{id}/results` |
+| Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
+| Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
 | Admin | `admin/users|players|agents|administrators` (GET/POST), `admin/users/{id}` (GET/PATCH, status, assign-agent, permissions, limits), `admin/rooms`, `admin/tables` (+close), `admin/games` (+cancel, retry), `admin/wallets` (+freeze), `admin/transactions` (+reverse), `admin/adjustments`, `admin/reconcile`, `admin/commissions` (+approve/reject/reverse), `admin/commission-rules`, `admin/reports/overview`, `admin/audit-logs`, `admin/settings` |
@@ -359,7 +443,24 @@ Verified 2026-11-17:
   Android debug APK on the emulator** (login, lobby, live Reverb seating, touch arrangement with
   server hand names, manual submit, results sheet). Ledger reconciliation passes.
 
+Verified 2026-11-18 (game modes):
+
+- 188 Pest tests (adds Lucky Hand detection, banker settlement table, 12-round Round Bank rotation
+  with money conservation and reconciliation, Banker Mode replacement, bet validation, auto-bets,
+  leave rules, late joiners, private cards, cancellation refunds, hosting/stats API, friends,
+  levels), 6 MySQL concurrency tests (adds simultaneous bets against one banker), 13 mobile Vitest
+  tests (adds betting, Lucky declaration, drag-and-drop).
+- Manual (mobile build in a browser at 375×812): beach home, friends add/list, Round Bank match vs
+  two bots — banker rotation, bets, drag-and-drop between lanes, timer auto-arrange, a declared
+  Lucky Hand paid as `LUCKY_BONUS`, final scoreboard; hosting and abandoning a Banker Mode table.
+
 Not done / not verified:
+
+- The **web (Inertia) player table** has not been updated for banker rounds (no bet panel, Lucky
+  button, banker badge or standings) and was not tested with them; a connected web player would
+  only get the automatic minimum bet. Admins can configure the new modes in Game Rooms.
+- A full 12-round match was only played end to end by the automated test; the manual run used a
+  3-round table.
 
 - **iOS** build needs macOS + Xcode; the iOS project is generated but has never been compiled.
 - **Release signing** (Android AAB keystore, iOS provisioning) is yours to set up; only a debug APK

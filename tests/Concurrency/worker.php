@@ -16,6 +16,7 @@ use App\Models\GameCard;
 use App\Models\GameRoom;
 use App\Models\GameSession;
 use App\Models\User;
+use App\Services\Game\BankerMatchService;
 use App\Services\Game\GameEngine;
 use App\Services\Game\TableService;
 use App\Services\Wallet\AllocationService;
@@ -63,6 +64,11 @@ try {
             app(GameEngine::class)->submit($user, $session, $a->front, $a->middle, $a->back);
 
             return ['submitted' => true];
+        })(),
+        'bet' => (function () use ($args) {
+            $bet = app(BankerMatchService::class)->placeBet(User::findOrFail($args['user']), GameSession::findOrFail($args['session']), $args['amount']);
+
+            return ['bet' => $bet->id];
         })(),
         'resolve' => (function () use ($args) {
             app(GameEngine::class)->resolve(GameSession::findOrFail($args['session']));

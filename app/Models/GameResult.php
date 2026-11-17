@@ -18,6 +18,11 @@ class GameResult extends Model
             'payout_amount' => 'integer',
             'net_amount' => 'integer',
             'score' => 'integer',
+            'bet_amount' => 'integer',
+            'lane_results' => 'array',
+            'lucky_bonus' => 'integer',
+            'platform_fee' => 'integer',
+            'round_number' => 'integer',
         ];
     }
 

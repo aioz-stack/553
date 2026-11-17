@@ -170,7 +170,7 @@ class GameEngine
             $count = GameSubmission::query()->where('game_session_id', $session->id)->count();
             event(new TableEvent($session->game_table_id, GameEvents::PLAYER_SUBMITTED, ['session_id' => $session->id, 'user_id' => $user->id, 'submitted_count' => $count]));
 
-            if ($count === 4) {
+            if ($count === GameCard::query()->where('game_session_id', $session->id)->count()) {
                 $this->markAllSubmitted($session);
             }
 
@@ -221,7 +221,7 @@ class GameEngine
             }
 
             if ($session->status === GameStatus::Revealing) {
-                $this->score($session);
+                $session->isBankerRound() ? $this->match()->score($session) : $this->score($session);
                 $session->forceFill(['status' => GameStatus::Scoring])->save();
                 event(new TableEvent($session->game_table_id, GameEvents::SCORING_COMPLETED, [
                     'session_id' => $session->id,
@@ -238,7 +238,7 @@ class GameEngine
 
         // Settlement is its own atomic, idempotent transaction. On failure the
         // session stays in SCORING and is retried by the job / sweep.
-        $this->settlement->settle($session);
+        $session->isBankerRound() ? $this->match()->settle($session) : $this->settlement->settle($session);
 
         DB::transaction(function () use ($session) {
             $session = GameSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
@@ -248,22 +248,34 @@ class GameEngine
             }
 
             $session->forceFill(['status' => GameStatus::Completed, 'completed_at' => now(), 'seed_revealed' => true])->save();
-            GameTable::query()->whereKey($session->game_table_id)->update(['status' => TableStatus::Closed->value, 'closed_at' => now()]);
-
-            foreach (GameResult::query()->where('game_session_id', $session->id)->get() as $result) {
-                $profile = PlayerProfile::query()->firstOrCreate(['user_id' => $result->user_id]);
-                $profile->increment('games_played', 1, [
-                    'games_won' => $profile->games_won + ($result->placement === 1 ? 1 : 0),
-                    'total_score' => $profile->total_score + $result->score,
-                ]);
-            }
 
             event(new TableEvent($session->game_table_id, GameEvents::GAME_RESULTS, [
                 'session_id' => $session->id,
+                'round_number' => $session->round_number,
                 'results' => $this->publicResults($session),
                 'server_seed' => $session->server_seed,
                 'deck_commitment' => $session->deck_commitment,
             ]));
+
+            if ($session->isBankerRound()) {
+                // Banker matches continue with the next round (or end after the last).
+                $this->match()->afterRound($session);
+
+                return;
+            }
+
+            GameTable::query()->whereKey($session->game_table_id)->update(['status' => TableStatus::Closed->value, 'closed_at' => now()]);
+            $xp = config('pusoy.xp');
+
+            foreach (GameResult::query()->where('game_session_id', $session->id)->get() as $result) {
+                $won = $result->placement === 1;
+                $profile = PlayerProfile::query()->firstOrCreate(['user_id' => $result->user_id]);
+                $profile->increment('games_played', 1, [
+                    'games_won' => $profile->games_won + ($won ? 1 : 0),
+                    'total_score' => $profile->total_score + $result->score,
+                    'xp' => $profile->xp + $xp['per_round'] + ($won ? $xp['per_win'] : 0),
+                ]);
+            }
         });
     }
 
@@ -298,10 +310,16 @@ class GameEngine
 
             $session->settlement?->forceFill(['status' => SettlementStatus::Refunded])->save();
             $session->forceFill(['status' => GameStatus::Cancelled, 'cancelled_at' => now(), 'cancel_reason' => $reason, 'seed_revealed' => true])->save();
-            GameTable::query()->whereKey($session->game_table_id)->update(['status' => TableStatus::Closed->value, 'closed_at' => now()]);
 
             AuditLogger::log($actor, 'game.cancel', $session, null, ['reason' => $reason]);
             event(new TableEvent($session->game_table_id, GameEvents::GAME_CANCELLED, ['session_id' => $session->id, 'reason' => $reason]));
+
+            if ($session->isBankerRound()) {
+                // Cancelling a round ends the match; completed rounds stay settled.
+                $this->match()->end(GameTable::query()->whereKey($session->game_table_id)->lockForUpdate()->firstOrFail(), 'cancelled');
+            } else {
+                GameTable::query()->whereKey($session->game_table_id)->update(['status' => TableStatus::Closed->value, 'closed_at' => now()]);
+            }
         });
     }
 
@@ -332,7 +350,7 @@ class GameEngine
         ]);
     }
 
-    private function markAllSubmitted(GameSession $session): void
+    public function markAllSubmitted(GameSession $session): void
     {
         $session->forceFill(['status' => GameStatus::Submitted])->save();
         event(new TableEvent($session->game_table_id, GameEvents::ALL_SUBMITTED, ['session_id' => $session->id]));
@@ -397,6 +415,7 @@ class GameEngine
                     'labels' => $arrangement->labels(),
                     'is_foul' => $s->is_foul,
                     'is_auto' => $s->is_auto,
+                    'lucky_type' => $s->lucky_type,
                 ];
             })->values()->all();
     }
@@ -421,6 +440,17 @@ class GameEngine
                 'entry' => $r->entry_amount,
                 'payout' => $r->payout_amount,
                 'net' => $r->net_amount,
+                'role' => $r->role,
+                'bet' => $r->bet_amount,
+                'lanes' => $r->lane_results,
+                'lucky_type' => $r->lucky_type,
+                'lucky_bonus' => $r->lucky_bonus,
+                'fee' => $r->platform_fee,
             ])->values()->all();
+    }
+
+    private function match(): BankerMatchService
+    {
+        return app(BankerMatchService::class);
     }
 }

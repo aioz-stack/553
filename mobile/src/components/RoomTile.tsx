@@ -8,6 +8,7 @@ import type { Room, TableState } from '@/lib/types';
 import { Coin, GameButton } from './game';
 import { IconBank, IconBolt, IconClock, IconCrown, IconLock, IconSpade, IconUsers } from './icons';
 import { CardFan } from './PlayingCard';
+import { springStyle } from '@/lib/spring';
 
 export function useJoin() {
   const router = useRouter();
@@ -30,6 +31,14 @@ interface Theme {
 export function roomTheme(room: Room): Theme {
   if (room.currency === 'CP') {
     return { bg: 'from-slate-500 via-slate-700 to-slate-900', Icon: IconLock, fan: ['AS', 'AH', 'AD'] };
+  }
+
+  if (room.game_mode === 'banker') {
+    return { bg: 'from-orange-400 via-red-500 to-rose-950', Icon: IconCrown, fan: ['KS', 'KH', 'KD'], tag: room.is_hosted ? 'Hosted' : 'Banker', button: 'gold' };
+  }
+
+  if (room.game_mode === 'round_bank') {
+    return { bg: 'from-sky-400 via-brand-600 to-indigo-950', Icon: IconBank, fan: ['9C', '9D', '9S'], tag: room.is_hosted ? 'Hosted' : 'Round Bank' };
   }
 
   if (room.visibility === 'private') {
@@ -60,6 +69,7 @@ export default function RoomTile({ room, compact }: { room: Room; compact?: bool
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const theme = roomTheme(room);
+  const banker = room.game_mode === 'round_bank' || room.game_mode === 'banker';
 
   const onJoin = async () => {
     setBusy(true);
@@ -73,6 +83,7 @@ export default function RoomTile({ room, compact }: { room: Room; compact?: bool
   };
 
   return (
+    <div className="lx-spring-soft" style={springStyle(room.id, 4, 1.4)}>
     <div className="gold-rim animate-pop rounded-[1.6rem] p-[3px] shadow-[0_10px_24px_rgb(0_0_0/0.45)]">
       <div className={`relative flex h-full flex-col overflow-hidden rounded-[1.45rem] bg-gradient-to-br ${theme.bg} p-3`}>
         <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/15 blur-xl" />
@@ -90,12 +101,16 @@ export default function RoomTile({ room, compact }: { room: Room; compact?: bool
         </div>
 
         <h3 className="text-center font-display text-lg font-black leading-tight text-white drop-shadow-[0_2px_0_rgb(0_0_0/0.35)]">{room.name}</h3>
-        {!compact && <p className="mt-0.5 line-clamp-2 text-center text-[11px] text-white/75">{titleCase(room.payout_mode)} · {titleCase(room.tie_handling)} ties</p>}
+        {!compact && (
+          <p className="mt-0.5 line-clamp-2 text-center text-[11px] text-white/75">
+            {banker ? `${room.rounds_total} rounds${room.host ? ` · host ${room.host.username}` : ''}` : `${titleCase(room.payout_mode)} · ${titleCase(room.tie_handling)} ties`}
+          </p>
+        )}
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-1 text-[11px] font-bold text-white/90">
           <span className="inline-flex items-center gap-1 rounded-full bg-black/35 py-0.5 pl-0.5 pr-2">
             <Coin currency={room.currency} size={18} />
-            {points(room.entry_amount)}
+            {banker ? `${points(room.min_bet).replace(/\.00$/, '')}–${points(room.max_bet).replace(/\.00$/, '')}` : points(room.entry_amount)}
           </span>
           <span className="inline-flex items-center gap-1 rounded-full bg-black/35 px-2 py-0.5">
             <IconClock className="h-3.5 w-3.5" />
@@ -104,7 +119,7 @@ export default function RoomTile({ room, compact }: { room: Room; compact?: bool
           {!compact && (
             <span className="inline-flex items-center gap-1 rounded-full bg-black/35 px-2 py-0.5">
               <IconUsers className="h-3.5 w-3.5" />
-              {room.waiting_players ?? 0}
+              {banker ? `${room.seated_players ?? 0}` : (room.waiting_players ?? 0)}
             </span>
           )}
         </div>
@@ -118,6 +133,7 @@ export default function RoomTile({ room, compact }: { room: Room; compact?: bool
           {room.enabled ? (busy ? 'Joining…' : 'PLAY') : 'Locked'}
         </GameButton>
       </div>
+    </div>
     </div>
   );
 }
