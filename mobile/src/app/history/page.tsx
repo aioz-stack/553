@@ -14,6 +14,8 @@ interface Game {
   my_result: { score: number; placement: number; net: string } | null;
 }
 
+const MEDAL = ['👑', '🥈', '🥉', '4'];
+
 export default function History() {
   const { user } = useAuth();
   const { data, loading } = useFetch<{ data: Game[] }>(user ? '/profile/games' : null);
@@ -21,25 +23,28 @@ export default function History() {
   return (
     <Screen title="Game history" back>
       {loading && <Spinner />}
-      {data?.data.length === 0 && <p className="text-center text-sm text-gray-500">No games yet.</p>}
-      {data?.data.map((g) => (
-        <Link key={g.id} href={`/results/?id=${g.id}`} className="mb-2 flex items-center justify-between rounded-2xl bg-white p-4 dark:bg-gray-900">
-          <div>
-            <p className="font-medium text-gray-900 dark:text-white">#{g.id} · {g.room.name}</p>
-            <p className="text-xs text-gray-500">{when(g.started_at)}</p>
-          </div>
-          <div className="text-right">
+      {data?.data.length === 0 && <p className="pt-10 text-center text-white/60">No games yet — go win one!</p>}
+      <div className="space-y-2">
+        {data?.data.map((g) => (
+          <Link key={g.id} href={`/results/?id=${g.id}`} className="glass flex items-center gap-3 rounded-2xl p-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-b from-felt-400 to-felt-700 font-display text-lg font-black">
+              {g.my_result ? MEDAL[g.my_result.placement - 1] : '•'}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display font-extrabold">{g.room.name}</p>
+              <p className="text-[11px] text-white/55">#{g.id} · {when(g.started_at)}</p>
+            </div>
             {g.my_result ? (
-              <>
-                <p className="text-sm font-semibold">#{g.my_result.placement} · {g.my_result.score} pts</p>
-                <p className={`text-xs ${Number(g.my_result.net) >= 0 ? 'text-success-700' : 'text-error-700'}`}>{points(g.my_result.net, g.currency)}</p>
-              </>
+              <div className="text-right">
+                <p className="font-display text-sm font-black text-gold-200">{g.my_result.score} pts</p>
+                <p className={`text-xs font-bold ${Number(g.my_result.net) >= 0 ? 'text-mint-400' : 'text-candy-400'}`}>{points(g.my_result.net, g.currency)}</p>
+              </div>
             ) : (
               <Badge>{titleCase(g.status)}</Badge>
             )}
-          </div>
-        </Link>
-      ))}
+          </Link>
+        ))}
+      </div>
     </Screen>
   );
 }

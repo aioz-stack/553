@@ -4,32 +4,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import ArrangeHands from '@/components/ArrangeHands';
+import { Avatar, Coin, Confetti, GameButton, Ribbon } from '@/components/game';
 import PlayingCard from '@/components/PlayingCard';
-import { Badge, Button, Notice, Screen, Spinner } from '@/components/ui';
+import { Felt, PotDisplay, RevealedHand, Seat, TimerRing } from '@/components/TableView';
+import { Notice, Screen, Spinner } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { points, titleCase, useQueryParam } from '@/lib/hooks';
 import type { SeatPlayer } from '@/lib/types';
 import { useSecondsLeft, useTable } from '@/lib/useTable';
 
-function SeatChip({ p, inGame }: { p?: SeatPlayer; inGame: boolean }) {
-  if (!p) {
-    return <div className="w-20 rounded-lg border border-dashed border-white/30 py-2 text-center text-[11px] text-white/50">Waiting…</div>;
-  }
-
-  return (
-    <div className={`w-20 rounded-lg border py-1.5 text-center text-white ${p.is_you ? 'border-brand-300 bg-brand-500/30' : 'border-white/20 bg-white/10'}`}>
-      <p className="truncate px-1 text-xs font-semibold">{p.is_you ? 'You' : p.name}</p>
-      <div className="mt-0.5 flex justify-center gap-1 text-[10px]">
-        {!p.is_connected && <span className="rounded bg-error-500 px-1">off</span>}
-        {inGame ? p.has_submitted && <span className="rounded bg-success-500 px-1">done</span> : p.is_ready && <span className="rounded bg-success-500 px-1">ready</span>}
-      </div>
-    </div>
-  );
-}
-
 /**
- * Portrait game table: waiting room → arrangement → reveal & result overlay.
+ * Portrait game table: waiting room → arrangement → reveal → results.
+ * All state comes from the server (useTable); this file is presentation.
  */
 export default function Play() {
   const { user } = useAuth();
@@ -39,6 +26,7 @@ export default function Play() {
   const { table, session, error, live, refresh, clockOffset } = useTable(tableId, user?.id);
   const secondsLeft = useSecondsLeft(session?.status === 'ARRANGING' ? session.arrangement_deadline : null, clockOffset);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   const act = async (fn: () => Promise<unknown>) => {
     setActionError(null);
@@ -52,123 +40,186 @@ export default function Play() {
 
   if (!table) {
     return (
-      <Screen title="Table" back tabs={false}>
-        {error ? <Notice>{error}</Notice> : <Spinner />}
+      <Screen title="Table" back tabs={false} hud={false}>
+        {error ? <Notice>{error}</Notice> : <div className="pt-24"><Spinner /></div>}
       </Screen>
     );
   }
 
   const inGame = !!session;
-  const players = inGame ? session!.players : table.players;
+  const players: SeatPlayer[] = inGame ? session!.players : table.players;
   const me = table.players.find((p) => p.is_you);
-  const seat = (n: number) => players.find((p) => p.seat === n);
+  const mySeat = me?.seat ?? 1;
+  const seat = (offset: number) => players.find((p) => p.seat === ((mySeat - 1 + offset) % 4) + 1);
   const currency = table.room.currency;
-  const showResults = session?.status === 'COMPLETED' && session.results;
+  const results = session?.results ?? null;
+  const byUser = (id?: number) => results?.find((r) => r.user_id === id);
+  const arrangementOf = (id?: number) => session?.arrangements?.find((a) => a.user_id === id);
+  const myResult = byUser(user?.id);
+  const showResults = session?.status === 'COMPLETED' && !!results && !dismissed;
 
   return (
     <Screen
       title={table.room.name}
       back
       tabs={false}
+      hud={false}
       action={
-        session?.status === 'ARRANGING' ? (
-          <span className={`rounded-full px-3 py-1 text-sm font-bold ${secondsLeft <= 15 ? 'bg-error-500' : 'bg-white/15'}`}>⏱ {secondsLeft}s</span>
-        ) : (
-          <Badge tone={live ? 'success' : 'warning'}>{live ? 'Live' : 'Syncing'}</Badge>
-        )
+        <span className="flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-black/40 py-0.5 pl-0.5 pr-2 font-display text-xs font-black text-gold-200">
+            <Coin currency={currency} size={18} />
+            {points(table.room.entry_amount)}
+          </span>
+          <span className={`h-2.5 w-2.5 rounded-full ${live ? 'bg-mint-400 shadow-[0_0_8px_#45e0a5]' : 'animate-pulse bg-gold-400'}`} title={live ? 'Live' : 'Syncing'} />
+        </span>
       }
     >
-      <div className="-mx-4 -mt-4 safe-bottom min-h-[calc(100dvh-3.5rem)] bg-gradient-to-b from-emerald-800 to-emerald-950 px-3 pt-3">
-        {error && <Notice>{error}</Notice>}
-        {actionError && <Notice>{actionError}</Notice>}
+      {error && <Notice>{error}</Notice>}
+      {actionError && <Notice>{actionError}</Notice>}
 
-        <div className="mb-2 flex flex-wrap justify-center gap-1.5">
-          <Badge>{titleCase(session?.status ?? table.status)}</Badge>
-          <Badge>Entry {points(table.room.entry_amount, currency)}</Badge>
-          {session && <Badge>Pot {points(session.pot, currency)}</Badge>}
-        </div>
-
-        {/* Four seats around the felt; you are always shown at the bottom. */}
-        <div className="relative mx-auto mb-3 h-44 max-w-sm rounded-[50%] border-4 border-amber-900/50 bg-emerald-700/60">
-          <div className="absolute left-1/2 top-1 -translate-x-1/2"><SeatChip p={seat(((me?.seat ?? 1) + 1) % 4 + 1)} inGame={inGame} /></div>
-          <div className="absolute left-1 top-1/2 -translate-y-1/2"><SeatChip p={seat((me?.seat ?? 1) % 4 + 1)} inGame={inGame} /></div>
-          <div className="absolute right-1 top-1/2 -translate-y-1/2"><SeatChip p={seat(((me?.seat ?? 1) + 2) % 4 + 1)} inGame={inGame} /></div>
-          <div className="absolute bottom-1 left-1/2 -translate-x-1/2"><SeatChip p={seat(me?.seat ?? 1)} inGame={inGame} /></div>
-          <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 gap-0.5">
-            <PlayingCard faceDown small />
-            <PlayingCard faceDown small />
+      {/* Felt with four seats */}
+      <Felt>
+        <div className="grid grid-cols-3 grid-rows-[auto_auto_auto] items-center gap-y-1">
+          <div />
+          <div className="flex justify-center">
+            <Seat position="top" player={seat(2)} inGame={inGame} arrangement={arrangementOf(seat(2)?.user_id)} result={byUser(seat(2)?.user_id)} />
           </div>
-        </div>
+          <div />
 
+          <div className="flex justify-center">
+            <Seat position="left" player={seat(1)} inGame={inGame} arrangement={arrangementOf(seat(1)?.user_id)} result={byUser(seat(1)?.user_id)} />
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            {session?.status === 'ARRANGING' ? (
+              <TimerRing seconds={secondsLeft} total={session.config.arrangement_seconds ?? 90} />
+            ) : (
+              <div className="flex -space-x-3">
+                <PlayingCard faceDown size="xs" className="-rotate-12" />
+                <PlayingCard faceDown size="xs" />
+                <PlayingCard faceDown size="xs" className="rotate-12" />
+              </div>
+            )}
+            {inGame ? <PotDisplay pot={session!.pot} currency={currency} /> : <span className="rounded-full bg-black/40 px-2 font-display text-xs font-black text-white">{table.players.length}/4</span>}
+          </div>
+          <div className="flex justify-center">
+            <Seat position="right" player={seat(3)} inGame={inGame} arrangement={arrangementOf(seat(3)?.user_id)} result={byUser(seat(3)?.user_id)} />
+          </div>
+
+          <div />
+          <div className="flex justify-center pt-1">
+            <Seat position="bottom" player={seat(0)} inGame={inGame} result={byUser(seat(0)?.user_id)} />
+          </div>
+          <div />
+        </div>
+        <p className="relative mt-2 text-center font-display text-[11px] font-extrabold uppercase tracking-wider text-white/70">
+          {titleCase(session?.status ?? table.status)} · {titleCase(table.room.payout_mode)}
+        </p>
+      </Felt>
+
+      <div className="safe-bottom mt-4 pb-6">
+        {/* Waiting room */}
         {!inGame && me && (
-          <div className="rounded-2xl bg-black/20 p-4 text-white">
-            <p className="mb-3 text-sm text-white/80">{table.players.length}/4 seated. The deal starts when all four are ready.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant={me.is_ready ? 'outline' : 'success'} className={me.is_ready ? 'border-white/40 text-white' : ''} onClick={() => act(() => api(`/tables/${table.id}/ready`, { method: 'POST', body: { ready: !me.is_ready } }))}>
-                {me.is_ready ? 'Not ready' : "I'm ready"}
-              </Button>
-              <Button variant="danger" className="border-white/40 text-white" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace('/lobby/'); })}>
-                Leave & refund
-              </Button>
+          <div className="glass rounded-3xl p-4 text-center">
+            <Ribbon tone="blue">Waiting Room</Ribbon>
+            <p className="my-3 text-sm text-white/75">
+              {table.players.length < 4 ? `Waiting for ${4 - table.players.length} more player${4 - table.players.length === 1 ? '' : 's'}…` : 'Table full! The deal starts when everyone is ready.'}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <GameButton tone={me.is_ready ? 'glass' : 'green'} size="lg" onClick={() => act(() => api(`/tables/${table.id}/ready`, { method: 'POST', body: { ready: !me.is_ready } }))}>
+                {me.is_ready ? 'NOT READY' : 'READY!'}
+              </GameButton>
+              <GameButton tone="red" size="lg" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace('/lobby/'); })}>
+                LEAVE
+              </GameButton>
+            </div>
+            <p className="mt-3 text-[11px] text-white/50">Leaving before the deal refunds your entry.</p>
+          </div>
+        )}
+
+        {/* Arranging */}
+        {session?.status === 'ARRANGING' && session.my_cards && !session.my_submission && (
+          <ArrangeHands sessionId={session.id} cards={session.my_cards} allowFoul={session.config.allow_foul_submission} onSubmitted={refresh} />
+        )}
+
+        {session?.my_submission && !session.arrangements && (
+          <div className="glass rounded-3xl p-5 text-center">
+            <p className="font-display text-xl font-black text-mint-400">Hand locked in!</p>
+            <p className="mt-1 text-sm text-white/70">Waiting for the others…</p>
+            <div className="mt-3 space-y-1">
+              {(['front', 'middle', 'back'] as const).map((r) => (
+                <div key={r} className="flex justify-center gap-1">
+                  {session.my_submission![r].map((c) => (
+                    <PlayingCard key={c} code={c} size="sm" />
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {session?.status === 'ARRANGING' && session.my_cards && !session.my_submission && (
-          <div className="pb-8">
-            <ArrangeHands sessionId={session.id} cards={session.my_cards} allowFoul={session.config.allow_foul_submission} onSubmitted={refresh} />
-          </div>
-        )}
-
-        {session?.my_submission && !session.arrangements && (
-          <div className="rounded-2xl bg-black/20 p-4 text-center text-white">
-            <p className="font-semibold">Arrangement submitted ✓</p>
-            <p className="text-sm text-white/70">Waiting for the other players…</p>
-          </div>
-        )}
-
+        {/* Reveal */}
         {session?.arrangements && (
-          <div className="space-y-2">
-            {session.arrangements.map((a) => (
-              <div key={a.user_id} className="rounded-xl bg-black/25 p-2 text-white">
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-semibold">{a.name}</span>
-                  <span>
-                    {a.is_foul && <Badge tone="error">Foul</Badge>} {a.is_auto && <Badge tone="warning">Auto</Badge>}
-                  </span>
-                </div>
-                {(['front', 'middle', 'back'] as const).map((r) => (
-                  <div key={r} className="mb-1 flex items-center gap-1">
-                    {a[r].map((c) => <PlayingCard key={c} code={c} small />)}
-                    <span className="ml-1 text-[10px] text-white/70">{a.labels[r]}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <Ribbon tone="gold">Showdown</Ribbon>
+              {session.status === 'COMPLETED' && dismissed && (
+                <button onClick={() => setDismissed(false)} className="font-display text-sm font-extrabold text-gold-300">
+                  Results ›
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {session.arrangements.map((a) => (
+                <RevealedHand key={a.user_id} a={a} result={byUser(a.user_id)} currency={currency} />
+              ))}
+            </div>
           </div>
         )}
 
-        {session?.status === 'CANCELLED' && <Notice tone="warning">Game cancelled ({session.cancel_reason}). Entries refunded.</Notice>}
+        {session?.status === 'CANCELLED' && <Notice tone="warning">Game cancelled ({session.cancel_reason}). Entries were refunded.</Notice>}
       </div>
 
+      {/* Results sheet */}
       {showResults && (
-        <div className="fixed inset-0 z-30 flex items-end bg-black/60" role="dialog" aria-label="Results">
-          <div className="safe-bottom w-full rounded-t-3xl bg-white p-5 dark:bg-gray-900">
-            <h2 className="mb-3 text-center text-xl font-bold text-gray-900 dark:text-white">Results</h2>
-            {session!.results!.map((r) => (
-              <div key={r.user_id} className="flex items-center justify-between border-b border-gray-100 py-2 dark:border-gray-800">
-                <span className="text-sm text-gray-800 dark:text-gray-100">
-                  #{r.placement} {r.name} {r.is_foul && <Badge tone="error">Foul</Badge>}
-                </span>
-                <span className="text-sm">
-                  <strong className={r.score >= 0 ? 'text-success-700' : 'text-error-700'}>{r.score > 0 ? `+${r.score}` : r.score}</strong>{' '}
-                  <span className="text-gray-500">{Number(r.net) >= 0 ? '+' : ''}{points(r.net, currency)}</span>
-                </span>
-              </div>
-            ))}
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <Link href={`/results/?id=${session!.id}`}><Button variant="outline" className="w-full">Details</Button></Link>
-              <Button onClick={() => router.replace('/lobby/')}>Play again</Button>
+        <div className="fixed inset-0 z-30 flex items-end bg-black/70 backdrop-blur-sm" role="dialog" aria-label="Results">
+          {myResult?.placement === 1 && <Confetti />}
+          <div className="safe-bottom animate-pop w-full rounded-t-[2rem] border-t-4 border-gold-400 bg-gradient-to-b from-night-700 to-night-950 px-5 pt-6">
+            <div className="-mt-12 mb-2 text-center">
+              <span className="inline-block -rotate-3 rounded-2xl bg-gradient-to-b from-gold-200 via-gold-400 to-gold-600 px-6 py-2 font-display text-3xl font-black text-night-900 shadow-[0_6px_0_#9a5b03,0_12px_24px_rgb(0_0_0/0.5)]">
+                {myResult?.placement === 1 ? 'YOU WIN!' : myResult ? `#${myResult.placement} PLACE` : 'RESULTS'}
+              </span>
+            </div>
+            {myResult && (
+              <p className={`mb-3 text-center font-display text-2xl font-black ${Number(myResult.net) >= 0 ? 'text-mint-400' : 'text-candy-400'}`}>
+                {Number(myResult.net) >= 0 ? '+' : ''}
+                {points(myResult.net, currency)}
+              </p>
+            )}
+            <ul className="space-y-1.5">
+              {results!.map((r) => (
+                <li key={r.user_id} className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${r.user_id === user?.id ? 'bg-gold-400/20 ring-2 ring-gold-400/60' : 'bg-white/8'}`}>
+                  <span className="w-6 text-center font-display text-lg font-black text-gold-300">{r.placement === 1 ? '👑' : r.placement}</span>
+                  <Avatar name={r.name} size={34} />
+                  <span className="flex-1 truncate font-bold">
+                    {r.name} {r.is_foul && <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] font-black">FOUL</span>}
+                  </span>
+                  <span className="text-right">
+                    <span className={`block font-display text-sm font-black ${r.score >= 0 ? 'text-mint-400' : 'text-candy-400'}`}>{r.score > 0 ? `+${r.score}` : r.score} pts</span>
+                    <span className="block text-[11px] text-white/60">{Number(r.net) >= 0 ? '+' : ''}{points(r.net)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 grid grid-cols-3 gap-2 pb-2">
+              <GameButton tone="glass" size="md" onClick={() => setDismissed(true)}>
+                View
+              </GameButton>
+              <Link href={`/results/?id=${session!.id}`} className="contents">
+                <GameButton tone="purple" size="md">Details</GameButton>
+              </Link>
+              <GameButton tone="gold" size="md" onClick={() => router.replace('/lobby/')}>
+                AGAIN
+              </GameButton>
             </div>
           </div>
         </div>

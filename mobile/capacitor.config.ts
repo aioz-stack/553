@@ -10,7 +10,7 @@ const config: CapacitorConfig = {
   appId: 'ph.pusoy13.app',
   appName: 'Pusoy 13',
   webDir: 'out',
-  backgroundColor: '#161950',
+  backgroundColor: '#170a3a',
   // LOCAL TESTING ONLY: `CAP_DEV_HTTP=1 npx cap sync` lets the app reach a plain-http
   // backend (e.g. http://10.0.2.2:8000 from the Android emulator). Never ship with it.
   ...(process.env.CAP_DEV_HTTP === '1' ? { server: { androidScheme: 'http', cleartext: true } } : {}),
@@ -24,7 +24,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 1200,
       launchAutoHide: true,
-      backgroundColor: '#161950',
+      backgroundColor: '#170a3a',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
       splashFullScreen: true,
@@ -32,7 +32,7 @@ const config: CapacitorConfig = {
     },
     StatusBar: {
       style: 'DARK',
-      backgroundColor: '#161950',
+      backgroundColor: '#170a3a',
       overlaysWebView: false,
     },
     PushNotifications: {

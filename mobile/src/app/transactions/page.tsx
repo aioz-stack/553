@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Badge, Button, Screen, Spinner } from '@/components/ui';
+import { Coin, GameButton } from '@/components/game';
+import { Screen, Spinner } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { points, titleCase, useFetch, when } from '@/lib/hooks';
 import type { Transaction } from '@/lib/types';
@@ -14,26 +15,26 @@ export default function Transactions() {
   return (
     <Screen title="Transactions" back>
       {loading && <Spinner />}
-      <ul className="divide-y divide-gray-200 rounded-2xl bg-white dark:divide-gray-800 dark:bg-gray-900">
+      {data?.data.length === 0 && <p className="pt-10 text-center text-white/60">No transactions yet.</p>}
+      <ul className="space-y-2">
         {data?.data.map((t) => (
-          <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{titleCase(t.type)}</p>
-              <p className="truncate text-xs text-gray-500">{when(t.created_at)} · {t.reference}</p>
+          <li key={t.id} className="glass flex items-center gap-3 rounded-2xl px-3 py-3">
+            <Coin currency={t.currency} size={34} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-sm font-extrabold">{titleCase(t.type)}</p>
+              <p className="truncate text-[11px] text-white/55">{when(t.created_at)} · {t.reference}</p>
             </div>
-            <div className="text-right">
-              <p className={`text-sm font-semibold ${t.direction === 'in' ? 'text-success-700' : 'text-error-700'}`}>
-                {t.direction === 'in' ? '+' : '−'}{points(t.amount)}
-              </p>
-              <Badge>{t.currency}</Badge>
-            </div>
+            <p className={`font-display text-base font-black ${t.direction === 'in' ? 'text-mint-400' : 'text-candy-400'}`}>
+              {t.direction === 'in' ? '+' : '−'}
+              {points(t.amount)}
+            </p>
           </li>
         ))}
       </ul>
       {data?.meta && data.meta.last_page > 1 && (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
-          <Button variant="outline" disabled={page >= data.meta.last_page} onClick={() => setPage(page + 1)}>Next</Button>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <GameButton tone="glass" disabled={page <= 1} onClick={() => setPage(page - 1)}>‹ Prev</GameButton>
+          <GameButton tone="glass" disabled={page >= data.meta.last_page} onClick={() => setPage(page + 1)}>Next ›</GameButton>
         </div>
       )}
     </Screen>

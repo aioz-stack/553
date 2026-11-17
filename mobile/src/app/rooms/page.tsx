@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { GameButton, GlassCard } from '@/components/game';
 import RoomTile, { useJoin } from '@/components/RoomTile';
-import { Button, Field, Notice, Panel, Screen } from '@/components/ui';
+import { Field, Notice, Screen } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFetch } from '@/lib/hooks';
@@ -36,30 +37,40 @@ export default function Rooms() {
   };
 
   return (
-    <Screen title="Game rooms" back>
+    <Screen title="All rooms" back>
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
-      <div className="mb-4 flex gap-2">
+
+      <div className="glass mb-4 flex gap-1 rounded-2xl p-1">
         {(['', 'VC', 'CP'] as const).map((c) => (
-          <button key={c} onClick={() => setCurrency(c)} className={`h-10 flex-1 rounded-xl text-sm font-medium ${currency === c ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 dark:bg-gray-900'}`}>
+          <button
+            key={c}
+            onClick={() => setCurrency(c)}
+            className={`h-10 flex-1 rounded-xl font-display text-sm font-extrabold transition ${currency === c ? 'bg-gradient-to-b from-gold-300 to-gold-500 text-night-900 shadow' : 'text-white/70'}`}
+          >
             {c || 'All'}
           </button>
         ))}
       </div>
-      {rooms.data?.data.map((room) => <RoomTile key={room.id} room={room} />)}
 
-      <Panel title="Join a private room">
+      <div className="mb-5 grid grid-cols-2 gap-3">
+        {rooms.data?.data.map((room) => (
+          <RoomTile key={room.id} room={room} />
+        ))}
+      </div>
+
+      <GlassCard title="Join a private room">
         <div className="grid grid-cols-2 gap-2">
           <Field label="Room #" inputMode="numeric" value={code.room} onChange={(e) => setCode({ ...code, room: e.target.value })} />
           <Field label="Invite code" autoCapitalize="characters" value={code.code} onChange={(e) => setCode({ ...code, code: e.target.value.toUpperCase() })} />
         </div>
-        <Button className="w-full" onClick={joinPrivate} disabled={!code.room}>Join</Button>
-      </Panel>
+        <GameButton tone="green" className="w-full" onClick={joinPrivate} disabled={!code.room}>JOIN</GameButton>
+      </GlassCard>
 
-      <Panel title="Create a private VC room">
+      <GlassCard title="Create a private VC room">
         <Field label="Room name" value={privateRoom.name} onChange={(e) => setPrivateRoom({ ...privateRoom, name: e.target.value })} />
         <Field label="Entry (VC)" inputMode="decimal" value={privateRoom.entry_amount} onChange={(e) => setPrivateRoom({ ...privateRoom, entry_amount: e.target.value })} />
-        <Button className="w-full" variant="outline" onClick={create} disabled={!privateRoom.name}>Create</Button>
-      </Panel>
+        <GameButton tone="purple" className="w-full" onClick={create} disabled={!privateRoom.name}>CREATE ROOM</GameButton>
+      </GlassCard>
     </Screen>
   );
 }

@@ -25,7 +25,7 @@ export default function NativeShell() {
       await StatusBar.setStyle({ style: Style.Dark }).catch(() => undefined);
 
       if (Capacitor.getPlatform() === 'android') {
-        await StatusBar.setBackgroundColor({ color: '#161950' }).catch(() => undefined);
+        await StatusBar.setBackgroundColor({ color: '#170a3a' }).catch(() => undefined);
       }
 
       await Keyboard.setAccessoryBarVisible({ isVisible: true }).catch(() => undefined);

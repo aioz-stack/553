@@ -2,14 +2,16 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Button } from '@/components/ui';
+import { Coin, GameButton } from '@/components/game';
+import { IconShield, IconTrophy } from '@/components/icons';
+import { CardFan } from '@/components/PlayingCard';
 import { storage } from '@/lib/storage';
 
 const SLIDES = [
-  { icon: '♠♥♦♣', title: 'Thirteen cards, three hands', text: 'Arrange your cards into a Front (3), Middle (5) and Back (5). Back must be the strongest.' },
-  { icon: '⚔️', title: 'Beat every opponent', text: 'Each hand is compared with the same hand of the other three players: +1 win, −1 loss, 0 tie.' },
-  { icon: '🪙', title: 'Free-play Virtual Coins', text: 'Play with VC credited by your agent or the free daily reward. VC is never redeemable for money.' },
-  { icon: '🔒', title: 'Provably fair', text: 'Every deck is committed before the deal and the seed is revealed after the game so anyone can verify it.' },
+  { art: <CardFan cards={['AS', 'AH', 'KD', 'KC', 'QS']} size="md" spread={10} />, title: '13 cards, 3 hands', text: 'Arrange your cards into a Front (3), Middle (5) and Back (5). The Back must be your strongest.' },
+  { art: <IconTrophy className="h-24 w-24 text-gold-400 drop-shadow-[0_6px_0_#9a5b03]" />, title: 'Beat every rival', text: 'Each hand is compared with the same hand of all three opponents: +1 win, −1 loss, 0 tie.' },
+  { art: <div className="flex -space-x-4"><Coin size={72} /><Coin size={72} className="-translate-y-3" /><Coin size={72} /></div>, title: 'Free-play coins', text: 'Play with Virtual Coins from your agent or the daily bonus. VC is never redeemable for money.' },
+  { art: <IconShield className="h-24 w-24 text-mint-400 drop-shadow-[0_6px_0_#06724c]" />, title: 'Provably fair', text: 'Every deck is locked in before the deal and revealed afterwards so anyone can verify it.' },
 ];
 
 export default function Onboarding() {
@@ -24,23 +26,23 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="safe-top safe-bottom flex min-h-dvh flex-col bg-brand-950 px-6 text-white">
-      <button onClick={finish} className="ml-auto mt-4 h-10 text-sm text-white/60">
+    <div className="game-bg safe-top safe-bottom flex min-h-dvh flex-col px-6 text-white">
+      <button onClick={finish} className="ml-auto mt-4 h-10 rounded-full bg-white/10 px-4 font-display text-sm font-bold text-white/80">
         Skip
       </button>
-      <div className="flex flex-1 flex-col items-center justify-center text-center">
-        <div className="mb-8 text-6xl">{slide.icon}</div>
-        <h1 className="mb-3 text-2xl font-bold">{slide.title}</h1>
-        <p className="max-w-xs text-white/70">{slide.text}</p>
+      <div key={index} className="animate-pop flex flex-1 flex-col items-center justify-center text-center">
+        <div className="mb-8 flex h-40 items-center justify-center">{slide.art}</div>
+        <h1 className="mb-3 font-display text-3xl font-black">{slide.title}</h1>
+        <p className="max-w-xs text-white/75">{slide.text}</p>
       </div>
       <div className="mb-6 flex justify-center gap-2">
         {SLIDES.map((_, i) => (
-          <span key={i} className={`h-2 rounded-full transition-all ${i === index ? 'w-6 bg-brand-400' : 'w-2 bg-white/30'}`} />
+          <span key={i} className={`h-2.5 rounded-full transition-all ${i === index ? 'w-8 bg-gold-400' : 'w-2.5 bg-white/25'}`} />
         ))}
       </div>
-      <Button className="mb-8 w-full" onClick={() => (last ? finish() : setIndex(index + 1))}>
-        {last ? 'Get started' : 'Next'}
-      </Button>
+      <GameButton size="lg" className="mb-8 w-full" onClick={() => (last ? finish() : setIndex(index + 1))}>
+        {last ? "LET'S PLAY" : 'NEXT'}
+      </GameButton>
     </div>
   );
 }

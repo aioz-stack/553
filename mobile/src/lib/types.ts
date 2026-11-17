@@ -89,7 +89,7 @@ export interface SessionState {
   arrangement_deadline: string | null;
   deck_commitment: string;
   server_seed: string | null;
-  config: { room_name: string; currency: Currency; entry_amount: string; payout_mode: string; allow_foul_submission: boolean };
+  config: { room_name: string; currency: Currency; entry_amount: string; payout_mode: string; allow_foul_submission: boolean; arrangement_seconds: number };
   pot: string;
   players: SeatPlayer[];
   my_cards: string[] | null;

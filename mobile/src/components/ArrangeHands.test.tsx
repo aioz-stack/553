@@ -27,21 +27,20 @@ describe('ArrangeHands (mobile)', () => {
     const onSubmitted = vi.fn();
     render(<ArrangeHands sessionId={3} cards={CARDS} allowFoul={false} onSubmitted={onSubmitted} />);
 
+    const NAMES: Record<string, string> = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
     const tap = async (codes: string[], row: string) => {
       for (const code of codes) {
         const rank = code[0] === 'T' ? '10' : code[0];
-        const suit = { S: '♠', H: '♥', D: '♦', C: '♣' }[code[1]]!;
-        const button = screen.getAllByRole('button').find((b) => b.textContent === `${rank}${suit}` && b.getAttribute('aria-pressed') !== null);
-        await user.click(button!);
+        await user.click(screen.getByRole('button', { name: `${rank} of ${NAMES[code[1]]}` }));
       }
-      await user.click(screen.getByText(new RegExp(`^${row} \\d/`)).closest('div[class*="border-dashed"]') as HTMLElement);
+      await user.click(screen.getByRole('button', { name: `${row} row` }));
     };
 
     await tap(['2C', '3D', '4H'], 'Front');
     await tap(['TC', 'TD', '9H', '8S', '5D'], 'Middle');
     await tap(['AC', 'AD', 'AH', 'KS', 'KD'], 'Back');
 
-    const submit = screen.getByRole('button', { name: /submit arrangement/i });
+    const submit = screen.getByRole('button', { name: /submit hand/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
 
@@ -54,7 +53,7 @@ describe('ArrangeHands (mobile)', () => {
 
   it('keeps submit disabled until every card is placed', () => {
     render(<ArrangeHands sessionId={3} cards={CARDS} allowFoul={false} onSubmitted={() => undefined} />);
-    expect(screen.getByRole('button', { name: /submit arrangement/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /submit hand/i })).toBeDisabled();
   });
 
   it('sorts cards for display only', () => {

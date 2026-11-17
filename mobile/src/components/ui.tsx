@@ -2,29 +2,51 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useOnline } from '@/lib/hooks';
+import type { Wallet } from '@/lib/types';
+import { Avatar, CoinPill, GameButton, GlassCard } from './game';
+import { IconBack, IconBell, IconHome, IconSpade, IconTrophy, IconUser, IconWallet } from './icons';
 
 const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(' ');
 
 const TABS = [
-  { href: '/home/', label: 'Home', icon: '⌂' },
-  { href: '/lobby/', label: 'Play', icon: '♠' },
-  { href: '/wallet/', label: 'Wallet', icon: '◎' },
-  { href: '/leaderboard/', label: 'Ranks', icon: '★' },
-  { href: '/profile/', label: 'Me', icon: '☺' },
+  { href: '/home/', label: 'Home', Icon: IconHome },
+  { href: '/wallet/', label: 'Wallet', Icon: IconWallet },
+  { href: '/lobby/', label: 'Play', Icon: IconSpade, primary: true },
+  { href: '/leaderboard/', label: 'Ranks', Icon: IconTrophy },
+  { href: '/profile/', label: 'Me', Icon: IconUser },
 ];
 
+/** Player's own balances for the HUD (never other players' balances). */
+function useHudBalances(enabled: boolean) {
+  const [wallets, setWallets] = useState<Wallet[] | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    api<{ data: Wallet[] }>('/wallet').then((r) => setWallets(r.data)).catch(() => undefined);
+  }, [enabled]);
+
+  const find = (c: string) => wallets?.find((w) => w.type === 'player' && w.currency === c)?.balance;
+
+  return { vc: find('VC'), cp: find('CP') };
+}
+
 /**
- * Authenticated mobile screen: safe-area aware header, offline banner and
- * bottom tab bar. Redirects to /login when there is no session.
+ * Authenticated mobile screen: game backdrop, HUD (avatar + coin pills) or a
+ * back/title bar, offline banner and the bottom tab bar with a raised Play
+ * button. Redirects to /login when there is no session.
  */
-export function Screen({ title, children, back, tabs = true, action }: { title: string; children: ReactNode; back?: boolean; tabs?: boolean; action?: ReactNode }) {
+export function Screen({ title, children, back, tabs = true, action, hud = true, bare }: { title: string; children: ReactNode; back?: boolean; tabs?: boolean; action?: ReactNode; hud?: boolean; bare?: boolean }) {
   const { user, ready } = useAuth();
   const router = useRouter();
   const path = usePathname();
   const online = useOnline();
+  const balances = useHudBalances(!!user && hud && !back);
 
   useEffect(() => {
     if (ready && !user) {
@@ -33,34 +55,76 @@ export function Screen({ title, children, back, tabs = true, action }: { title: 
   }, [ready, user, router]);
 
   if (!ready || !user) {
-    return <div className="flex min-h-dvh items-center justify-center bg-brand-950"><Spinner /></div>;
+    return (
+      <div className="game-bg flex min-h-dvh items-center justify-center">
+        <Spinner />
+      </div>
+    );
   }
 
+  const name = user.display_name ?? user.name;
+
   return (
-    <div className="flex min-h-dvh flex-col bg-gray-50 dark:bg-gray-950">
-      <header className="safe-top sticky top-0 z-20 bg-brand-950 text-white">
-        <div className="flex h-14 items-center gap-2 px-4">
-          {back && (
-            <button onClick={() => router.back()} className="-ml-2 h-10 w-10 text-2xl" aria-label="Back">
-              ‹
-            </button>
+    <div className="game-bg flex min-h-dvh flex-col text-white">
+      <header className="safe-top sticky top-0 z-20 bg-gradient-to-b from-night-950/95 to-night-900/80 shadow-[0_6px_20px_rgb(0_0_0/0.35)] backdrop-blur">
+        <div className="flex h-16 items-center gap-3 px-4">
+          {back ? (
+            <>
+              <button onClick={() => router.back()} className="glass -ml-1 flex h-10 w-10 items-center justify-center rounded-2xl" aria-label="Back">
+                <IconBack className="h-5 w-5" />
+              </button>
+              <h1 className="flex-1 truncate font-display text-xl font-extrabold">{title}</h1>
+              {action}
+            </>
+          ) : (
+            <>
+              <Link href="/profile/" className="flex min-w-0 items-center gap-2" aria-label="Profile">
+                <Avatar name={name} size={42} />
+                <span className="min-w-0">
+                  <span className="block truncate font-display text-sm font-extrabold leading-tight">{name}</span>
+                  <span className="block truncate text-[11px] text-white/60">{title}</span>
+                </span>
+              </Link>
+              <span className="ml-auto flex items-center gap-1.5">
+                {hud && <CoinPill amount={balances.vc} currency="VC" compact />}
+                {action ?? (
+                  <Link href="/notifications/" className="glass flex h-9 w-9 items-center justify-center rounded-xl" aria-label="Notifications">
+                    <IconBell className="h-5 w-5 text-gold-300" />
+                  </Link>
+                )}
+              </span>
+            </>
           )}
-          <h1 className="flex-1 truncate text-lg font-semibold">{title}</h1>
-          {action}
         </div>
-        {!online && <div className="bg-warning-500 px-4 py-1 text-center text-xs font-medium text-white">Offline — reconnecting when the network returns</div>}
+        {!online && <div className="bg-warning-500 px-4 py-1 text-center text-xs font-bold text-white">Offline — reconnecting when the network returns</div>}
       </header>
-      <main className={cx('flex-1 px-4 py-4', tabs && 'pb-24')}>{children}</main>
+
+      <main className={cx('suit-pattern flex-1', !bare && 'px-4 py-4', tabs && 'pb-28')}>{children}</main>
+
       {tabs && (
-        <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-          <ul className="grid grid-cols-5">
-            {TABS.map((t) => {
-              const active = path?.startsWith(t.href.replace(/\/$/, ''));
+        <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-gradient-to-b from-night-800/95 to-night-950/95 backdrop-blur">
+          <ul className="grid h-16 grid-cols-5 items-end">
+            {TABS.map(({ href, label, Icon, primary }) => {
+              const active = !!path?.startsWith(href.replace(/\/$/, ''));
+
+              if (primary) {
+                return (
+                  <li key={href} className="flex justify-center">
+                    <Link href={href} aria-label={label} className="-mt-7 flex flex-col items-center">
+                      <span className="btn-3d flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-b from-gold-300 via-gold-400 to-gold-600 text-night-900" style={{ ['--lip' as string]: '#9a5b03' }}>
+                        <IconSpade className="h-8 w-8" />
+                      </span>
+                      <span className={cx('mt-0.5 font-display text-[11px] font-extrabold', active ? 'text-gold-300' : 'text-white/70')}>{label}</span>
+                    </Link>
+                  </li>
+                );
+              }
+
               return (
-                <li key={t.href}>
-                  <Link href={t.href} className={cx('flex h-14 flex-col items-center justify-center text-xs', active ? 'text-brand-500' : 'text-gray-500')}>
-                    <span className="text-lg leading-none">{t.icon}</span>
-                    {t.label}
+                <li key={href}>
+                  <Link href={href} className={cx('flex h-16 flex-col items-center justify-center gap-0.5 font-display text-[11px] font-extrabold', active ? 'text-gold-300' : 'text-white/55')}>
+                    <Icon className={cx('h-6 w-6 transition', active && 'scale-110 drop-shadow-[0_0_8px_rgb(255_204_61/0.6)]')} />
+                    {label}
                   </Link>
                 </li>
               );
@@ -74,62 +138,59 @@ export function Screen({ title, children, back, tabs = true, action }: { title: 
 
 export function Panel({ title, children, className, action }: { title?: ReactNode; children: ReactNode; className?: string; action?: ReactNode }) {
   return (
-    <section className={cx('mb-4 rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900', className)}>
-      {(title || action) && (
-        <div className="mb-3 flex items-center justify-between">
-          {title && <h2 className="font-semibold text-gray-800 dark:text-white">{title}</h2>}
-          {action}
-        </div>
-      )}
+    <GlassCard title={title} action={action} className={className}>
       {children}
-    </section>
+    </GlassCard>
   );
 }
 
+/** Kept for API compatibility; renders a game-style 3D button. */
 export function Button({ variant = 'primary', className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'outline' | 'danger' | 'success' }) {
-  const styles = {
-    primary: 'bg-brand-500 text-white active:bg-brand-600',
-    outline: 'border border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-200',
-    danger: 'border border-error-500 text-error-500',
-    success: 'bg-success-500 text-white',
-  };
+  const tone = { primary: 'gold', outline: 'glass', danger: 'red', success: 'green' } as const;
 
-  return <button {...props} className={cx('min-h-12 rounded-xl px-4 text-sm font-semibold transition disabled:opacity-50', styles[variant], className)} />;
+  return <GameButton tone={tone[variant]} className={className} {...props} />;
 }
 
 export function Field({ label, error, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
   return (
     <label className="mb-3 block">
-      <span className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
-      <input {...props} className="h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-base text-gray-900 outline-none focus:border-brand-400 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
-      {error && <span className="mt-1 block text-xs text-error-500">{error}</span>}
+      <span className="mb-1 block font-display text-sm font-bold text-white/85">{label}</span>
+      <input
+        {...props}
+        className="h-12 w-full rounded-2xl border-2 border-white/15 bg-night-950/60 px-4 text-base text-white shadow-inner outline-none placeholder:text-white/35 focus:border-gold-400"
+      />
+      {error && <span className="mt-1 block text-xs font-semibold text-candy-400">{error}</span>}
     </label>
   );
 }
 
 export function Notice({ tone = 'error', children }: { tone?: 'error' | 'success' | 'info' | 'warning'; children: ReactNode }) {
   const styles = {
-    error: 'bg-error-50 text-error-700',
-    success: 'bg-success-50 text-success-700',
-    info: 'bg-brand-50 text-brand-700',
-    warning: 'bg-warning-50 text-warning-700',
+    error: 'border-red-400/50 bg-red-500/20 text-red-100',
+    success: 'border-mint-400/50 bg-mint-500/20 text-mint-100',
+    info: 'border-sky-400/40 bg-sky-500/15 text-sky-50',
+    warning: 'border-gold-400/50 bg-gold-500/20 text-gold-100',
   };
 
-  return <div className={cx('mb-3 rounded-xl px-4 py-3 text-sm', styles[tone])}>{children}</div>;
+  return <div className={cx('mb-3 rounded-2xl border px-4 py-3 text-sm font-semibold', styles[tone])}>{children}</div>;
 }
 
 export function Badge({ children, tone = 'gray' }: { children: ReactNode; tone?: 'gray' | 'brand' | 'success' | 'error' | 'warning' }) {
   const styles = {
-    gray: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200',
-    brand: 'bg-brand-50 text-brand-600',
-    success: 'bg-success-50 text-success-700',
-    error: 'bg-error-50 text-error-700',
-    warning: 'bg-warning-50 text-warning-700',
+    gray: 'bg-white/12 text-white/85',
+    brand: 'bg-felt-500/40 text-white',
+    success: 'bg-mint-500/30 text-mint-100',
+    error: 'bg-red-500/35 text-red-100',
+    warning: 'bg-gold-500/30 text-gold-100',
   };
 
-  return <span className={cx('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', styles[tone])}>{children}</span>;
+  return <span className={cx('inline-flex items-center rounded-full px-2.5 py-0.5 font-display text-xs font-bold', styles[tone])}>{children}</span>;
 }
 
 export function Spinner() {
-  return <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-brand-400 border-t-transparent" />;
+  return (
+    <div className="mx-auto flex h-14 w-14 animate-spin items-center justify-center rounded-full border-4 border-gold-400 border-t-transparent" role="status" aria-label="Loading">
+      <IconSpade className="h-5 w-5 animate-none text-gold-300" />
+    </div>
+  );
 }

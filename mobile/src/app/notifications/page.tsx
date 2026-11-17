@@ -1,6 +1,7 @@
 'use client';
 
-import { Badge, Button, Screen } from '@/components/ui';
+import { IconBell } from '@/components/icons';
+import { Screen } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFetch, when } from '@/lib/hooks';
@@ -20,16 +21,32 @@ export default function Notifications() {
     <Screen
       title="Notifications"
       back
-      action={<Button variant="outline" className="min-h-9 border-white/30 px-3 text-xs text-white" onClick={async () => { await api('/notifications/read', { method: 'POST' }); reload(); }}>Mark read</Button>}
+      action={
+        <button className="rounded-full bg-white/10 px-3 py-1.5 font-display text-xs font-bold" onClick={async () => { await api('/notifications/read', { method: 'POST' }); reload(); }}>
+          Mark all read
+        </button>
+      }
     >
-      {data?.data.length === 0 && <p className="text-center text-sm text-gray-500">You&apos;re all caught up.</p>}
-      {data?.data.map((n) => (
-        <div key={n.id} className="mb-2 rounded-2xl bg-white p-4 dark:bg-gray-900">
-          <p className="font-medium text-gray-900 dark:text-white">{n.data.title ?? 'Notification'} {!n.read_at && <Badge tone="brand">New</Badge>}</p>
-          <p className="text-sm text-gray-600 dark:text-gray-300">{n.data.message}</p>
-          <p className="mt-1 text-xs text-gray-400">{when(n.created_at)}</p>
+      {data?.data.length === 0 && (
+        <div className="pt-16 text-center">
+          <IconBell className="mx-auto h-16 w-16 text-white/20" />
+          <p className="mt-2 text-white/60">You&apos;re all caught up.</p>
         </div>
-      ))}
+      )}
+      <div className="space-y-2">
+        {data?.data.map((n) => (
+          <div key={n.id} className={`glass flex gap-3 rounded-2xl p-3 ${!n.read_at ? 'ring-2 ring-gold-400/70' : ''}`}>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-candy-400 to-candy-500">
+              <IconBell className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-display font-extrabold">{n.data.title ?? 'Notification'}</p>
+              <p className="text-sm text-white/75">{n.data.message}</p>
+              <p className="mt-1 text-[11px] text-white/45">{when(n.created_at)}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </Screen>
   );
 }
