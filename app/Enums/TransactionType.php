@@ -1,0 +1,19 @@
+<?php
+
+namespace App\Enums;
+
+enum TransactionType: string
+{
+    case AdminAllocation = 'ADMIN_ALLOCATION';
+    case AgentAllocation = 'AGENT_ALLOCATION';
+    case PlayerCredit = 'PLAYER_CREDIT';
+    case PlayerDebit = 'PLAYER_DEBIT';
+    case GameEntry = 'GAME_ENTRY';
+    case GameRefund = 'GAME_REFUND';
+    case GameReward = 'GAME_REWARD';
+    case PlatformFee = 'PLATFORM_FEE';
+    case CommissionPayment = 'COMMISSION_PAYMENT';
+    case ManualAdjustment = 'MANUAL_ADJUSTMENT';
+    case DailyReward = 'DAILY_REWARD';
+    case Reversal = 'REVERSAL';
+}

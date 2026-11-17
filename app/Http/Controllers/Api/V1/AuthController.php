@@ -1,0 +1,147 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Enums\Role;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\RegisterRequest;
+use App\Http\Resources\UserResource;
+use App\Models\User;
+use App\Models\UserDevice;
+use App\Services\Users\UserManagementService;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Mobile authentication with Sanctum bearer tokens (one token per device).
+ * The web app uses the session-based Baseplate login instead.
+ */
+class AuthController extends Controller
+{
+    public function register(RegisterRequest $request, UserManagementService $users): JsonResponse
+    {
+        $data = $request->validated();
+        $user = $users->create(null, Role::Player, collect($data)->only(['name', 'username', 'email', 'phone', 'password'])->all(), $data['referral_code'] ?? null);
+
+        return $this->tokenResponse($request, $user, 201);
+    }
+
+    public function login(Request $request): JsonResponse
+    {
+        $credentials = $request->validate([
+            'username' => ['required', 'string'],
+            'password' => ['required', 'string'],
+            'device_name' => ['nullable', 'string', 'max:100'],
+            'platform' => ['nullable', 'in:android,ios,web'],
+        ]);
+
+        $user = User::query()->where('username', $credentials['username'])->first();
+
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            throw ValidationException::withMessages(['username' => 'The provided credentials do not match our records.']);
+        }
+
+        if (! $user->isActive()) {
+            throw ValidationException::withMessages(['username' => 'This account is suspended.']);
+        }
+
+        return $this->tokenResponse($request, $user);
+    }
+
+    public function logout(Request $request): JsonResponse
+    {
+        $token = $request->user()->currentAccessToken();
+
+        if ($token && method_exists($token, 'delete')) {
+            UserDevice::query()->where('personal_access_token_id', $token->id)->delete();
+            $token->delete();
+        } else {
+            Auth::guard('web')->logout();
+        }
+
+        return response()->json(['message' => 'Logged out.']);
+    }
+
+    public function me(Request $request): UserResource
+    {
+        return new UserResource($request->user()->load(['profile', 'agent', 'agentLink.agent.user']));
+    }
+
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate(['email' => ['required', 'email']]);
+        Password::sendResetLink($request->only('email'));
+
+        // Same response whether or not the email exists (no account enumeration).
+        return response()->json(['message' => 'If that email is registered, a reset link has been sent.']);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'token' => ['required'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'confirmed', PasswordRule::min(8)->letters()->numbers()],
+        ]);
+
+        $status = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function (User $user, string $password) {
+            $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
+            $user->tokens()->delete();
+            event(new PasswordReset($user));
+        });
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages(['email' => __($status)]);
+        }
+
+        return response()->json(['message' => __($status)]);
+    }
+
+    public function devices(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $request->user()->devices()->latest('last_used_at')->get(['id', 'device_name', 'platform', 'last_used_at', 'created_at'])]);
+    }
+
+    public function revokeDevice(Request $request, UserDevice $device): JsonResponse
+    {
+        abort_unless($device->user_id === $request->user()->id, 404);
+
+        $request->user()->tokens()->whereKey($device->personal_access_token_id)->delete();
+        $device->delete();
+
+        return response()->json(['message' => 'Device signed out.']);
+    }
+
+    private function tokenResponse(Request $request, User $user, int $status = 200): JsonResponse
+    {
+        $deviceName = $request->input('device_name') ?: 'mobile';
+        $token = $user->createToken($deviceName, ['*'], now()->addDays(30));
+
+        UserDevice::create([
+            'user_id' => $user->id,
+            'personal_access_token_id' => $token->accessToken->id,
+            'device_name' => $deviceName,
+            'platform' => $request->input('platform'),
+            'ip_address' => $request->ip(),
+            'last_used_at' => now(),
+        ]);
+
+        $user->forceFill(['last_login_at' => now()])->save();
+
+        return response()->json([
+            'data' => [
+                'token' => $token->plainTextToken,
+                'token_type' => 'Bearer',
+                'expires_at' => $token->accessToken->expires_at?->toIso8601String(),
+                'user' => (new UserResource($user->load(['profile', 'agent'])))->resolve($request),
+            ],
+        ], $status);
+    }
+}

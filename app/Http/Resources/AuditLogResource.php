@@ -1,0 +1,28 @@
+<?php
+
+namespace App\Http\Resources;
+
+use App\Models\AuditLog;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * @mixin AuditLog
+ */
+class AuditLogResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'actor' => $this->whenLoaded('actor', fn () => $this->actor?->only(['id', 'name', 'username'])),
+            'action' => $this->action,
+            'subject_type' => $this->subject_type ? class_basename($this->subject_type) : null,
+            'subject_id' => $this->subject_id,
+            'old_values' => $this->old_values,
+            'new_values' => $this->new_values,
+            'ip_address' => $this->ip_address,
+            'created_at' => $this->created_at?->toIso8601String(),
+        ];
+    }
+}

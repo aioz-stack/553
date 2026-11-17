@@ -1,0 +1,98 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Enums\GameStatus;
+use App\Game\HandEvaluator;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\SubmitArrangementRequest;
+use App\Models\GameCard;
+use App\Models\GameSession;
+use App\Services\Game\GameEngine;
+use App\Services\Game\GameStatePresenter;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class GameController extends Controller
+{
+    /**
+     * Full state for the viewer (also the reconnection / recovery endpoint).
+     */
+    public function show(Request $request, GameSession $session, GameStatePresenter $presenter): JsonResponse
+    {
+        $this->authorize('view', $session);
+
+        return response()->json(['data' => $presenter->session($session, $request->user())]);
+    }
+
+    public function cards(Request $request, GameSession $session): JsonResponse
+    {
+        $this->authorize('play', $session);
+
+        $card = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $request->user()->id)->firstOrFail();
+
+        return response()->json(['data' => ['session_id' => $session->id, 'cards' => $card->cards]]);
+    }
+
+    public function submit(SubmitArrangementRequest $request, GameSession $session, GameEngine $engine, GameStatePresenter $presenter): JsonResponse
+    {
+        $this->authorize('play', $session);
+
+        $engine->submit($request->user(), $session, $request->input('front'), $request->input('middle'), $request->input('back'));
+
+        return response()->json([
+            'message' => 'Arrangement submitted.',
+            'data' => $presenter->session($session->refresh(), $request->user()),
+        ], 201);
+    }
+
+    /**
+     * Server-side evaluation of a partial or full arrangement for UI hints
+     * (hand names, foul warning). Never stores anything; clients do not
+     * evaluate hands themselves.
+     */
+    public function preview(Request $request, GameSession $session): JsonResponse
+    {
+        $this->authorize('play', $session);
+
+        $data = $request->validate([
+            'front' => ['array', 'max:3'], 'front.*' => ['string', 'size:2'],
+            'middle' => ['array', 'max:5'], 'middle.*' => ['string', 'size:2'],
+            'back' => ['array', 'max:5'], 'back.*' => ['string', 'size:2'],
+        ]);
+
+        $dealt = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $request->user()->id)->value('cards') ?? [];
+        $labels = [];
+        $values = [];
+
+        foreach (['front' => 3, 'middle' => 5, 'back' => 5] as $position => $size) {
+            $cards = array_values(array_intersect($data[$position] ?? [], $dealt));
+            $values[$position] = count($cards) === $size ? HandEvaluator::evaluate($cards) : null;
+            $labels[$position] = $values[$position]?->label();
+        }
+
+        $complete = ! in_array(null, $values, true);
+        $foul = $complete && ($values['back']->compare($values['middle']) < 0 || $values['middle']->compare($values['front']) < 0);
+
+        return response()->json(['data' => ['labels' => $labels, 'complete' => $complete, 'is_foul' => $foul]]);
+    }
+
+    public function results(Request $request, GameSession $session, GameStatePresenter $presenter): JsonResponse
+    {
+        $this->authorize('view', $session);
+
+        if ($session->status !== GameStatus::Completed) {
+            return response()->json(['message' => 'Results are not available yet.', 'data' => ['status' => $session->status->value]], 409);
+        }
+
+        $state = $presenter->session($session, $request->user());
+
+        return response()->json(['data' => [
+            'session_id' => $session->id,
+            'results' => $state['results'],
+            'arrangements' => $state['arrangements'],
+            'server_seed' => $state['server_seed'],
+            'deck_commitment' => $state['deck_commitment'],
+        ]]);
+    }
+}
