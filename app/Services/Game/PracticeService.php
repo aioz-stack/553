@@ -10,16 +10,21 @@ use App\Game\Deck;
 use App\Game\Exceptions\InvalidArrangementException;
 use App\Game\Scorer;
 use App\Models\PracticeGame;
+use App\Enums\Currency;
 use App\Models\User;
+use App\Support\Points;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Single Player practice: the player against three server bots.
  *
  * Same deck, shuffle commitment, validation, foul rule and pairwise ±1
- * scoring as a classic table, but no currency: nothing here reads or writes
- * wallets, the ledger, XP, leaderboards or commissions. The bots arrange
- * with the server's AutoArranger at deal time; their hands stay hidden until
+ * scoring as a classic table, but no currency: nothing here writes
+ * wallets, the ledger, XP, leaderboards or commissions (the CP balance is only
+ * read to check a difficulty tier's minimum gold). The bots arrange
+ * at deal time (tier-dependent: strong bots use AutoArranger, casual bots a
+ * random non-fouled hand); their hands stay hidden until
  * the player submits.
  */
 class PracticeService
@@ -29,31 +34,131 @@ class PracticeService
     /** seat => display name */
     public const BOTS = [2 => 'LuckyBot', 3 => 'CardBot', 4 => 'AceBot'];
 
-    public function start(User $user): PracticeGame
+    /**
+     * The difficulty tiers with the player's eligibility for each.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function tiers(User $user): array
     {
-        return DB::transaction(function () use ($user) {
-            PracticeGame::query()->where('user_id', $user->id)->where('status', PracticeGame::ARRANGING)
-                ->update(['status' => PracticeGame::ABANDONED]);
+        $gold = $this->goldMinor($user);
+        $rows = [];
 
-            $seed = Deck::newSeed();
-            $deck = Deck::shuffled($seed);
-            $hands = Deck::deal($deck);
-            $arrangements = [];
+        foreach ((array) config('pusoy.practice.tiers', []) as $key => $tier) {
+            $rows[] = [
+                'key' => $key,
+                'name' => $tier['name'],
+                'stars' => (int) $tier['stars'],
+                'crown' => (bool) ($tier['crown'] ?? false),
+                'min_gold' => (int) $tier['min_gold'],
+                'bets' => array_map('intval', $tier['bets']),
+                'eligible' => $gold >= Points::toMinor((int) $tier['min_gold']),
+            ];
+        }
 
-            foreach (array_keys(self::BOTS) as $seat) {
-                $a = AutoArranger::arrange($hands[$seat]);
-                $arrangements[$seat] = ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back];
+        return $rows;
+    }
+
+    /**
+     * Start a new deal at the chosen tier. The bet is optional (the picker shows
+     * bets as information only) and defaults to the tier's lowest bet. The tier/bet are
+     * validated here (never trusted from the client), and the player's CP
+     * balance must meet the tier's minimum — it is only read, never charged.
+     *
+     * A repeated $requestId (double tap, network retry) returns the deal it
+     * already created instead of starting another one.
+     */
+    public function start(User $user, string $tierKey, ?int $bet, ?string $requestId = null): PracticeGame
+    {
+        if ($requestId !== null && ($existing = $this->byRequest($user, $requestId))) {
+            return $existing;
+        }
+
+        $tier = config("pusoy.practice.tiers.{$tierKey}");
+
+        if (! is_array($tier)) {
+            throw new BusinessRuleException('Choose a valid difficulty level.', 422, 'invalid_tier');
+        }
+
+        $bet ??= min(array_map('intval', $tier['bets']));
+
+        if (! in_array($bet, array_map('intval', $tier['bets']), true)) {
+            throw new BusinessRuleException("That bet is not offered at {$tier['name']}.", 422, 'invalid_bet');
+        }
+
+        try {
+            return DB::transaction(function () use ($user, $tierKey, $tier, $bet, $requestId) {
+                // Serialise starts per player so two taps can never leave two open deals.
+                User::query()->whereKey($user->id)->lockForUpdate()->first();
+
+                if ($this->goldMinor($user) < Points::toMinor((int) $tier['min_gold'])) {
+                    throw new BusinessRuleException('You need at least '.number_format((int) $tier['min_gold'])." gold to play {$tier['name']}.", 422, 'insufficient_gold');
+                }
+
+                PracticeGame::query()->where('user_id', $user->id)->where('status', PracticeGame::ARRANGING)
+                    ->update(['status' => PracticeGame::ABANDONED]);
+
+                $seed = Deck::newSeed();
+                $deck = Deck::shuffled($seed);
+                $hands = Deck::deal($deck);
+                $arrangements = [];
+                $strong = (int) $tier['strong_bots'];
+
+                foreach (array_keys(self::BOTS) as $i => $seat) {
+                    // Strong bots fill the highest seats first.
+                    $a = $i >= count(self::BOTS) - $strong ? AutoArranger::arrange($hands[$seat]) : self::casualArrange($hands[$seat]);
+                    $arrangements[$seat] = ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back];
+                }
+
+                return PracticeGame::create([
+                    'user_id' => $user->id,
+                    'status' => PracticeGame::ARRANGING,
+                    'tier' => $tierKey,
+                    'bet' => $bet,
+                    'request_id' => $requestId,
+                    'server_seed' => $seed,
+                    'deck_commitment' => Deck::commitment($seed, $deck),
+                    'hands' => $hands,
+                    'arrangements' => $arrangements,
+                ]);
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // A concurrent request with the same id won the race; return its deal.
+            return $this->byRequest($user, (string) $requestId) ?? throw $e;
+        }
+    }
+
+    private function byRequest(User $user, string $requestId): ?PracticeGame
+    {
+        return PracticeGame::query()->where('user_id', $user->id)->where('request_id', $requestId)->first();
+    }
+
+    private function goldMinor(User $user): int
+    {
+        return (int) ($user->wallet(Currency::CP)?->balance ?? 0);
+    }
+
+    /**
+     * A beginner-level bot: a random arrangement that is not fouled.
+     *
+     * @param  list<string>  $cards
+     */
+    public static function casualArrange(array $cards): Arrangement
+    {
+        for ($try = 0; $try < 400; $try++) {
+            $deck = $cards;
+            for ($i = count($deck) - 1; $i > 0; $i--) {
+                $j = random_int(0, $i);
+                [$deck[$i], $deck[$j]] = [$deck[$j], $deck[$i]];
             }
+            $a = new Arrangement(array_slice($deck, 0, 3), array_slice($deck, 3, 5), array_slice($deck, 8, 5));
 
-            return PracticeGame::create([
-                'user_id' => $user->id,
-                'status' => PracticeGame::ARRANGING,
-                'server_seed' => $seed,
-                'deck_commitment' => Deck::commitment($seed, $deck),
-                'hands' => $hands,
-                'arrangements' => $arrangements,
-            ]);
-        });
+            if (! $a->isFoul()) {
+                return $a;
+            }
+        }
+
+        return AutoArranger::arrange($cards);
     }
 
     /**
@@ -144,6 +249,8 @@ class PracticeService
                     'score' => (int) $game->results['totals'][$seat],
                     'placement' => (int) $game->results['placements'][$seat],
                     'vs_you' => $game->results['vs_you'][$seat] ?? null,
+                    // Score × bet, for display only: nothing is charged or paid.
+                    'stake_result' => (int) $game->results['totals'][$seat] * (int) $game->bet,
                 ];
             }
 
@@ -153,6 +260,11 @@ class PracticeService
         return [
             'id' => $game->id,
             'status' => $game->status,
+            'tier' => [
+                'key' => $game->tier,
+                'name' => config("pusoy.practice.tiers.{$game->tier}.name", ucfirst((string) $game->tier)),
+            ],
+            'bet' => (int) $game->bet,
             'cards' => $game->hands[self::PLAYER_SEAT],
             'players' => $players,
             'deck_commitment' => $game->deck_commitment,

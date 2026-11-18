@@ -1,6 +1,6 @@
 # Pusoy 13 Platform — Development Guide
 
-Last updated: 2026-11-18 (Single Player practice vs bots, home: CP + VC pills, Single/Multiplayer tiles)
+Last updated: 2026-11-18 (Single Player difficulty picker: tiers, bets, backend validation)
 
 This repository contains the **Laravel web application + shared backend** (repo root) and the
 **Next.js + Capacitor mobile application** (`mobile/`). Laravel is the single source of truth for
@@ -364,15 +364,39 @@ local API/Reverb values), or set those variables yourself before `npm run dev`.
 
 ### Single Player (practice vs bots)
 
-The home's **Single Player** tile opens `mobile/src/app/practice/page.tsx`: you against three
-server bots (LuckyBot, CardBot, AceBot). Service `App\Services\Game\PracticeService`, table
-`practice_games`, API `POST practice`, `GET practice/{id}`, `POST practice/{id}/preview|submit`.
+The home's **Single Player** tile opens the **difficulty picker**
+(`mobile/src/components/SinglePlayerPicker.tsx`, an overlay on the landscape home): four tiers —
+Beginner, Intermediate, Advance, Mastery — each with a minimum gold and three bet options, from
+`config('pusoy.practice.tiers')` via `GET practice/tiers` (which also returns `eligible` per tier).
+
+- Each **difficulty card is the control**: tapping one checks the player's gold (`eligible` from
+  the server); if it is enough the card glows ("LET'S GO!") and the game starts automatically after
+  ~0.45 s, ignoring further taps. If not, the card shakes and a notification says how much gold is
+  needed; nothing starts. There are no Back / Continue buttons; Close (✕) and Escape return home.
+  **Bet amounts are information only** (not selectable). The chosen tier is kept in
+  `sessionStorage` (`pusoy.singlePlayer`).
+- Tap → `/practice/?tier=…` (`mobile/src/app/practice/page.tsx`), which calls
+  `POST practice {tier, request_id}` (`bet` optional; the server uses the tier's lowest bet).
+  Without a tier it sends you to `/home/?single=1` (picker open). "Change level" does the same.
+- The **backend validates** the tier, that the bet belongs to it, and that the player's **CP balance
+  ≥ min gold** (`invalid_tier` / `invalid_bet` / `insufficient_gold`, 422). Starts are serialised per
+  player (user row lock) and a repeated `request_id` returns the same deal (unique
+  `practice_games.user_id + request_id`), so double taps and retries never create duplicate sessions.
+- Tier and bet are stored on `practice_games` (`tier`, `bet`). Difficulty sets how many of the
+  three bots use the full `AutoArranger` (`strong_bots`: 0/1/2/3); the others play a random
+  non-fouled arrangement (`PracticeService::casualArrange`).
+
+Service `App\Services\Game\PracticeService`, table `practice_games`, API `GET practice/tiers`,
+`POST practice`, `GET practice/{id}`, `POST practice/{id}/preview|submit`.
 
 - Same deck, shuffle commitment (seed revealed after submit), arrangement validation, foul rule
-  and pairwise ±1 zero-sum scoring as a classic table. Bots arrange with the server
-  `AutoArranger` at deal time; their cards are never sent before you submit.
-- **No currency:** nothing reads or writes wallets, the ledger, XP, leaderboards or commissions.
-  No timer; starting a new practice marks an unfinished one `abandoned`. Owner-only (404 for others).
+  and pairwise ±1 zero-sum scoring as a classic table. Bots arrange at deal time; their cards are
+  never sent before you submit.
+- **No currency moves:** the CP balance is only *read* for the tier minimum. Nothing writes wallets,
+  the ledger, XP, leaderboards or commissions. The bet only scales the displayed result
+  (`stake_result` = score × bet, labelled "no coins are charged"). Settling bets against bots
+  would be house-banked play and stays out until the cash/CP wagering flags and approvals allow it.
+- No timer; starting a new practice marks an unfinished one `abandoned`. Owner-only (404 for others).
 - **Multiplayer** tile → `/lobby/`: Round Bank and Banker Mode cards on top, classic tables below.
 
 ### Local testing with bots
@@ -429,11 +453,11 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
-| Practice | `POST practice` (new deal vs 3 bots), `GET practice/{id}`, `POST practice/{id}/preview`, `practice/{id}/submit` — no currency |
+| Practice | `GET practice/tiers`, `POST practice` (`tier`, `bet`, `request_id`; new deal vs 3 bots), `GET practice/{id}`, `POST practice/{id}/preview`, `practice/{id}/submit` — no currency |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
-| Admin | `admin/users|players|agents|administrators` (GET/POST), `admin/users/{id}` (GET/PATCH, status, assign-agent, permissions, limits), `admin/rooms`, `admin/tables` (+close), `admin/games` (+cancel, retry), `admin/wallets` (+freeze), `admin/transactions` (+reverse), `admin/adjustments`, `admin/reconcile`, `admin/commissions` (+approve/reject/reverse), `admin/commission-rules`, `admin/reports/overview`, `admin/audit-logs`, `admin/settings` |
+| Admin | `admin/users|players|agents|administrators` (GET/POST), `admin/users/{id}` (GET/PATCH, status, assign-agent, permissions, limits), `admin/rooms`, `admin/tables` (+close), `admin/games` (+cancel, retry), `admin/wallets` (+freeze), `admin/wallets/summary` (total points per currency × wallet type), `admin/transactions` (+reverse), `admin/adjustments` (Super Admin point deposit/withdraw by `wallet_id` or `user_id`+`currency`), `admin/reconcile`, `admin/commissions` (+approve/reject/reverse), `admin/commission-rules`, `admin/reports/overview`, `admin/audit-logs`, `admin/settings` |
 
 ---
 
@@ -473,6 +497,29 @@ Verified 2026-11-18 (game modes):
 - Manual (mobile build in a browser at 375×812): beach home, friends add/list, Round Bank match vs
   two bots — banker rotation, bets, drag-and-drop between lanes, timer auto-arrange, a declared
   Lucky Hand paid as `LUCKY_BONUS`, final scoreboard; hosting and abandoning a Banker Mode table.
+
+Verified 2026-11-18 (admin deposit/withdraw + wallet totals):
+
+- Admin → CP / VC Management (`resources/js/pages/Admin/Wallets.tsx`): "Total wallet points" cards
+  (CP and VC separately, with player / allocation split) and a per-type total line; Super Admin
+  **Deposit** / **Withdraw** buttons in the header (search a user, pick CP or VC) and on each wallet
+  row. These are point adjustments only (`MANUAL_ADJUSTMENT` credit / `PLAYER_DEBIT` debit, with a
+  `wallet_adjustments` row and `wallet.adjust` audit entry, idempotency key, no negative balances);
+  Super Admin wallets are excluded. Real-money deposit/withdraw (`wallet/deposit|withdraw`) stay
+  disabled by the cash feature flags.
+- 198 Pest tests (adds AdminDepositWithdrawTest). Manual: totals and buttons on the CP page, the
+  Deposit modal's user search; a deposit was not submitted from the browser (covered by Pest).
+- Dev data: Super Admin allocated 1,000,000 CP to `admin` (Platform Admin) — ref TX01M7P2T3MSFRQTMYPFRSMQF22F.
+
+Verified 2026-11-18 (Single Player difficulty picker):
+
+- 195 Pest tests (adds tiers + eligibility, tier/bet/min-gold validation, request-id idempotency,
+  casual vs strong bots), 21 mobile Vitest tests (adds the picker: single selection, locked tiers,
+  restore, Back/Close/Escape, load error + retry; practice redirects to the picker without a level).
+- Manual (mobile dev build, demo1 with 0 CP): picker renders with all tiers locked; with tiers
+  patched eligible in-page, selecting Intermediate 1,000 highlights one bet and enables Continue;
+  Continue → server refuses with "You need at least 10,000 gold"; Change level reopens the picker.
+  A successful paid-tier deal in the browser was not run (no seeded player has CP); Pest covers it.
 
 Verified 2026-11-18 (Single Player + home rework):
 

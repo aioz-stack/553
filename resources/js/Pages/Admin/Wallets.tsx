@@ -2,7 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
 import DataTable, { Pager } from '../../Components/DataTable';
 import PageShell from '../../Components/PageShell';
-import { Alert, Badge, Button, Card, Field, Input, Modal, Select, Tabs } from '../../Components/ui';
+import { Alert, Badge, Button, Card, Field, Input, Modal, Select, StatCard, Tabs } from '../../Components/ui';
 import { api, errorMessage, newIdempotencyKey } from '../../lib/api';
 import { points, titleCase } from '../../lib/format';
 import type { SharedProps, Wallet } from '../../lib/types';
@@ -15,9 +15,33 @@ interface Reconcile {
   escrow: Record<string, { balance: number; expected: number }>;
 }
 
+type WalletTypeKey = Wallet['type'];
+interface CurrencyTotals {
+  total: string;
+  total_minor: number;
+  by_type: Record<WalletTypeKey, { total: string; total_minor: number; wallets: number }>;
+}
+type Summary = Record<'CP' | 'VC', CurrencyTotals>;
+
+interface UserHit {
+  id: number;
+  name: string;
+  username: string;
+  role: string;
+}
+
+type Direction = 'credit' | 'debit';
+
+/** Who a deposit/withdrawal goes to: an existing wallet row, or a user + currency picked in the form. */
+type Target = { kind: 'wallet'; wallet: Wallet } | { kind: 'user' };
+
+const TYPES: WalletTypeKey[] = ['player', 'allocation', 'commission', 'platform', 'escrow'];
+
 /**
  * Wallet management, also used as the CP and VC management screens
- * (`?currency=CP|VC`). CP and VC are always listed separately.
+ * (`?currency=CP|VC`). CP and VC are always listed and totalled separately.
+ * Super Admin can deposit (credit) or withdraw (debit) points; both are
+ * immutable, audited ledger entries. Points only — no real money moves.
  */
 export default function Wallets() {
   const { auth } = usePage<SharedProps>().props;
@@ -27,13 +51,27 @@ export default function Wallets() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const wallets = useApi<{ data: Wallet[]; meta: { current_page: number; last_page: number; total: number } }>('/admin/wallets', { currency, type: type || undefined, search: search || undefined, page });
+  const summary = useApi<{ data: Summary }>('/admin/wallets/summary');
   const [reconcile, setReconcile] = useState<Reconcile | null>(null);
-  const [adjusting, setAdjusting] = useState<Wallet | null>(null);
-  const [adjust, setAdjust] = useState({ direction: 'credit', amount: '', reason: '' });
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const isSuper = auth.user?.role === 'super_admin';
 
+  // Deposit / withdraw form
+  const [target, setTarget] = useState<Target | null>(null);
+  const [form, setForm] = useState({ direction: 'credit' as Direction, currency: 'VC' as 'CP' | 'VC', amount: '', reason: '' });
+  const [userSearch, setUserSearch] = useState('');
+  const [picked, setPicked] = useState<UserHit | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [idemKey, setIdemKey] = useState(newIdempotencyKey());
+  const hits = useApi<{ data: UserHit[] }>(target?.kind === 'user' && userSearch.trim().length >= 2 && !picked ? '/admin/users' : null, { search: userSearch.trim(), per_page: 8 });
+
   const runReconcile = async () => setReconcile((await api.get('/admin/reconcile')).data.data);
+
+  const reloadAll = () => {
+    wallets.reload();
+    summary.reload();
+  };
 
   const freeze = async (w: Wallet) => {
     try {
@@ -44,29 +82,71 @@ export default function Wallets() {
     }
   };
 
-  const submitAdjust = async (event: FormEvent) => {
+  const open = (t: Target, direction: Direction) => {
+    setTarget(t);
+    setForm({ direction, currency: t.kind === 'wallet' ? t.wallet.currency : currency, amount: '', reason: '' });
+    setPicked(null);
+    setUserSearch('');
+    setFormError(null);
+    setIdemKey(newIdempotencyKey());
+  };
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!target || busy) return;
+    if (target.kind === 'user' && !picked) {
+      setFormError('Choose a user.');
+      return;
+    }
+    setBusy(true);
+    setFormError(null);
     try {
-      await api.post('/admin/adjustments', { wallet_id: adjusting!.id, ...adjust, idempotency_key: newIdempotencyKey() });
-      setMessage({ tone: 'success', text: 'Adjustment recorded in the ledger.' });
-      setAdjusting(null);
-      wallets.reload();
+      const body =
+        target.kind === 'wallet'
+          ? { wallet_id: target.wallet.id }
+          : { user_id: picked!.id, currency: form.currency };
+      const r = await api.post('/admin/adjustments', { ...body, direction: form.direction, amount: form.amount, reason: form.reason, idempotency_key: idemKey });
+      const who = target.kind === 'wallet' ? target.wallet.owner?.name : picked!.name;
+      const cur = target.kind === 'wallet' ? target.wallet.currency : form.currency;
+      setMessage({ tone: 'success', text: `${form.direction === 'credit' ? 'Deposited' : 'Withdrew'} ${points(form.amount)} ${cur} ${form.direction === 'credit' ? 'to' : 'from'} ${who}. New balance ${points(r.data.data.balance)} ${cur} · ref ${r.data.data.reference}` });
+      setTarget(null);
+      reloadAll();
     } catch (e) {
-      setMessage({ tone: 'error', text: errorMessage(e) });
+      setFormError(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
   };
+
+  const totals = summary.data?.data;
+  const cur = totals?.[currency];
+  const formCurrency = target?.kind === 'wallet' ? target.wallet.currency : form.currency;
 
   return (
     <PageShell title={`${currency} Management`}>
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
-      {currency === 'CP' && <Alert tone="warning">CP is PHP-denominated accounting points. Real-money deposits, withdrawals, redemption and CP wagering are disabled.</Alert>}
-      {currency === 'VC' && <Alert tone="info">VC is free-play only — never withdrawable, redeemable, or convertible to CP.</Alert>}
+      {currency === 'CP' && <Alert tone="warning">CP is PHP-denominated accounting points. Deposits and withdrawals here are point adjustments only; real-money deposits, withdrawals, redemption and CP wagering are disabled.</Alert>}
+      {currency === 'VC' && <Alert tone="info">VC is free-play only — never withdrawable for money, redeemable, or convertible to CP. A VC withdrawal here only removes points.</Alert>}
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total wallet points — CP" value={totals ? points(totals.CP.total, 'CP') : '…'} hint={totals ? `Players ${points(totals.CP.by_type.player.total)} · Allocation ${points(totals.CP.by_type.allocation.total)}` : undefined} />
+        <StatCard label="Total wallet points — VC" value={totals ? points(totals.VC.total, 'VC') : '…'} hint={totals ? `Players ${points(totals.VC.by_type.player.total)} · Allocation ${points(totals.VC.by_type.allocation.total)}` : undefined} />
+        <StatCard label={`${currency} in player wallets`} value={cur ? points(cur.by_type.player.total, currency) : '…'} hint={cur ? `${cur.by_type.player.wallets} wallets` : undefined} />
+        <StatCard label={`${currency} in allocation wallets`} value={cur ? points(cur.by_type.allocation.total, currency) : '…'} hint={cur ? `${cur.by_type.allocation.wallets} admins / agents` : undefined} />
+      </div>
 
       <Card
         title="Wallets"
+        subtitle={cur ? `Total ${currency}: ${points(cur.total, currency)} — ${TYPES.map((t) => `${titleCase(t)} ${points(cur.by_type[t].total)}`).join(' · ')}` : undefined}
         actions={
           <>
             <Tabs value={currency} onChange={(c) => { setCurrency(c); setPage(1); }} options={[{ value: 'VC', label: 'VC' }, { value: 'CP', label: 'CP' }]} />
+            {isSuper && (
+              <>
+                <Button onClick={() => open({ kind: 'user' }, 'credit')}>Deposit</Button>
+                <Button variant="outline" onClick={() => open({ kind: 'user' }, 'debit')}>Withdraw</Button>
+              </>
+            )}
             <Button variant="outline" onClick={runReconcile}>Reconcile ledger</Button>
           </>
         }
@@ -80,7 +160,7 @@ export default function Wallets() {
         <div className="mb-4 flex flex-wrap gap-3">
           <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1); }} className="w-48">
             <option value="">All wallet types</option>
-            {['player', 'allocation', 'commission', 'platform', 'escrow'].map((t) => <option key={t} value={t}>{titleCase(t)}</option>)}
+            {TYPES.map((t) => <option key={t} value={t}>{titleCase(t)}</option>)}
           </Select>
           <Input className="max-w-xs" placeholder="Username" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
@@ -103,8 +183,11 @@ export default function Wallets() {
                   {w.type === 'allocation' && auth.user?.abilities.includes('freeze_allocations') && (
                     <Button size="sm" variant="outline" onClick={() => freeze(w)}>{w.is_frozen ? 'Unfreeze' : 'Freeze'}</Button>
                   )}
-                  {isSuper && w.owner?.id && (
-                    <Button size="sm" variant="outline" onClick={() => setAdjusting(w)}>Adjust</Button>
+                  {isSuper && w.owner?.id && w.owner.role !== 'super_admin' && (
+                    <>
+                      <Button size="sm" onClick={() => open({ kind: 'wallet', wallet: w }, 'credit')}>Deposit</Button>
+                      <Button size="sm" variant="outline" onClick={() => open({ kind: 'wallet', wallet: w }, 'debit')} disabled={w.balance_minor <= 0}>Withdraw</Button>
+                    </>
                   )}
                 </div>
               ),
@@ -114,20 +197,71 @@ export default function Wallets() {
         <Pager meta={wallets.data?.meta} onPage={setPage} />
       </Card>
 
-      <Modal open={!!adjusting} title={`Manual adjustment — ${adjusting?.owner?.name} (${adjusting?.currency} ${adjusting?.type})`} onClose={() => setAdjusting(null)}>
-        <form onSubmit={submitAdjust} className="space-y-4">
-          <Alert tone="warning">Adjustments create immutable ledger entries and are audited. Use reversals on the Transactions page to undo a specific transaction.</Alert>
+      <Modal
+        open={!!target}
+        title={`${form.direction === 'credit' ? 'Deposit' : 'Withdraw'} points${target?.kind === 'wallet' ? ` — ${target.wallet.owner?.name} (${target.wallet.currency} ${target.wallet.type})` : ''}`}
+        onClose={() => setTarget(null)}
+      >
+        <form onSubmit={submit} className="space-y-4">
+          <Alert tone="warning">Points only — no real money is sent or received. Every deposit and withdrawal is an immutable, audited ledger entry; undo one with a reversal on the Transactions page.</Alert>
+          {formError && <Alert tone="error">{formError}</Alert>}
+
+          {target?.kind === 'user' && (
+            <Field label="User" required hint="Players receive into their player wallet; administrators and agents into their allocation wallet.">
+              {picked ? (
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+                  <span>
+                    <strong>{picked.name}</strong> <span className="text-gray-500">@{picked.username} · {titleCase(picked.role)}</span>
+                  </span>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setPicked(null)}>Change</Button>
+                </div>
+              ) : (
+                <>
+                  <Input placeholder="Search name or username" value={userSearch} onChange={(e) => setUserSearch(e.target.value)} autoFocus />
+                  {hits.data && userSearch.trim().length >= 2 && (
+                    <ul className="mt-1 max-h-48 overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                      {hits.data.data.filter((u) => u.role !== 'super_admin').map((u) => (
+                        <li key={u.id}>
+                          <button type="button" className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-white/5" onClick={() => setPicked(u)}>
+                            {u.name} <span className="text-gray-500">@{u.username} · {titleCase(u.role)}</span>
+                          </button>
+                        </li>
+                      ))}
+                      {hits.data.data.length === 0 && <li className="px-3 py-2 text-gray-500">No users found.</li>}
+                    </ul>
+                  )}
+                </>
+              )}
+            </Field>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Direction">
-              <Select value={adjust.direction} onChange={(e) => setAdjust({ ...adjust, direction: e.target.value })}>
-                <option value="credit">Credit (+)</option>
-                <option value="debit">Debit (−)</option>
+            <Field label="Type">
+              <Select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value as Direction })}>
+                <option value="credit">Deposit (+)</option>
+                <option value="debit">Withdraw (−)</option>
               </Select>
             </Field>
-            <Field label="Amount" required><Input value={adjust.amount} onChange={(e) => setAdjust({ ...adjust, amount: e.target.value })} /></Field>
+            {target?.kind === 'user' ? (
+              <Field label="Currency">
+                <Select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value as 'CP' | 'VC' })}>
+                  <option value="VC">VC</option>
+                  <option value="CP">CP</option>
+                </Select>
+              </Field>
+            ) : (
+              <Field label="Current balance">
+                <Input value={target?.kind === 'wallet' ? points(target.wallet.balance, target.wallet.currency) : ''} readOnly />
+              </Field>
+            )}
           </div>
-          <Field label="Reason (required)" required><Input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })} /></Field>
-          <Button type="submit">Record adjustment</Button>
+          <Field label={`Amount (${formCurrency})`} required>
+            <Input inputMode="decimal" placeholder="e.g. 1000" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          </Field>
+          <Field label="Reason (required, min 5 characters)" required>
+            <Input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+          </Field>
+          <Button type="submit" disabled={busy}>{busy ? 'Saving…' : form.direction === 'credit' ? 'Deposit points' : 'Withdraw points'}</Button>
         </form>
       </Modal>
     </PageShell>

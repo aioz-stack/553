@@ -4,6 +4,12 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
+/**
+ * Super Admin manual point deposit (credit) or withdrawal (debit). Targets
+ * either an existing wallet (wallet_id) or a user + currency, in which case
+ * the user's player wallet (players) or allocation wallet (staff) is used.
+ * Points only: no real money moves.
+ */
 class AdjustWalletRequest extends FormRequest
 {
     use AmountRules;
@@ -19,7 +25,9 @@ class AdjustWalletRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'wallet_id' => ['required', 'integer', 'exists:wallets,id'],
+            'wallet_id' => ['required_without:user_id', 'nullable', 'integer', 'exists:wallets,id'],
+            'user_id' => ['required_without:wallet_id', 'nullable', 'integer', 'exists:users,id'],
+            'currency' => ['required_with:user_id', 'nullable', 'in:CP,VC'],
             'direction' => ['required', 'in:credit,debit'],
             'amount' => $this->amountRule(),
             'reason' => ['required', 'string', 'min:5', 'max:255'],

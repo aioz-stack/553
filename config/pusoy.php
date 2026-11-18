@@ -52,6 +52,23 @@ return [
     ],
 
     /*
+    | Single Player difficulty tiers (player vs three server bots).
+    | min_gold: CP balance (in points) the player must hold to pick the tier.
+    | bets: the stakes offered for the tier. Single Player never moves coins:
+    | the CP balance is only checked, and the bet scales the displayed result.
+    | strong_bots: how many of the three bots arrange with the full
+    | AutoArranger; the rest arrange casually (a random non-fouled hand).
+    */
+    'practice' => [
+        'tiers' => [
+            'beginner' => ['name' => 'Beginner', 'stars' => 1, 'crown' => false, 'min_gold' => 1_000, 'bets' => [50, 100, 500], 'strong_bots' => 0],
+            'intermediate' => ['name' => 'Intermediate', 'stars' => 2, 'crown' => false, 'min_gold' => 10_000, 'bets' => [500, 1_000, 5_000], 'strong_bots' => 1],
+            'advanced' => ['name' => 'Advance', 'stars' => 3, 'crown' => false, 'min_gold' => 100_000, 'bets' => [5_000, 10_000, 50_000], 'strong_bots' => 2],
+            'mastery' => ['name' => 'Mastery', 'stars' => 3, 'crown' => true, 'min_gold' => 1_000_000, 'bets' => [50_000, 100_000, 500_000], 'strong_bots' => 3],
+        ],
+    ],
+
+    /*
     | Banker modes (Round Bank = rotating banker, Banker Mode = fixed banker).
     | Settlement is per player vs the banker, in multiples of the player's bet,
     | keyed by "wins-losses-ties" across Front/Middle/Back. Missing keys pay 0

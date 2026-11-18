@@ -9,18 +9,32 @@ use App\Models\PracticeGame;
 use App\Services\Game\PracticeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
- * Single Player practice vs three server bots. No currency involved.
+ * Single Player practice vs three server bots. No currency moves: the CP
+ * balance is only read to check a tier's minimum gold.
  * Only the owner can see or play a practice game (others get 404).
  */
 class PracticeController extends Controller
 {
+    /** Difficulty levels (tier, minimum gold, bet options) and whether the player qualifies. */
+    public function tiers(Request $request, PracticeService $practice): JsonResponse
+    {
+        return response()->json(['data' => $practice->tiers($request->user())]);
+    }
+
     public function store(Request $request, PracticeService $practice): JsonResponse
     {
-        $game = $practice->start($request->user());
+        $data = $request->validate([
+            'tier' => ['required', 'string', Rule::in(array_keys((array) config('pusoy.practice.tiers', [])))],
+            'bet' => ['nullable', 'integer', 'min:1'],
+            'request_id' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9-]+$/'],
+        ]);
 
-        return response()->json(['data' => $practice->present($game)], 201);
+        $game = $practice->start($request->user(), $data['tier'], isset($data['bet']) ? (int) $data['bet'] : null, $data['request_id'] ?? null);
+
+        return response()->json(['data' => $practice->present($game)], $game->wasRecentlyCreated ? 201 : 200);
     }
 
     public function show(Request $request, PracticeGame $practiceGame, PracticeService $practice): JsonResponse

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\Currency;
+use App\Enums\WalletType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AdjustWalletRequest;
 use App\Http\Requests\AllocatePointsRequest;
@@ -72,20 +73,71 @@ class WalletController extends Controller
         ], $transaction->wasRecentlyCreated ? 201 : 200);
     }
 
-    public function adjust(AdjustWalletRequest $request, AllocationService $allocations): JsonResponse
+    /**
+     * Super Admin point deposit (credit) / withdrawal (debit). Ledgered as
+     * MANUAL_ADJUSTMENT / PLAYER_DEBIT with a wallet_adjustments row and an
+     * audit entry. Points only — real-money deposits/withdrawals stay behind
+     * the cash feature flags (see wallet/deposit|withdraw).
+     */
+    public function adjust(AdjustWalletRequest $request, AllocationService $allocations, WalletService $wallets): JsonResponse
     {
         $data = $request->validated();
         $amount = Points::toMinor($data['amount']);
 
+        if (! empty($data['wallet_id'])) {
+            $wallet = Wallet::query()->with('user')->findOrFail($data['wallet_id']);
+            abort_if((bool) $wallet->user?->isSuperAdmin(), 422, 'Super Admin accounts have no wallet to deposit into.');
+        } else {
+            $user = User::query()->findOrFail($data['user_id']);
+            abort_if($user->isSuperAdmin(), 422, 'Super Admin accounts have no wallet to deposit into.');
+            $wallet = $wallets->for($user, Currency::from($data['currency']), $user->isPlayer() ? WalletType::Player : WalletType::Allocation);
+        }
+
         $transaction = $allocations->adjust(
             $request->user(),
-            Wallet::query()->findOrFail($data['wallet_id']),
+            $wallet,
             $data['direction'] === 'credit' ? $amount : -$amount,
             $data['reason'],
             $data['idempotency_key'] ?? $request->header('Idempotency-Key'),
         );
 
-        return response()->json(['data' => ['reference' => $transaction->reference]], 201);
+        return response()->json([
+            'message' => $data['direction'] === 'credit' ? 'Points deposited.' : 'Points withdrawn.',
+            'data' => [
+                'reference' => $transaction->reference,
+                'wallet_id' => $wallet->id,
+                'balance' => Points::decimal($wallet->fresh()->balance),
+            ],
+        ], $transaction->wasRecentlyCreated ? 201 : 200);
+    }
+
+    /**
+     * Total points held per currency, broken down by wallet type. CP and VC
+     * are never added together.
+     */
+    public function summary(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->can('review_transactions'), 403);
+
+        $rows = Wallet::query()
+            ->selectRaw('currency, type, SUM(balance) as total, COUNT(*) as wallets')
+            ->groupBy('currency', 'type')
+            ->get();
+
+        $out = [];
+        foreach (Currency::cases() as $currency) {
+            $byType = [];
+            $sum = 0;
+            foreach (WalletType::cases() as $type) {
+                $row = $rows->first(fn ($r) => $r->currency === $currency && $r->type === $type);
+                $minor = (int) ($row->total ?? 0);
+                $sum += $minor;
+                $byType[$type->value] = ['total' => Points::decimal($minor), 'total_minor' => $minor, 'wallets' => (int) ($row->wallets ?? 0)];
+            }
+            $out[$currency->value] = ['total' => Points::decimal($sum), 'total_minor' => $sum, 'by_type' => $byType];
+        }
+
+        return response()->json(['data' => $out]);
     }
 
     public function freeze(Request $request, Wallet $wallet, AllocationService $allocations): WalletResource

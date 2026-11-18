@@ -85,6 +85,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
 
         // Single Player practice vs server bots (no currency)
+        Route::get('practice/tiers', [PracticeController::class, 'tiers']);
         Route::post('practice', [PracticeController::class, 'store'])->middleware('throttle:game-actions');
         Route::get('practice/{practiceGame}', [PracticeController::class, 'show']);
         Route::post('practice/{practiceGame}/preview', [PracticeController::class, 'preview']);
@@ -142,6 +143,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('games/{session}/retry', [AdminGameController::class, 'retry']);
 
             Route::get('wallets', [AdminWalletController::class, 'wallets']);
+            Route::get('wallets/summary', [AdminWalletController::class, 'summary']);
             Route::post('wallets/{wallet}/freeze', [AdminWalletController::class, 'freeze']);
             Route::get('transactions', [AdminWalletController::class, 'transactions']);
             Route::post('transactions/{transaction}/reverse', [AdminWalletController::class, 'reverse']);

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import SinglePlayerPicker from '@/components/SinglePlayerPicker';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import BeachLandscape from '@/components/BeachLandscape';
@@ -18,6 +19,7 @@ import { useFetch } from '@/lib/hooks';
 import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
+import { practiceUrl } from '@/lib/singlePlayer';
 
 /**
  * Landscape main menu (laid out on a 1600×900 stage that scales to the
@@ -232,10 +234,24 @@ export default function Home() {
   const [seat, setSeat] = useState<TableState | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [soundOn, toggleSound] = useSound();
+  const [picker, setPicker] = useState(false);
   const diamonds = useCountUp(vc !== undefined ? Math.floor(Number(vc)) : undefined);
   const coins = useCountUp(cp !== undefined ? Math.floor(Number(cp)) : undefined);
 
   useLandscapeLock();
+
+  const openPicker = () => {
+    play('tap');
+    setPicker(true);
+  };
+
+  // "Change level" from the practice screen comes back here with ?single=1.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('single') === '1') {
+      setPicker(true);
+      window.history.replaceState(null, '', '/home/');
+    }
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -330,8 +346,8 @@ export default function Home() {
           </Link>
         )}
 
-        {/* Play: Single Player = practice vs server bots (free); Multiplayer = lobby (Classic, Round Bank, Banker Mode) */}
-        <Tile x={495} y={278} w={520} h={350} from="#c477ff" to="#5a14b8" label="Single Player" href="/practice/">
+        {/* Play: Single Player opens the difficulty picker (practice vs server bots, no coins move); Multiplayer = lobby (Classic, Round Bank, Banker Mode) */}
+        <Tile x={495} y={278} w={520} h={350} from="#c477ff" to="#5a14b8" label="Single Player" onClick={openPicker}>
           <span className="mt-2">
             <RoundBankArt />
           </span>
@@ -362,6 +378,8 @@ export default function Home() {
           <ExitArt />
           <CandyText text="Logout" width={300} height={64} size={52} stroke="#6d0a33" fill={['#ffffff', '#ffffff', '#ffe4ef']} sweepDelay={3.4} />
         </Tile>
+
+        {picker && <SinglePlayerPicker onClose={() => setPicker(false)} onContinue={(sel) => router.push(practiceUrl(sel))} />}
 
         {toast && (
           <div role="status" className={`absolute left-1/2 top-[150px] z-20 -translate-x-1/2 rounded-full border-4 px-8 py-3 font-display text-[28px] font-black shadow-lg ${toast.ok ? 'border-[#4ee36b] bg-[#0f2a1c] text-[#b9ffcb]' : 'border-red-400 bg-[#3a0d14] text-red-100'}`}>

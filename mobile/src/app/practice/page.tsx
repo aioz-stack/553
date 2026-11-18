@@ -6,8 +6,9 @@ import ArrangeHands from '@/components/ArrangeHands';
 import { Avatar, Confetti, GameButton, GlassCard, Ribbon } from '@/components/game';
 import PlayingCard from '@/components/PlayingCard';
 import { Notice, Screen, Spinner } from '@/components/ui';
-import { api, errorText } from '@/lib/api';
+import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { PICKER_URL, saveSelection, selectionFromUrl, type SinglePlayerSelection } from '@/lib/singlePlayer';
 import { play } from '@/lib/sound';
 
 type Lane = 'front' | 'middle' | 'back';
@@ -24,11 +25,14 @@ export interface PracticePlayer {
   score?: number;
   placement?: number;
   vs_you?: Record<Lane, number> | null;
+  stake_result?: number;
 }
 
 export interface PracticeState {
   id: number;
   status: 'arranging' | 'completed' | 'abandoned';
+  tier: { key: string; name: string };
+  bet: number;
   cards: string[];
   players: PracticePlayer[];
   deck_commitment: string;
@@ -53,29 +57,51 @@ export default function Practice() {
   const router = useRouter();
   const [game, setGame] = useState<PracticeState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState<SinglePlayerSelection | null>(null);
+  const inFlight = useRef(false);
+  // One id per deal: a retry after a network failure reuses it, so the server
+  // returns the deal it may already have made instead of starting another.
+  const requestId = useRef<string | null>(null);
 
-  const deal = useCallback(async () => {
+  const deal = useCallback(async (selection: SinglePlayerSelection, fresh: boolean) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    if (fresh || !requestId.current) requestId.current = idempotencyKey();
     setBusy(true);
     setError(null);
+    setErrorCode(undefined);
     try {
-      const r = await api<{ data: PracticeState }>('/practice', { method: 'POST' });
+      const r = await api<{ data: PracticeState }>('/practice', { method: 'POST', body: { tier: selection.tier, ...(selection.bet ? { bet: selection.bet } : {}), request_id: requestId.current } });
       play('deal');
       setGame(r.data);
     } catch (e) {
       setError(errorText(e));
+      setErrorCode(e instanceof ApiError ? e.code ?? (e.status === 422 ? 'invalid_selection' : undefined) : undefined);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }, []);
 
   const started = useRef(false);
   useEffect(() => {
-    if (user && !started.current) {
-      started.current = true;
-      deal();
+    if (!user || started.current) return;
+    started.current = true;
+    const s = selectionFromUrl(window.location.search);
+    if (!s) {
+      // No level chosen yet: open the picker instead of dealing.
+      router.replace(PICKER_URL);
+      return;
     }
-  }, [user, deal]);
+    saveSelection(s);
+    setSel(s);
+    deal(s, true);
+  }, [user, deal, router]);
+
+  const changeLevel = () => router.replace(PICKER_URL);
+  const selectionProblem = errorCode === 'insufficient_gold' || errorCode === 'invalid_tier' || errorCode === 'invalid_bet' || errorCode === 'invalid_selection';
 
   const done = game?.status === 'completed';
   const me = game?.players.find((p) => p.is_you);
@@ -87,15 +113,31 @@ export default function Practice() {
       {error && (
         <>
           <Notice>{error}</Notice>
-          <GameButton tone="gold" size="lg" className="w-full" onClick={deal}>
-            TRY AGAIN
-          </GameButton>
+          <div className="grid grid-cols-2 gap-2">
+            <GameButton tone="glass" size="lg" onClick={changeLevel}>
+              CHANGE LEVEL
+            </GameButton>
+            {!selectionProblem && sel && (
+              <GameButton tone="gold" size="lg" onClick={() => deal(sel, false)} disabled={busy}>
+                TRY AGAIN
+              </GameButton>
+            )}
+          </div>
         </>
       )}
       {!game && !error && <Spinner />}
 
       {game && (
         <>
+          <div className="mb-2 flex items-center justify-between rounded-2xl bg-white/8 px-3 py-2" aria-label="Selected level">
+            <span className="font-display text-sm font-extrabold text-gold-300">{game.tier.name}</span>
+            <span className="text-xs font-bold text-white/80">Bet {game.bet.toLocaleString('en-US')}</span>
+            {!done && (
+              <button type="button" onClick={changeLevel} className="text-xs font-bold text-white/60 underline">
+                Change level
+              </button>
+            )}
+          </div>
           <div className="mb-3 grid grid-cols-3 gap-2" aria-label="Opponents">
             {bots.map((b) => (
               <div key={b.seat} className="glass flex flex-col items-center rounded-2xl px-2 py-2">
@@ -133,6 +175,14 @@ export default function Practice() {
                 <span className="inline-block -rotate-3 rounded-2xl bg-gradient-to-b from-gold-200 via-gold-400 to-gold-600 px-6 py-2 font-display text-3xl font-black text-night-900 shadow-[0_6px_0_#9a5b03,0_12px_24px_rgb(0_0_0/0.5)]">
                   {me.placement === 1 ? 'YOU WIN!' : `#${me.placement} PLACE`}
                 </span>
+                <p className="mt-2 text-sm font-bold text-white/85">
+                  Bet result{' '}
+                  <span className={(me.stake_result ?? 0) >= 0 ? 'text-mint-400' : 'text-candy-400'}>
+                    {(me.stake_result ?? 0) > 0 ? '+' : ''}
+                    {(me.stake_result ?? 0).toLocaleString('en-US')}
+                  </span>{' '}
+                  <span className="text-xs text-white/55">(practice — no coins are charged)</span>
+                </p>
               </div>
 
               <GlassCard title={<Ribbon tone="gold">Scoreboard</Ribbon>}>
@@ -185,7 +235,7 @@ export default function Practice() {
                 <GameButton tone="glass" size="lg" onClick={() => router.replace('/home/')}>
                   HOME
                 </GameButton>
-                <GameButton tone="gold" size="lg" onClick={deal} disabled={busy}>
+                <GameButton tone="gold" size="lg" onClick={() => sel && deal(sel, true)} disabled={busy || !sel}>
                   {busy ? 'DEALING…' : 'PLAY AGAIN'}
                 </GameButton>
               </div>

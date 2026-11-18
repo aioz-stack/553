@@ -7,9 +7,12 @@ const apiMock = vi.fn();
 vi.mock('@/lib/api', () => ({
   api: (...args: unknown[]) => apiMock(...args),
   errorText: (e: Error) => e.message,
+  idempotencyKey: () => 'req-1',
+  ApiError: class extends Error {},
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 1, name: 'Pat Player', username: 'player' } }) }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn(), back: vi.fn() }), usePathname: () => '/practice/' }));
+const replace = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace, push: vi.fn(), back: vi.fn() }), usePathname: () => '/practice/' }));
 vi.mock('@/components/ui', async (orig) => ({ ...(await orig<object>()), Screen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
 import Practice from './page';
@@ -21,7 +24,7 @@ const BOTS = [
   { seat: 3, name: 'CardBot', is_you: false },
   { seat: 4, name: 'AceBot', is_you: false },
 ];
-const DEALT = { id: 9, status: 'arranging', cards: CARDS, players: [{ seat: 1, name: 'You', is_you: true }, ...BOTS], deck_commitment: 'c0ffee', server_seed: null, allow_foul: true };
+const DEALT = { id: 9, status: 'arranging', tier: { key: 'beginner', name: 'Beginner' }, bet: 50, cards: CARDS, players: [{ seat: 1, name: 'You', is_you: true }, ...BOTS], deck_commitment: 'c0ffee', server_seed: null, allow_foul: true };
 const labels = { front: 'High Card', middle: 'One Pair', back: 'Full House' };
 const lanes = (v: number) => ({ front: v, middle: v, back: v });
 const DONE = {
@@ -29,7 +32,7 @@ const DONE = {
   status: 'completed',
   server_seed: 'abc123',
   players: [
-    { seat: 1, name: 'You', is_you: true, ...ROWS, labels, is_foul: false, score: 6, placement: 1, vs_you: null },
+    { seat: 1, name: 'You', is_you: true, ...ROWS, labels, is_foul: false, score: 6, placement: 1, vs_you: null, stake_result: 300 },
     ...BOTS.map((b) => ({ ...b, ...ROWS, labels, is_foul: false, score: -2, placement: 2, vs_you: lanes(b.seat === 2 ? 0 : 1) })),
   ],
 };
@@ -37,6 +40,9 @@ const DONE = {
 describe('Single Player practice', () => {
   beforeEach(() => {
     apiMock.mockReset();
+    replace.mockReset();
+    sessionStorage.clear();
+    window.history.replaceState(null, '', '/practice/?tier=beginner&bet=50');
     apiMock.mockImplementation((path: string) => {
       if (path === '/practice') return Promise.resolve({ data: DEALT });
       if (path.endsWith('/preview')) return Promise.resolve({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } });
@@ -50,7 +56,8 @@ describe('Single Player practice', () => {
     render(<Practice />);
 
     await screen.findByText('LuckyBot');
-    expect(apiMock).toHaveBeenCalledWith('/practice', { method: 'POST' });
+    expect(apiMock).toHaveBeenCalledWith('/practice', { method: 'POST', body: { tier: 'beginner', bet: 50, request_id: 'req-1' } });
+    expect(screen.getByText('Bet 50')).toBeInTheDocument();
     expect(apiMock.mock.calls.filter(([p]) => p === '/practice')).toHaveLength(1);
 
     const NAMES: Record<string, string> = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
@@ -69,5 +76,32 @@ describe('Single Player practice', () => {
     expect(screen.getByText('+6 pts')).toBeInTheDocument();
     expect(screen.getAllByText('TIE').length).toBe(3);
     expect(screen.getByText(/Seed abc123/)).toBeInTheDocument();
+    expect(screen.getByText('+300')).toBeInTheDocument();
+  });
+});
+
+describe('Single Player practice without a chosen level', () => {
+  it('opens the difficulty picker instead of dealing', async () => {
+    apiMock.mockReset();
+    replace.mockReset();
+    sessionStorage.clear();
+    window.history.replaceState(null, '', '/practice/');
+    render(<Practice />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home/?single=1'));
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Single Player practice from a difficulty tap', () => {
+  it('sends only the tier; the server picks the bet', async () => {
+    apiMock.mockReset();
+    apiMock.mockResolvedValue({ data: DEALT });
+    sessionStorage.clear();
+    window.history.replaceState(null, '', '/practice/?tier=beginner');
+    render(<Practice />);
+
+    await screen.findByText('LuckyBot');
+    expect(apiMock).toHaveBeenCalledWith('/practice', { method: 'POST', body: { tier: 'beginner', request_id: 'req-1' } });
   });
 });
