@@ -67,7 +67,7 @@ export function Seat({ player, position, inGame, arrangement, result, phase }: {
         <span className="absolute -top-4 z-10 animate-pulse rounded-md bg-gradient-to-b from-gold-300 to-gold-600 px-2 font-display text-xs font-black text-night-900">LUCKY!</span>
       )}
       <div className="relative">
-        <Avatar name={player.is_you ? 'You' : player.name} size={position === 'bottom' ? 50 : 44} active={player.is_you || player.is_banker} />
+        <Avatar name={player.is_you ? 'You' : player.name} avatar={player.avatar} userId={player.user_id} size={position === 'bottom' ? 50 : 44} active={player.is_you || player.is_banker} />
         {player.is_banker && (
           <span className="absolute -left-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-gold-200 bg-gradient-to-b from-orange-400 to-red-600 shadow" title="Banker" aria-label="Banker">
             <IconCrown className="h-3.5 w-3.5 text-gold-100" />
@@ -132,7 +132,7 @@ export function RevealedHand({ a, result, currency }: { a: Arrangement; result?:
   return (
     <div className={`rounded-2xl border p-2 ${(result?.role ? Number(result.net) > 0 : result?.placement === 1) ? 'border-gold-300 bg-gold-400/15' : 'border-white/10 bg-black/25'}`}>
       <div className="mb-1 flex items-center gap-2">
-        <Avatar name={a.name} size={28} />
+        <Avatar name={a.name} avatar={a.avatar} userId={a.user_id} size={28} />
         <span className="flex-1 truncate font-display text-sm font-extrabold">{a.name}</span>
         {a.is_foul && <span className="rounded-full bg-red-500 px-2 text-[10px] font-black">FOUL</span>}
         {a.is_auto && <span className="rounded-full bg-white/20 px-2 text-[10px] font-black">AUTO</span>}

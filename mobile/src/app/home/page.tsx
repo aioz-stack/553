@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import AvatarPicker from '@/components/AvatarPicker';
 import SettingsPanel from '@/components/SettingsPanel';
 import SinglePlayerPicker from '@/components/SinglePlayerPicker';
 import { useRouter } from 'next/navigation';
@@ -205,6 +206,7 @@ export default function Home() {
   const [soundOn] = useSound();
   const [picker, setPicker] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [avatarPicker, setAvatarPicker] = useState(false);
   const diamonds = useCountUp(vc !== undefined ? Math.floor(Number(vc)) : undefined);
   const coins = useCountUp(cp !== undefined ? Math.floor(Number(cp)) : undefined);
 
@@ -265,7 +267,7 @@ export default function Home() {
         <Link href="/profile/" aria-label="Profile" className="absolute left-[40px] top-[22px] flex items-center gap-4" onClick={() => play('tap')}>
           <span className="lx-gold lx-glow lx-spring-soft relative rounded-full p-[8px] shadow-[0_8px_0_#8a4a00]" style={springStyle('avatar', 4, 1)}>
             <span className="lx-gloss relative block rounded-full">
-              <Avatar name={name} size={150} />
+              <Avatar name={name} size={150} avatar={user?.avatar} userId={user?.id} />
             </span>
           </span>
           <span className="flex flex-col">
@@ -350,6 +352,19 @@ export default function Home() {
         </Tile>
 
         {settings && <SettingsPanel onClose={() => setSettings(false)} />}
+        {avatarPicker && <AvatarPicker onClose={() => setAvatarPicker(false)} />}
+        {/* Change avatar: a pencil badge on your portrait (the portrait itself opens your profile). */}
+        <button
+          type="button"
+          aria-label="Change avatar"
+          onClick={() => {
+            play('tap');
+            setAvatarPicker(true);
+          }}
+          className="lx-tile absolute left-[150px] top-[136px] z-10 flex h-[54px] w-[54px] items-center justify-center rounded-full border-[4px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] text-[26px] text-[#4a1d00] shadow-[0_4px_0_#8a4a00]"
+        >
+          ✎
+        </button>
         {picker && <SinglePlayerPicker onClose={() => setPicker(false)} onContinue={(sel) => router.push(practiceUrl(sel))} />}
 
         {toast && (

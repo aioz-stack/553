@@ -41,6 +41,7 @@ use App\Services\Agent\CommissionService;
 use App\Services\Wallet\LedgerService;
 use App\Services\Wallet\TransferRequest;
 use App\Services\Wallet\WalletService;
+use App\Support\Avatars;
 use App\Support\Points;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -910,8 +911,8 @@ class BankerMatchService
             ->leftJoin('player_profiles', 'player_profiles.user_id', '=', 'users.id')
             ->where('game_sessions.game_table_id', $table->id)
             ->where('game_sessions.status', GameStatus::Completed->value)
-            ->groupBy('game_results.user_id', 'users.name', 'player_profiles.display_name')
-            ->selectRaw('game_results.user_id, users.name, player_profiles.display_name, COUNT(*) as rounds, SUM(game_results.net_amount) as net,
+            ->groupBy('game_results.user_id', 'users.name', 'users.avatar', 'player_profiles.display_name')
+            ->selectRaw('game_results.user_id, users.name, users.avatar, player_profiles.display_name, COUNT(*) as rounds, SUM(game_results.net_amount) as net,
                 SUM(CASE WHEN game_results.net_amount > 0 THEN 1 ELSE 0 END) as won,
                 SUM(CASE WHEN game_results.net_amount < 0 THEN 1 ELSE 0 END) as lost,
                 SUM(CASE WHEN game_results.role = \'banker\' THEN 1 ELSE 0 END) as banker_rounds,
@@ -923,6 +924,7 @@ class BankerMatchService
             'rank' => $i + 1,
             'user_id' => (int) $r->user_id,
             'name' => $r->display_name ?? $r->name,
+            'avatar' => Avatars::for($r->avatar, (int) $r->user_id),
             'rounds' => (int) $r->rounds,
             'won' => (int) $r->won,
             'lost' => (int) $r->lost,

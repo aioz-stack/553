@@ -9,7 +9,12 @@ use App\Models\GameSession;
 use App\Models\PlayerProfile;
 use App\Models\User;
 use App\Services\Audit\AuditLogger;
+use App\Events\Game\GameEvents;
+use App\Events\Game\TableEvent;
+use App\Services\Game\TableService;
 use App\Services\Reports\ReportService;
+use App\Support\Avatars;
+use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -39,6 +44,29 @@ class PlayerController extends Controller
         }
 
         return new UserResource($user->load('profile'));
+    }
+
+    /**
+     * PUT /profile/avatar — choose your cartoon avatar (one of App\Support\Avatars::ids()). Saved on
+     * your account; anyone at your table (and every open Lobby screen) is told to refresh, so the new
+     * avatar shows everywhere at once.
+     */
+    public function updateAvatar(Request $request, TableService $tables): JsonResponse
+    {
+        $data = $request->validate(['avatar' => ['required', 'string', Rule::in(Avatars::ids())]], [
+            'avatar.in' => 'Choose one of the avatars in the gallery.',
+        ]);
+
+        $user = $request->user();
+        $old = $user->avatarId();
+        $user->forceFill(['avatar' => $data['avatar']])->save();
+        AuditLogger::log($user, 'user.avatar_changed', $user, ['avatar' => $old], ['avatar' => $data['avatar']]);
+
+        if ($seat = $tables->activeSeat($user)) {
+            event(new TableEvent($seat->game_table_id, GameEvents::PLAYER_UPDATED, ['user_id' => $user->id, 'avatar' => $data['avatar']]));
+        }
+
+        return response()->json(['data' => ['avatar' => $user->avatarId()]]);
     }
 
     /** Your saved game settings: { bgm: bool, sfx: bool, motion: low|medium|high }. */
@@ -101,7 +129,7 @@ class PlayerController extends Controller
 
     public function leaderboard(Request $request): JsonResponse
     {
-        $rows = PlayerProfile::query()->with('user:id,name,username')
+        $rows = PlayerProfile::query()->with('user:id,name,username,avatar')
             ->where('games_played', '>', 0)
             ->orderByDesc('total_score')->orderByDesc('games_won')
             ->limit(min((int) $request->integer('limit', 50), 100))
@@ -111,6 +139,7 @@ class PlayerController extends Controller
                 'rank' => $i + 1,
                 'user_id' => $p->user_id,
                 'name' => $p->display_name ?? $p->user?->name,
+                'avatar' => Avatars::for($p->user?->avatar, (int) $p->user_id),
                 'games_played' => $p->games_played,
                 'games_won' => $p->games_won,
                 'total_score' => $p->total_score,

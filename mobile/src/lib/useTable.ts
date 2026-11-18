@@ -8,7 +8,7 @@ import type { SessionState, TableState } from './types';
 const EVENTS = [
   'player.joined', 'player.left', 'player.ready', 'table.full', 'game.started', 'game.timer',
   'player.submitted', 'game.all_submitted', 'game.revealed', 'game.scored', 'game.results',
-  'player.disconnected', 'player.reconnected', 'game.cancelled',
+  'player.disconnected', 'player.reconnected', 'game.cancelled', 'player.updated',
   // banker modes
   'match.started', 'round.started', 'banker.assigned', 'player.bet', 'betting.closed', 'player.lucky',
   'round.completed', 'match.completed',

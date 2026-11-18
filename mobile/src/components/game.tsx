@@ -3,7 +3,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { points } from '@/lib/hooks';
 import { springStyle } from '@/lib/spring';
-import { useId } from 'react';
+import { useId, useState } from 'react';
+import { avatarFor, avatarUrl } from '@/lib/avatars';
 import { Glitter, RimGlint } from './Sparkles';
 
 /*
@@ -63,15 +64,60 @@ const AVATAR_GRADIENTS = [
 ];
 
 /** Initials avatar with a gold rim (no external images). */
-export function Avatar({ name, size = 48, active, className }: { name: string; size?: number; active?: boolean; className?: string }) {
+/**
+ * A player's cartoon avatar (the 553 collection, lib/avatars) in a gold rim. `avatar` is the id
+ * from the server; without one (or if an image ever fails to load) the player's stable default is
+ * shown, and as a last resort their initials — never a broken image.
+ */
+export function Avatar({
+  name,
+  size = 48,
+  active,
+  className,
+  avatar,
+  userId,
+  square,
+  rim = true,
+}: {
+  name: string;
+  size?: number;
+  active?: boolean;
+  className?: string;
+  avatar?: string | null;
+  userId?: number | null;
+  /** Rounded square instead of a circle. */
+  square?: boolean;
+  /** Gold rim (default); false when the picture sits inside its own frame. */
+  rim?: boolean;
+}) {
+  const wanted = avatarFor(avatar, userId);
+  const [failed, setFailed] = useState<string[]>([]);
+  const fallback = avatarFor(null, userId);
+  const src = !failed.includes(wanted) ? wanted : !failed.includes(fallback) ? fallback : null;
   const initials = name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
   const hash = [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const round = square ? 'rounded-[22%]' : 'rounded-full';
 
   return (
-    <span className={cx('gold-rim inline-flex shrink-0 items-center justify-center rounded-full p-[3px] shadow-lg', active && 'ring-4 ring-gold-300/60', className)} style={{ width: size, height: size }}>
-      <span className={cx('flex h-full w-full items-center justify-center rounded-full bg-gradient-to-br font-display font-black text-white', AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length])} style={{ fontSize: size * 0.36 }}>
-        {initials}
-      </span>
+    <span className={cx('inline-flex shrink-0 items-center justify-center', rim && 'gold-rim p-[3px] shadow-lg', round, active && 'ring-4 ring-gold-300/60', className)} style={{ width: size, height: size }}>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element -- static export (Capacitor): plain <img>, sized, lazy
+        <img
+          src={avatarUrl(src)}
+          alt={name}
+          width={size}
+          height={size}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => setFailed((f) => [...f, src])}
+          className={cx('h-full w-full bg-white object-cover', round)}
+        />
+      ) : (
+        <span className={cx('flex h-full w-full items-center justify-center bg-gradient-to-br font-display font-black text-white', round, AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length])} style={{ fontSize: size * 0.36 }}>
+          {initials}
+        </span>
+      )}
     </span>
   );
 }

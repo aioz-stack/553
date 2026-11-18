@@ -409,6 +409,7 @@ class GameEngine
                 return [
                     'user_id' => $s->user_id,
                     'name' => $s->user->name,
+                    'avatar' => $s->user->avatarId(),
                     'front' => $s->front,
                     'middle' => $s->middle,
                     'back' => $s->back,
@@ -432,6 +433,7 @@ class GameEngine
             ->map(fn (GameResult $r) => [
                 'user_id' => $r->user_id,
                 'name' => $r->user->name,
+                'avatar' => $r->user->avatarId(),
                 'seat' => $r->seat,
                 'score' => $r->score,
                 'placement' => $r->placement,

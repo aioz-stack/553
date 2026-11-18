@@ -6,7 +6,8 @@ import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
 import { CandyButton, EyeButton, Gem, Modal, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
 import SettingsPanel from '@/components/SettingsPanel';
-import { Face, LanternRoom, MiniCrest, PokerTable, type FaceKind } from '@/components/table/TableArt';
+import { LanternRoom, MiniCrest, PokerTable } from '@/components/table/TableArt';
+import { Avatar } from '@/components/game';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -27,8 +28,6 @@ import { useLandscapeLock } from '@/lib/useLandscapeLock';
  * from GET /lobbies/{id}, which is also the heartbeat (every 3 s, every 0.4 s in the countdown).
  */
 
-const FACES: FaceKind[] = ['cap', 'spiky', 'shades', 'beard'];
-const faceFor = (userId: number) => FACES[userId % 4];
 // Seat centres on the stage, as in the reference: 1 top, 2 left, 3 right, 4 bottom.
 const SEAT_AT: Record<number, { x: number; y: number }> = {
   1: { x: 800, y: 170 },
@@ -103,7 +102,7 @@ function SeatTile({
         {free && <PersonPlus />}
         {other && (
           <span key={seat.user_id} className={`cs-pop relative overflow-hidden rounded-[22px] border-[4px] ${seat.is_banker ? 'border-[#7cc8ff]' : 'border-white'} ${seat.is_connected === false ? 'grayscale' : ''}`}>
-            <Face kind={faceFor(seat.user_id as number)} size={150} />
+            <Avatar name={seat.name ?? ""} avatar={seat.avatar} userId={seat.user_id} size={150} square rim={false} />
             {seat.state === 'reserved' && <span className="absolute inset-x-0 bottom-0 bg-black/65 py-0.5 text-center font-display text-[18px] font-black text-[#ffe14d]">Reserved</span>}
             {seat.is_connected === false && <span className="absolute inset-x-0 top-0 bg-black/70 text-center text-[15px] font-bold text-white">offline</span>}
           </span>
@@ -295,7 +294,6 @@ export default function ChooseYourSeat() {
   };
 
   const players = lobby?.players ?? 0;
-  const myFace = user ? faceFor(user.id) : 'cap';
   const target = mySeat ? SEAT_AT[mySeat] : null;
   const showReady = !!lobby?.all_confirmed;
 
@@ -383,7 +381,7 @@ export default function ChooseYourSeat() {
               <div key={locked} className={`relative ${locked ? 'cs-lock' : ''}`}>
                 <span className="absolute -top-[30px] left-1/2 z-10 -translate-x-1/2 rounded-[12px] border-[3px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-4 font-display text-[24px] font-black text-[#4a1d00] shadow-[0_4px_0_#7a3e00]">YOU</span>
                 <div className={`overflow-hidden rounded-[24px] border-[5px] ${lobby.my_seat_confirmed && pick === null ? 'border-[#5dff7a]' : 'border-[#ffe14d]'} shadow-[0_0_30px_rgb(255_211_77/0.7)]`}>
-                  <Face kind={myFace} size={150} />
+                  <Avatar name={user?.display_name ?? user?.name ?? "You"} avatar={user?.avatar} userId={user?.id} size={150} square rim={false} />
                 </div>
                 {lobby.my_seat_confirmed && pick === null && <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#13a344] px-3 font-display text-[16px] font-black text-white">{lobby.my_ready ? 'Ready ✓' : 'Seat locked ✓'}</span>}
               </div>

@@ -42,6 +42,7 @@ class FriendController extends Controller
                 'user_id' => $other->id,
                 'username' => $other->username,
                 'name' => $other->profile?->display_name ?? $other->name,
+                'avatar' => $other->avatarId(),
                 'level' => Level::fromXp((int) ($other->profile?->xp ?? 0))['level'],
                 'online' => $other->last_seen_at !== null && $other->last_seen_at->gt(now()->subSeconds((int) config('pusoy.online_seconds', 120))),
                 'last_seen_at' => $other->last_seen_at?->toIso8601String(),

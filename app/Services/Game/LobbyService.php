@@ -63,6 +63,7 @@ class LobbyService
     /** Table events that change what the Lobby screen shows. */
     public const TABLE_EVENTS_THAT_CHANGE_LOBBIES = [
         GameEvents::PLAYER_SEATED,
+        GameEvents::PLAYER_UPDATED,
         GameEvents::COUNTDOWN_STARTED,
         GameEvents::COUNTDOWN_CANCELLED,
         GameEvents::PLAYER_JOINED,
@@ -295,6 +296,7 @@ class LobbyService
                 'seat' => $seat,
                 'user_id' => $p->user_id,
                 'name' => $p->user->profile?->display_name ?? $p->user->name,
+                'avatar' => $p->user->avatarId(),
                 'username' => $p->user->username,
                 // occupied = seat confirmed; reserved = held by a player who has not confirmed yet
                 'state' => $p->seat_confirmed ? 'occupied' : 'reserved',

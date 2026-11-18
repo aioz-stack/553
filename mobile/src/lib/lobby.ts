@@ -39,6 +39,7 @@ export interface LobbySeat {
   state: 'available' | 'reserved' | 'occupied';
   seat_confirmed?: boolean;
   name?: string;
+  avatar?: string | null;
   username?: string;
   is_ready?: boolean;
   is_connected?: boolean;
@@ -144,7 +145,7 @@ export function useWaitingRoomUpdates(tableId: number | null, onChange: () => vo
       .then((echo) => {
         if (!echo) return;
         const ch = echo.join(`table.${tableId}`);
-        ['player.joined', 'player.left', 'player.ready', 'player.seated', 'table.full', 'match.countdown', 'match.countdown_cancelled', 'match.started', 'match.completed', 'player.disconnected', 'player.reconnected'].forEach((e) =>
+        ['player.joined', 'player.left', 'player.ready', 'player.seated', 'player.updated', 'table.full', 'match.countdown', 'match.countdown_cancelled', 'match.started', 'match.completed', 'player.disconnected', 'player.reconnected'].forEach((e) =>
           ch.listen(`.${e}`, () => cb.current()),
         );
         leave = () => echo.leave(`table.${tableId}`);

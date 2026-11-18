@@ -8,8 +8,10 @@ import FriendsPanel from '@/components/FriendsPanel';
 import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
 import { CandyButton, EyeButton, Gem, Lock, Modal, People, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
+import AvatarPicker from '@/components/AvatarPicker';
 import SettingsPanel from '@/components/SettingsPanel';
-import { Face, LanternRoom } from '@/components/table/TableArt';
+import { LanternRoom } from '@/components/table/TableArt';
+import { Avatar } from '@/components/game';
 import { Screen } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -145,7 +147,7 @@ export default function MultiplayerLobby() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-  const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | null>(null);
+  const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | 'avatar' | null>(null);
   const [pwFor, setPwFor] = useState<LobbySummary | null>(null);
   const [unread, setUnread] = useState(0);
   const [leaving, setLeaving] = useState(false);
@@ -273,11 +275,14 @@ export default function MultiplayerLobby() {
 
         {/* ---- top bar ---- */}
         <div className="absolute left-[20px] top-[14px] z-10 flex items-center gap-4">
-          <div className="lx-gold rounded-full p-[5px] shadow-[0_6px_0_#7a3e00]">
-            <div className="overflow-hidden rounded-full border-2 border-white/70">
-              <Face kind="cap" size={110} />
-            </div>
-          </div>
+          <button type="button" aria-label="Change avatar" onClick={() => setPanel('avatar')} className="lx-tile lx-gold relative rounded-full p-[5px] shadow-[0_6px_0_#7a3e00]">
+            <span className="block overflow-hidden rounded-full border-2 border-white/70">
+              <Avatar name={name} avatar={user?.avatar} userId={user?.id} size={110} rim={false} />
+            </span>
+            <span className="absolute -bottom-1 -right-1 flex h-[38px] w-[38px] items-center justify-center rounded-full border-[3px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] text-[18px] text-[#4a1d00]" aria-hidden="true">
+              ✎
+            </span>
+          </button>
           <div className="leading-tight">
             <p className="max-w-[300px] truncate font-display text-[36px] font-black text-white drop-shadow-[0_3px_0_rgb(0_0_0/0.6)]">{name}</p>
             <p className="font-display text-[24px] font-black text-[#ffe14d]">ID: {user?.id ?? '…'}</p>
@@ -541,6 +546,7 @@ export default function MultiplayerLobby() {
         {/* ---- popups ---- */}
         {panel === 'create' && <CreateLobbyModal balance={balance} onClose={() => setPanel(null)} onCreated={enter} />}
         {panel === 'settings' && <SettingsPanel onClose={() => setPanel(null)} />}
+        {panel === 'avatar' && <AvatarPicker onClose={() => setPanel(null)} />}
         {panel === 'friends' && (
           <Modal title="Friends" onClose={() => setPanel(null)} width={620}>
             <div className="h-[560px]">

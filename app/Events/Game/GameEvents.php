@@ -54,6 +54,9 @@ final class GameEvents
 
     public const MATCH_COMPLETED = 'match.completed';
 
+    // a seated player changed their profile (e.g. avatar): refresh their seat
+    public const PLAYER_UPDATED = 'player.updated';
+
     // multiplayer lobbies (Choose Your Seat): a player confirmed / changed seat; the synchronized
     // pre-match countdown started (payload: ends_at) or was cancelled (payload: reason).
     public const PLAYER_SEATED = 'player.seated';

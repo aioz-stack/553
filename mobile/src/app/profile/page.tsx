@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import AvatarPicker from '@/components/AvatarPicker';
 import { Avatar, GameButton, GlassCard } from '@/components/game';
 import { IconList, IconSettings, IconTrophy } from '@/components/icons';
 import { Field, Notice, Screen } from '@/components/ui';
@@ -22,6 +23,7 @@ export default function Profile() {
   const stats = useFetch<{ data: Stats }>(user ? '/profile/stats' : null);
   const [form, setForm] = useState({ name: '', display_name: '' });
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [picking, setPicking] = useState(false);
   const s = stats.data?.data;
 
   useEffect(() => {
@@ -43,9 +45,13 @@ export default function Profile() {
   return (
     <Screen title="Player profile">
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
+      {picking && <AvatarPicker onClose={() => setPicking(false)} onSaved={() => setMessage({ tone: 'success', text: 'Avatar updated.' })} />}
 
       <div className="mb-4 flex flex-col items-center text-center">
-        <Avatar name={user?.display_name ?? user?.name ?? '?'} size={96} active />
+        <Avatar name={user?.display_name ?? user?.name ?? '?'} size={96} active avatar={user?.avatar} userId={user?.id} />
+        <GameButton tone="gold" size="sm" className="mt-2" onClick={() => setPicking(true)}>
+          Change Avatar
+        </GameButton>
         <h1 className="mt-2 font-display text-2xl font-black">{user?.display_name ?? user?.name}</h1>
         <p className="text-sm text-white/60">@{user?.username} · {user?.role_label}</p>
       </div>

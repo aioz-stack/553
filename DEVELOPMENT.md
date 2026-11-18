@@ -367,6 +367,21 @@ illustrated Jack / Queen / King portraits in red and gold robes; crimson for hea
 near-black for spades / clubs. Back: deep red lattice, ornate gold frame, crowned "553" laurel
 medallion. Tiny cards (`size="xs"`) show one large index and suit so they stay readable.
 
+**Avatars** (the 553 cartoon collection): 29 images in `mobile/public/avatars/` — `boy-01…09`,
+`girl-01…10`, `animal-01…10` (256×256 WebP, cut from the supplied sheet, which has 9 boys). The ids are
+the same in `App\Support\Avatars` (server) and `mobile/src/lib/avatars.ts` (names, categories, URLs).
+`users.avatar` stores the choice; null means a stable per-player default (`ids[userId % 29]`, same rule
+on both sides), so every player always has a valid avatar. `PUT /api/v1/profile/avatar` (`avatar` must be
+a catalogue id) saves it, writes `user.avatar_changed` to the audit log and, if you are seated, sends
+`player.updated` to your table (the Lobby list, Choose Your Seat and game table refresh). The avatar id is
+in every player payload: `auth/me`, friends, leaderboard, lobby seats, table players, revealed hands,
+results and match standings. `components/AvatarPicker.tsx` (All / Boys / Girls / Animals, preview,
+Confirm / Cancel; a portal, so it opens from any screen) is reached from the Home portrait's ✎ badge,
+the Lobby portrait and Profile → Change Avatar. `Avatar` (`components/game.tsx`) draws it everywhere,
+lazy-loaded and sized, falling back to the default image and then initials, never a broken image.
+Single Player bots use fixed animals (LuckyBot cat, CardBot panda, AceBot lion). The old drawn faces
+(`TableArt` `Face`) are gone.
+
 **Settings panel** (`mobile/src/components/SettingsPanel.tsx`; opened by the home Settings tile, also
 at `/settings/`, whose Close returns to `/home/`; signed-in devices moved to `/settings/devices/`):
 - **Audio:** BGM ON/OFF (`lib/music.ts` — a looping pentatonic tune synthesised with Web Audio, no audio

@@ -9,6 +9,7 @@ interface Row {
   rank: number;
   user_id: number;
   name: string;
+  avatar?: string | null;
   games_played: number;
   win_rate: number;
   total_score: number;
@@ -40,7 +41,7 @@ export default function Leaderboard() {
                 {r && (
                   <>
                     {place === 1 && <span className="mb-1 text-2xl">👑</span>}
-                    <Avatar name={r.name} size={place === 1 ? 64 : 52} active={r.user_id === user?.id} />
+                    <Avatar name={r.name} avatar={r.avatar} userId={r.user_id} size={place === 1 ? 64 : 52} active={r.user_id === user?.id} />
                     <span className="mt-1 max-w-full truncate font-display text-sm font-extrabold">{r.name}</span>
                     <span className="font-display text-xs font-black text-gold-200">{r.total_score} pts</span>
                   </>
@@ -56,7 +57,7 @@ export default function Leaderboard() {
         {rows.slice(3).map((r) => (
           <li key={r.user_id} className={`glass flex items-center gap-3 rounded-2xl px-3 py-2 ${r.user_id === user?.id ? 'ring-2 ring-gold-400' : ''}`}>
             <span className="w-7 text-center font-display text-lg font-black text-white/70">{r.rank}</span>
-            <Avatar name={r.name} size={36} />
+            <Avatar name={r.name} avatar={r.avatar} userId={r.user_id} size={36} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-display font-extrabold">{r.name}</p>
               <p className="text-[11px] text-white/55">{r.games_played} games · {r.win_rate}% wins</p>

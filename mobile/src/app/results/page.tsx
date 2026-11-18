@@ -26,7 +26,7 @@ export default function Results() {
                 {s.results.map((r) => (
                   <li key={r.user_id} className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${r.user_id === user?.id ? 'bg-gold-400/20 ring-2 ring-gold-400/60' : 'bg-white/8'}`}>
                     <span className="w-6 text-center font-display text-lg font-black text-gold-300">{r.placement === 1 ? '👑' : r.placement}</span>
-                    <Avatar name={r.name} size={32} />
+                    <Avatar name={r.name} avatar={r.avatar} userId={r.user_id} size={32} />
                     <span className="flex-1 truncate font-bold">{r.name}</span>
                     <span className="text-right text-sm">
                       <span className="block font-display font-black">{r.score} pts</span>

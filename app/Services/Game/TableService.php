@@ -403,6 +403,7 @@ class TableService
         return [
             'user_id' => $user->id,
             'name' => $user->profile?->display_name ?? $user->name,
+            'avatar' => $user->avatarId(),
             'username' => $user->username,
             'seat' => $player->seat,
             'is_ready' => $player->is_ready,

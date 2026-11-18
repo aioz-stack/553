@@ -78,7 +78,7 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
           ) : (
             <>
               <Link href="/profile/" className="flex min-w-0 items-center gap-2" aria-label="Profile">
-                <Avatar name={name} size={42} />
+                <Avatar name={name} size={42} avatar={user?.avatar} userId={user?.id} />
                 <span className="min-w-0">
                   <span className="block truncate font-display text-sm font-extrabold leading-tight">{name}</span>
                   <span className="block truncate text-[11px] text-white/60">{title}</span>

@@ -128,7 +128,7 @@ export default function FriendsPanel({ enabled }: { enabled: boolean }) {
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 [scrollbar-color:#ffc531_transparent]">
         {incoming.map((r) => (
           <li key={`in-${r.id}`} className="lx-in flex items-center gap-3 rounded-[18px] bg-[#ffc531]/15 p-2 ring-2 ring-[#ffc531]/60">
-            <Avatar name={r.name} size={72} />
+            <Avatar name={r.name} avatar={r.avatar} userId={r.user_id} size={72} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[28px] font-extrabold text-white">{r.name}</span>
               <span className="block text-[20px] text-[#ffe9a8]">wants to be friends</span>
@@ -145,7 +145,7 @@ export default function FriendsPanel({ enabled }: { enabled: boolean }) {
         {friends.map((fr, i) => (
           <li key={fr.id} style={{ animationDelay: `${i * 70}ms` }} className="lx-in flex items-center gap-3 rounded-[18px] border-2 border-white/5 bg-gradient-to-b from-white/10 to-black/30 p-2 shadow-[inset_0_2px_0_rgb(255_255_255/0.08)] transition-transform active:scale-[0.98]">
             <span className="relative">
-              <Avatar name={fr.name} size={76} />
+              <Avatar name={fr.name} avatar={fr.avatar} userId={fr.user_id} size={76} />
               <span className="absolute -bottom-1 -right-1 rounded-full bg-[#ffc531] px-1.5 font-display text-[16px] font-black text-[#5a2600]">{fr.level}</span>
             </span>
             <span className="min-w-0 flex-1">
@@ -179,7 +179,7 @@ export default function FriendsPanel({ enabled }: { enabled: boolean }) {
 
         {(f?.outgoing ?? []).filter(match).map((r) => (
           <li key={`out-${r.id}`} className="flex items-center gap-3 rounded-[18px] p-2 opacity-70">
-            <Avatar name={r.name} size={60} />
+            <Avatar name={r.name} avatar={r.avatar} userId={r.user_id} size={60} />
             <span className="min-w-0 flex-1 truncate text-[22px] text-white">{r.name} · request sent</span>
           </li>
         ))}

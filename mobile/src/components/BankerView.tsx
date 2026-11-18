@@ -140,7 +140,7 @@ export function BankerRoundSheet({ session, userId, nextIn, onClose }: { session
           {results.map((r) => (
             <li key={r.user_id} className={`flex items-center gap-2 rounded-2xl px-3 py-2 ${r.user_id === userId ? 'bg-gold-400/20 ring-2 ring-gold-400/60' : 'bg-white/8'}`}>
               <span className="relative">
-                <Avatar name={r.name} size={32} />
+                <Avatar name={r.name} avatar={r.avatar} userId={r.user_id} size={32} />
                 {r.role === 'banker' && <IconCrown className="absolute -right-1 -top-2 h-4 w-4 text-gold-300 drop-shadow" />}
               </span>
               <span className="min-w-0 flex-1">
@@ -181,7 +181,7 @@ export function StandingsList({ standings, userId, currency }: { standings: Stan
       {standings.map((s) => (
         <li key={s.user_id} className={`flex items-center gap-2 rounded-2xl px-3 py-2 ${s.user_id === userId ? 'bg-gold-400/20 ring-2 ring-gold-400/60' : 'bg-white/8'}`}>
           <span className="w-6 text-center font-display text-lg font-black text-gold-300">{s.rank === 1 ? '👑' : s.rank}</span>
-          <Avatar name={s.name} size={30} />
+          <Avatar name={s.name} avatar={s.avatar} userId={s.user_id} size={30} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-bold">{s.name}</span>
             <span className="block text-[10px] text-white/60">

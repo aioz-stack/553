@@ -35,6 +35,7 @@ class GameSessionResource extends JsonResource
             'players' => $this->whenLoaded('results', fn () => $this->results->map(fn ($r) => [
                 'user_id' => $r->user_id,
                 'name' => $r->user?->name,
+                'avatar' => $r->user?->avatarId(),
                 'score' => $r->score,
                 'placement' => $r->placement,
                 'net' => Points::decimal($r->net_amount),

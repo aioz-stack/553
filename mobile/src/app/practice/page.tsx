@@ -10,7 +10,9 @@ import DealAnimation from '@/components/table/DealAnimation';
 import LuckPopup from '@/components/table/LuckPopup';
 import { useCardDrag } from '@/components/table/useCardDrag';
 import { fxAt, isUp, laneShown, RevealBanner, RevealFx, revealPlan, useRevealClock, type RevealPlan } from '@/components/table/RevealShow';
-import { Chip, Clover, Face, LanternRoom, MiniCrest, PokerTable, type FaceKind } from '@/components/table/TableArt';
+import { Chip, Clover, LanternRoom, MiniCrest, PokerTable } from '@/components/table/TableArt';
+import { Avatar } from '@/components/game';
+import { BOT_AVATARS } from '@/lib/avatars';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -93,10 +95,10 @@ const CHIP_COLORS = ['#1f6fe0', '#14a046', '#e0262f'];
 const BOTS: Record<number, string> = { 2: 'LuckyBot', 3: 'CardBot', 4: 'AceBot' };
 
 /** Where each bot sits on the 1600×900 stage, its look, where its face-down cards and revealed hand go. */
-const SEATS: Record<number, { x: number; y: number; face: FaceKind; stack: { x: number; y: number }; reveal: { x: number; y: number }; horizontal?: boolean }> = {
-  2: { x: 36, y: 380, face: 'shades', stack: { x: 66, y: 288 }, reveal: { x: 196, y: 318 } },
-  3: { x: 738, y: 94, face: 'spiky', stack: { x: 890, y: 130 }, reveal: { x: 560, y: 262 }, horizontal: true },
-  4: { x: 1440, y: 380, face: 'beard', stack: { x: 1470, y: 288 }, reveal: { x: 1196, y: 318 } },
+const SEATS: Record<number, { x: number; y: number; stack: { x: number; y: number }; reveal: { x: number; y: number }; horizontal?: boolean }> = {
+  2: { x: 36, y: 380, stack: { x: 66, y: 288 }, reveal: { x: 196, y: 318 } },
+  3: { x: 738, y: 94, stack: { x: 890, y: 130 }, reveal: { x: 560, y: 262 }, horizontal: true },
+  4: { x: 1440, y: 380, stack: { x: 1470, y: 288 }, reveal: { x: 1196, y: 318 } },
 };
 
 const fmt = (n: number) => n.toLocaleString('en-US');
@@ -158,13 +160,13 @@ function BankerBadge() {
   return <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border-[3px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-3 font-display text-[16px] font-black text-[#4a1d00] shadow-[0_3px_0_#7a3e00]">BANKER</span>;
 }
 
-function SeatTile({ face, name, status, banker, glow, x, y }: { face: FaceKind; name: string; status?: ReactNode; banker?: boolean; glow?: boolean; x: number; y: number }) {
+function SeatTile({ avatar, name, status, banker, glow, x, y }: { avatar: string; name: string; status?: ReactNode; banker?: boolean; glow?: boolean; x: number; y: number }) {
   return (
     <div className="absolute z-10 flex w-[124px] flex-col items-center" style={{ left: x, top: y }} aria-label={`${name}${banker ? ' (banker)' : ''}`}>
       <div className={`relative rounded-[18px] p-[6px] ${banker ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_24px_rgb(80_180_255/0.9),0_6px_0_#0c3a8a]' : 'lx-gold shadow-[0_6px_0_#7a3e00]'} ${glow ? 'tb-winner' : ''}`}>
         {banker && <BankerBadge />}
         <div className="overflow-hidden rounded-[12px] border-2 border-white/60">
-          <Face kind={face} size={108} />
+          <Avatar name={name} avatar={avatar} size={108} square rim={false} />
         </div>
       </div>
       <span className="mt-1 rounded-full bg-black/60 px-3 py-0.5 font-display text-[18px] font-black text-white">{name}</span>
@@ -671,7 +673,7 @@ export default function Practice() {
         {[2, 3, 4].map((seat) => {
           const s = SEATS[seat];
           const p = players.find((x) => x.seat === seat);
-          return <SeatTile key={seat} face={s.face} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && !revealing && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
+          return <SeatTile key={seat} avatar={BOT_AVATARS[seat]} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && !revealing && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
         })}
         {phase === 'arranging' && dealing === null &&
           [2, 3, 4].map((seat) => (
@@ -810,7 +812,7 @@ export default function Practice() {
           <div className={`relative shrink-0 rounded-[16px] p-[5px] ${banker === 1 ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_20px_rgb(80_180_255/0.9)]' : 'lx-gold'}`} title={name} aria-label={`You${banker === 1 ? ' (banker)' : ''}`}>
             {banker === 1 && <BankerBadge />}
             <div className="overflow-hidden rounded-[11px] border-2 border-white/60">
-              <Face kind="cap" size={104} />
+              <Avatar name={name} avatar={user?.avatar} userId={user?.id} size={104} square rim={false} />
             </div>
           </div>
 

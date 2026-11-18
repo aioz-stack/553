@@ -4,6 +4,8 @@ export type Currency = 'CP' | 'VC';
 export interface User {
   id: number;
   name: string;
+  /** Cartoon avatar id (lib/avatars). */
+  avatar?: string | null;
   username: string;
   email?: string;
   role: 'super_admin' | 'admin' | 'agent' | 'player';
@@ -73,6 +75,8 @@ export interface Room {
 export interface SeatPlayer {
   user_id: number;
   name: string;
+  /** Cartoon avatar id (lib/avatars). */
+  avatar?: string | null;
   seat: number;
   is_ready?: boolean;
   is_connected: boolean;
@@ -87,6 +91,7 @@ export interface SeatPlayer {
 export interface Arrangement {
   user_id: number;
   name: string;
+  avatar?: string | null;
   front: string[];
   middle: string[];
   back: string[];
@@ -99,6 +104,8 @@ export interface Arrangement {
 export interface Result {
   user_id: number;
   name: string;
+  /** Cartoon avatar id (lib/avatars). */
+  avatar?: string | null;
   seat: number;
   score: number;
   placement: number;
@@ -118,6 +125,8 @@ export interface Standing {
   rank: number;
   user_id: number;
   name: string;
+  /** Cartoon avatar id (lib/avatars). */
+  avatar?: string | null;
   rounds: number;
   won: number;
   lost: number;
@@ -201,6 +210,8 @@ export interface Friend {
   user_id: number;
   username: string;
   name: string;
+  /** Cartoon avatar id (lib/avatars). */
+  avatar?: string | null;
   level: number;
   online: boolean;
   last_seen_at: string | null;

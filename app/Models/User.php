@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Avatars;
 use App\Enums\Ability;
 use App\Enums\Currency;
 use App\Enums\Role;
@@ -67,6 +68,12 @@ class User extends Authenticatable
 
     /** Default game settings for a player who has never changed them. */
     public const DEFAULT_PREFERENCES = ['bgm' => true, 'sfx' => true, 'motion' => 'high'];
+
+    /** The cartoon avatar to show for this player (always a valid id; see App\Support\Avatars). */
+    public function avatarId(): string
+    {
+        return Avatars::for($this->avatar, (int) $this->id);
+    }
 
     /**
      * This player's game settings (BGM, sound effects, motion quality), defaults filled in.

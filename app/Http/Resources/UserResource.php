@@ -24,6 +24,7 @@ class UserResource extends JsonResource
             'role_label' => $this->role->label(),
             'status' => $this->status->value,
             'profile_picture' => $this->profile_picture,
+            'avatar' => $this->resource->avatarId(),
             'display_name' => $this->whenLoaded('profile', fn () => $this->profile?->display_name),
             'level' => $this->whenLoaded('profile', fn () => Level::fromXp((int) ($this->profile?->xp ?? 0))),
             'abilities' => $this->when($request->user()?->id === $this->id, fn () => $this->abilityKeys()),

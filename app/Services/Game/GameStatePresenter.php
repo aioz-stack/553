@@ -111,6 +111,7 @@ class GameStatePresenter
             return [
                 'user_id' => $user->id,
                 'name' => $user->profile?->display_name ?? $user->name,
+                'avatar' => $user->avatarId(),
                 'seat' => $row['seat'],
                 'is_you' => $user->id === $viewer->id,
                 'has_submitted' => in_array($user->id, $submittedIds, true),
