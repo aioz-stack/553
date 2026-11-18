@@ -439,15 +439,16 @@ export default function Practice() {
    * and the server applies the 2 × bet penalty; only an incomplete hand is
    * held back, with a hint.
    */
-  const submit = async () => {
+  const submit = async (lanes: Rows = rows) => {
     if (!round || busy) return;
-    if (!complete) {
+    const full = lanes.front.length === 3 && lanes.middle.length === 5 && lanes.back.length === 5;
+    if (!full) {
       say(false, 'Place all 13 cards first — or tap Reset to arrange them.');
       return;
     }
     setBusy(true);
     try {
-      const r = await api<{ data: RoundState }>(`/practice/${round.id}/submit`, { method: 'POST', body: rows });
+      const r = await api<{ data: RoundState }>(`/practice/${round.id}/submit`, { method: 'POST', body: lanes });
       await settled(r.data);
     } catch (e) {
       say(false, errorText(e));
@@ -730,7 +731,7 @@ export default function Practice() {
             )}
             <button
               type="button"
-              onClick={submit}
+              onClick={() => submit()}
               disabled={busy}
               className={`lx-tile absolute left-[1230px] top-[540px] z-[6] h-[88px] w-[190px] rounded-full border-[5px] font-display text-[32px] font-black text-white ${foul ? 'border-[#ffc2c2] bg-gradient-to-b from-[#ff6b6b] to-[#b3121a] shadow-[0_7px_0_#6b0606]' : 'border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] shadow-[0_7px_0_#0b6b2a]'} ${complete ? '' : 'opacity-80'}`}
             >
@@ -871,22 +872,15 @@ export default function Practice() {
             bet={round.bet}
             betLabel={round.banker === 1 ? `Covering ${fmt(round.covered ?? 0)}` : undefined}
             gold={gold}
-            seats={{
-              left: { name: BOTS[2], face: SEATS[2].face, sub: '13 cards', banker: round.banker === 2 },
-              right: { name: BOTS[4], face: SEATS[4].face, sub: '13 cards', banker: round.banker === 4 },
-            }}
+            seats={{ left: { name: BOTS[2] }, right: { name: BOTS[4] } }}
             declaring={declaring}
             onDeclare={declareLuck}
-            onReady={(r) => {
+            submitting={busy}
+            onSubmit={(r) => {
+              // SUBMIT in the popup sends these lanes to the server (a misplaced hand pays the 2× penalty).
               setRows(r);
               setPicked([]);
-              setLuck(null);
-              // READY confirms and locks the arrangement; RESET reopens this popup.
-              setLocked(true);
-            }}
-            onClose={() => {
-              play('tap');
-              setLuck(null);
+              submit(r);
             }}
           />
         )}

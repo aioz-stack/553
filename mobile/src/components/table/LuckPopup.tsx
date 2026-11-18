@@ -5,7 +5,7 @@ import { GoldCoins } from '@/components/HomeArt';
 import PlayingCard from '@/components/PlayingCard';
 import { api } from '@/lib/api';
 import { play } from '@/lib/sound';
-import { CardBack553, Clover, Face, MiniCrest, type FaceKind } from './TableArt';
+import { CardBack553, Clover, MiniCrest } from './TableArt';
 
 type Lane = 'front' | 'middle' | 'back';
 export type Rows = Record<Lane, string[]>;
@@ -33,22 +33,11 @@ function Fan({ count = 7, w = 62, h = 86, spread = 9 }: { count?: number; w?: nu
   );
 }
 
-function BotSeat({ name, face, x, sub, banker }: { name: string; face: FaceKind; x: number; sub: string; banker?: boolean }) {
+/** An opponent's place: just its fan of face-down cards (no avatar or name plate). */
+function BotSeat({ name, x }: { name: string; x: number }) {
   return (
-    <div className="absolute top-[150px] flex flex-col items-center" style={{ left: x, width: 220 }}>
+    <div className="absolute top-[150px] flex w-[220px] justify-center" style={{ left: x }} aria-label={`${name}'s cards`}>
       <Fan />
-      <div className="lx-gold -mt-6 rounded-full p-[6px] shadow-[0_6px_0_#7a3e00]">
-        <div className="overflow-hidden rounded-full border-2 border-white/70">
-          <Face kind={face} size={128} />
-        </div>
-      </div>
-      <div className="lx-gold -mt-3 rounded-[16px] p-[4px]">
-        <div className="flex flex-col items-center rounded-[12px] bg-gradient-to-b from-[#5a0609] to-[#2a0204] px-5 py-1">
-          <span className="font-display text-[22px] font-black text-white">{name}</span>
-          <span className="flex items-center gap-1 font-display text-[20px] font-black text-[#ffe14d]">{sub}</span>
-          {banker && <span className="mt-0.5 rounded-full bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-3 font-display text-[16px] font-black text-[#4a1d00]">BANKER</span>}
-        </div>
-      </div>
     </div>
   );
 }
@@ -65,12 +54,13 @@ function Mark({ ok }: { ok: boolean | null | undefined }) {
 }
 
 /**
- * "Declared Luck" popup shown right after the 13 cards are dealt (1600×900
+ * Card arrangement popup shown right after the 13 cards are dealt (1600×900
  * stage coordinates). Shows the hand in three lanes (tap two cards to swap
  * them; ⇅ swaps Middle and Back), hand names with ✓ / ✗ order marks from the
  * server preview, the Declared Luck button (the server checks the dealt cards
- * for Six Pairs / Three Flushes / Three Straights) and READY (play these lanes
- * normally). ✕ closes without declaring and keeps the table as it was.
+ * for Six Pairs / Three Flushes / Three Straights) and SUBMIT (sends these
+ * lanes to the server; a misplaced hand pays the 2× penalty). There is no
+ * close button and no player portraits — only the opponents' card fans.
  */
 export default function LuckPopup({
   gameId,
@@ -82,8 +72,9 @@ export default function LuckPopup({
   seats,
   declaring,
   onDeclare,
-  onReady,
-  onClose,
+  onSubmit,
+  submitting = false,
+
 }: {
   gameId: number;
   initial: Rows;
@@ -92,11 +83,14 @@ export default function LuckPopup({
   /** Replaces "Bet: N" (e.g. "Covering 450" when you are the banker). */
   betLabel?: string;
   gold?: number;
-  seats: { left: { name: string; face: FaceKind; sub: string; banker?: boolean }; right: { name: string; face: FaceKind; sub: string; banker?: boolean } };
+  /** Opponents whose card fans sit left and right of your lanes. */
+  seats: { left: { name: string }; right: { name: string } };
   declaring: boolean;
   onDeclare: () => void;
-  onReady: (rows: Rows) => void;
-  onClose: () => void;
+  /** SUBMIT: send these lanes to the server (settles the round). */
+  onSubmit: (rows: Rows) => void;
+  submitting?: boolean;
+
 }) {
   const [rows, setRows] = useState<Rows>(initial);
   const [picked, setPicked] = useState<{ lane: Lane; i: number } | null>(null);
@@ -175,19 +169,14 @@ export default function LuckPopup({
           </div>
         </div>
 
-        <button type="button" aria-label="Close" onClick={onClose} className="lx-tile absolute right-[22px] top-[22px] z-20 flex h-[90px] w-[90px] items-center justify-center rounded-full border-[6px] border-[#ffc531] bg-gradient-to-b from-[#ff6b6b] to-[#c0101a] shadow-[0_7px_0_#6b0606,inset_0_4px_0_rgb(255_255_255/0.45)]">
-          <svg viewBox="0 0 40 40" className="h-11 w-11" aria-hidden="true">
-            <path d="M10 10 L30 30 M30 10 L10 30" stroke="#fff" strokeWidth="8" strokeLinecap="round" />
-          </svg>
-        </button>
 
 
         {/* the top bot's cards peeking behind the lanes */}
         <div className="absolute left-[560px] top-[8px]">
           <Fan count={8} w={58} h={80} spread={7} />
         </div>
-        <BotSeat {...seats.left} x={80} />
-        <BotSeat {...seats.right} x={1210} />
+        <BotSeat name={seats.left.name} x={80} />
+        <BotSeat name={seats.right.name} x={1210} />
 
         {/* lanes */}
         <div className="absolute left-[330px] top-[96px] z-10 flex flex-col gap-[14px]">
@@ -236,12 +225,12 @@ export default function LuckPopup({
             type="button"
             onClick={() => {
               play('tap');
-              onReady(rows);
+              onSubmit(rows);
             }}
-            disabled={declaring}
+            disabled={declaring || submitting}
             className="lx-tile lx-gold h-[112px] w-[400px] rounded-full p-[6px] shadow-[0_8px_0_#7a3e00]"
           >
-            <span className="lx-gloss relative flex h-full w-full items-center justify-center rounded-full bg-gradient-to-b from-[#fff3a0] via-[#ffd13a] to-[#e08a00] font-display text-[60px] font-black text-[#4a1d00]">READY</span>
+            <span className="lx-gloss relative flex h-full w-full items-center justify-center rounded-full bg-gradient-to-b from-[#fff3a0] via-[#ffd13a] to-[#e08a00] font-display text-[60px] font-black text-[#4a1d00]">{submitting ? '…' : 'SUBMIT'}</span>
           </button>
         </div>
 

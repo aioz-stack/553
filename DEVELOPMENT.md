@@ -426,12 +426,12 @@ locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/
 - Betting: tap a chip to bet and deal; after each round the chips return for the next round's bet.
   Resuming: an open round of the active match at the same tier continues.
 - Arranging: the **arrangement popup** (`components/table/LuckPopup.tsx`, also Declared Luck) opens after
-  each deal — swap cards, ⇅ Middle/Back, ✓/✗ order marks. **READY** confirms and **locks** the lanes on
-  the table (no card can move; "Cards locked" banner). **Reset** unlocks and reopens the popup with the
-  current lanes, so you can rearrange and press READY again. Closing the popup with ✕ leaves the table
-  editable (tap or drag). **Submit is never disabled**: an incomplete hand gets a "place all 13 cards"
-  hint; a misplaced hand shows a red "2× bet penalty" warning but is submitted. **Autoplay Arrange** and
-  **Sort** bottom-right (Autoplay does not override locked lanes).
+  each deal — swap cards, ⇅ Middle/Back, ✓/✗ order marks, hand names, bet info, Declared Luck and
+  **SUBMIT**, which sends the popup's lanes to the server and settles the round (a misplaced hand pays
+  the 2× penalty). The popup has **no close button and no player portraits** — only the opponents' card
+  fans. On a resumed round (no popup) you arrange on the table (tap or drag); **Reset** reopens the popup.
+  **Submit is never disabled**: an incomplete hand gets a "place all 13 cards" hint; a misplaced hand
+  shows a red "2× bet penalty" warning but is submitted. **Autoplay Arrange** and **Sort** bottom-right.
 - Reveal: every bot's hand at its seat with WIN / LOSS per lane against the banker, its Gold for the
   round (and Lucky Hand), your hand and your result ("You banked · beat 2 of 3", "2-1 vs CardBot · 1× bet").
   After round 12 a **Match results** panel shows the standings of all four players and the 12-round history.

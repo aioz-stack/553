@@ -116,13 +116,17 @@ function routes(over: Record<string, unknown> = {}) {
 const NAMES: Record<string, string> = { S: 'spades', H: 'hearts', D: 'diamonds', C: 'clubs' };
 const cardName = (code: string) => `${code[0] === 'T' ? '10' : code[0]} of ${NAMES[code[1]]}`;
 
-/** Load, tap a chip, dismiss the Declared Luck popup. */
-/** Load, deal round 1 (you bank: Deal, no bet), dismiss the Declared Luck popup. */
-async function dealAndClose(chip = 'Deal') {
+/**
+ * Open the table on a dealt round with the cards in hand (resumed, so no
+ * arrangement popup): for tests of arranging on the table itself.
+ */
+async function openRound() {
+  const base = apiMock.getMockImplementation()!;
+  apiMock.mockImplementation((path: string, ...rest: unknown[]) =>
+    path === '/practice/matches/current' ? Promise.resolve({ data: { ...MATCH, next_round: null, next_banker: null, current: DEALT } }) : base(path, ...rest),
+  );
   render(<Practice />);
-  fireEvent.click(await screen.findByRole('button', { name: chip }));
-  const popup = await screen.findByRole('dialog', { name: 'Declared Luck' });
-  fireEvent.click(within(popup).getByRole('button', { name: 'Close' }));
+  await screen.findByRole('button', { name: 'Front row' });
 }
 
 describe('Single Player — Round Bank table', () => {
@@ -150,7 +154,6 @@ describe('Single Player — Round Bank table', () => {
     const popup = await screen.findByRole('dialog', { name: 'Declared Luck' });
     expect(apiMock).toHaveBeenCalledWith('/practice/matches/3/deal', { method: 'POST', body: { request_id: 'req-1' } });
     expect(popup).toHaveTextContent('Covering 300');
-    fireEvent.click(within(popup).getByRole('button', { name: 'Close' }));
     expect(screen.getByLabelText('Current bet')).toHaveTextContent('Covering 300');
     expect(screen.getByLabelText('LuckyBot')).toHaveTextContent('Bet 100');
   });
@@ -173,7 +176,7 @@ describe('Single Player — Round Bank table', () => {
   });
 
   it('arranges, submits, shows lane-by-lane results and moves on to round 2 with the bot banking', async () => {
-    await dealAndClose();
+    await openRound();
     const submit = screen.getByRole('button', { name: 'Submit' });
     expect(submit).toBeEnabled(); // never disabled
 
@@ -210,7 +213,7 @@ describe('Single Player — Round Bank table', () => {
       '/practice/9/preview': { data: { labels: { front: 'One Pair', middle: 'High Card', back: 'High Card' }, is_foul: true } },
       '/practice/9/submit': { data: penalised },
     });
-    await dealAndClose();
+    await openRound();
     fireEvent.click(screen.getByRole('switch', { name: 'Autoplay Arrange' }));
     await screen.findByText(/Misplaced cards — submitting now pays a 2× bet penalty/);
 
@@ -223,7 +226,7 @@ describe('Single Player — Round Bank table', () => {
   });
 
   it('Submit is never disabled; with cards still in hand it asks you to place them', async () => {
-    await dealAndClose();
+    await openRound();
     const submit = screen.getByRole('button', { name: 'Submit' });
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
@@ -232,7 +235,7 @@ describe('Single Player — Round Bank table', () => {
   });
 
   it('Autoplay Arrange fills the lanes from the server and Sort switches order', async () => {
-    await dealAndClose();
+    await openRound();
     fireEvent.click(screen.getByRole('switch', { name: 'Autoplay Arrange' }));
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/practice/9/suggest', { method: 'POST' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit' })).toBeEnabled());
@@ -264,7 +267,7 @@ describe('Single Player — Round Bank table', () => {
   it('shows the match summary after round 12', async () => {
     const done = { ...AFTER_1, status: 'completed', rounds_played: 12, next_round: null, next_banker: null, gold: 650 };
     routes({ '/practice/matches/3': { data: done } });
-    await dealAndClose();
+    await openRound();
     fireEvent.click(screen.getByRole('switch', { name: 'Autoplay Arrange' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
@@ -273,11 +276,12 @@ describe('Single Player — Round Bank table', () => {
     expect(summary).toHaveTextContent('YOU WIN THE MATCH!');
     expect(summary).toHaveTextContent('+650 Gold');
     fireEvent.click(within(summary).getByRole('button', { name: 'New match' }));
-    await waitFor(() => expect(apiMock.mock.calls.filter(([p]) => p === '/practice/matches')).toHaveLength(2));
+    // The first match was resumed, so this is the first match created on this screen.
+    await waitFor(() => expect(apiMock.mock.calls.filter(([p]) => p === '/practice/matches')).toHaveLength(1));
   });
 
   it('Back asks before leaving a round in progress; Settings and Help open panels', async () => {
-    await dealAndClose();
+    await openRound();
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
@@ -293,7 +297,7 @@ describe('Single Player — Round Bank table', () => {
   });
 
   it('has no timer: no countdown is shown and nothing is submitted while you take your time', async () => {
-    await dealAndClose();
+    await openRound();
     vi.useFakeTimers();
     try {
       // Ten minutes pass with the cards still in hand.
@@ -337,47 +341,40 @@ describe('Declared Luck popup', () => {
     return screen.findByRole('dialog', { name: 'Declared Luck' });
   };
 
-  it('opens after the deal with all 13 cards, both seats, Declared Luck, READY and Close', async () => {
+  it('opens after the deal with all 13 cards, Declared Luck and SUBMIT — no Close button, no player portraits', async () => {
     routes();
     const popup = await deal();
     expect(within(popup).getAllByRole('button', { name: / of / })).toHaveLength(13);
-    expect(popup).toHaveTextContent('LuckyBot');
-    expect(popup).toHaveTextContent('AceBot');
+    expect(within(popup).getByRole('button', { name: /Declared/ })).toBeInTheDocument();
+    expect(within(popup).getByRole('button', { name: 'SUBMIT' })).toBeInTheDocument();
+    expect(within(popup).queryByRole('button', { name: 'READY' })).toBeNull();
+    expect(within(popup).queryByRole('button', { name: 'Close' })).toBeNull();
+    // Opponents keep only their card fans: no avatar, name plate or "13 cards" label.
+    expect(within(popup).getByLabelText("LuckyBot's cards")).toBeInTheDocument();
+    expect(within(popup).getByLabelText("AceBot's cards")).toBeInTheDocument();
+    expect(within(popup).queryByText('13 cards')).toBeNull();
+    expect(within(popup).queryByText('BANKER')).toBeNull();
+    // Betting information stays.
     expect(popup).toHaveTextContent('You bank');
-    expect(within(popup).getByRole('button', { name: 'READY' })).toBeInTheDocument();
-
-    fireEvent.click(within(popup).getByRole('button', { name: 'Close' }));
-    expect(screen.queryByRole('dialog', { name: 'Declared Luck' })).toBeNull();
-    // Closing does not lock anything: the hand can still be arranged on the table.
-    expect(screen.queryByText(/Cards locked/)).toBeNull();
-    expect(apiMock).not.toHaveBeenCalledWith('/practice/9/lucky', expect.anything());
+    expect(popup).toHaveTextContent('Covering 300');
   });
 
-  it('READY confirms and locks the lanes from the popup; Reset reopens the popup to rearrange', async () => {
+  it('SUBMIT in the popup sends the lanes shown there and settles the round', async () => {
     routes();
     const popup = await deal();
     fireEvent.click(within(popup).getByRole('button', { name: 'Swap Middle and Back' }));
-    fireEvent.click(within(popup).getByRole('button', { name: 'READY' }));
+    fireEvent.click(within(popup).getByRole('button', { name: 'SUBMIT' }));
+
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith('/practice/9/submit', {
+        method: 'POST',
+        // The swap moved the aces-and-kings Back into the Middle (a misplaced hand, still submitted).
+        body: { front: expect.arrayContaining(['4H', '3D', '2C']), middle: expect.arrayContaining(['AC', 'AD', 'AH', 'KS', 'KD']), back: expect.arrayContaining(['TC', 'TD', '9H', '8S', '5D']) },
+      }),
+    );
+    expect(await screen.findByLabelText('Round result')).toHaveTextContent('+600');
     expect(screen.queryByRole('dialog', { name: 'Declared Luck' })).toBeNull();
-    const front = screen.getByRole('button', { name: 'Front row' });
-    expect(within(front).getAllByRole('button')).toHaveLength(3);
-    expect(screen.getByText(/Cards locked — tap Reset to rearrange/)).toBeInTheDocument();
-
-    // Locked: tapping a placed card does not move it back to the hand.
-    fireEvent.click(within(front).getAllByRole('button')[0]);
-    expect(within(screen.getByRole('button', { name: 'Front row' })).getAllByRole('button')).toHaveLength(3);
-    expect(screen.queryByText('All cards placed — tap Submit!')).toBeInTheDocument();
-
-    // Reset reopens the arrangement popup with the current lanes; READY again locks them.
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
-    const again = await screen.findByRole('dialog', { name: 'Declared Luck' });
-    expect(within(again).getAllByRole('button', { name: / of / })).toHaveLength(13);
-    fireEvent.click(within(again).getByRole('button', { name: 'READY' }));
-    expect(screen.getByText(/Cards locked/)).toBeInTheDocument();
-
-    // Submit is available and sends the locked arrangement.
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/practice/9/submit', expect.objectContaining({ method: 'POST' })));
+    expect(apiMock.mock.calls.filter(([p]) => p === '/practice/9/submit')).toHaveLength(1);
   });
 
   it('shows NO LUCK! when the server says the cards do not qualify, and play continues', async () => {
