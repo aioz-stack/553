@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { CandyText, GoldCoins } from '@/components/HomeArt';
 import LandscapeStage from '@/components/LandscapeStage';
 import PlayingCard, { sortCards } from '@/components/PlayingCard';
+import DealAnimation from '@/components/table/DealAnimation';
 import LuckPopup from '@/components/table/LuckPopup';
 import { Chip, Clover, Face, LanternRoom, MiniCrest, PokerTable, type FaceKind } from '@/components/table/TableArt';
 import { Screen } from '@/components/ui';
@@ -99,6 +100,18 @@ const bankerFor = (round: number) => ((round - 1) % 4) + 1;
 const banksText = (seat: number) => (seat === 1 ? 'You bank' : `${BOTS[seat]} banks`);
 
 /** True when every card in the lanes belongs to `hand` (no card from another round). */
+/** True the first time a round's deal is shown in this browser session (the animation never replays for a round). */
+function firstShowing(roundId: number): boolean {
+  const key = `pusoy.dealt.${roundId}`;
+  try {
+    if (sessionStorage.getItem(key)) return false;
+    sessionStorage.setItem(key, '1');
+  } catch {
+    // No storage (private mode): the in-page state still plays it only once per deal.
+  }
+  return true;
+}
+
 function rowsUse(rows: Rows, hand: Set<string>): boolean {
   return [...rows.front, ...rows.middle, ...rows.back].every((c) => hand.has(c));
 }
@@ -197,6 +210,8 @@ export default function Practice() {
   const [notice, setNotice] = useState<'lucky' | 'noluck' | null>(null);
   // READY locks the arrangement until RESET reopens the popup.
   const [locked, setLocked] = useState(false);
+  // The round whose shuffle-and-deal animation is playing (manual arrangement opens when it ends).
+  const [dealing, setDealing] = useState<number | null>(null);
 
   // arrangement
   const [rows, setRows] = useState<Rows>(EMPTY);
@@ -222,6 +237,7 @@ export default function Practice() {
     setPreview(null);
     setLocked(false);
     setLuck(null);
+    setDealing(null);
   }, []);
 
   useEffect(() => {
@@ -316,11 +332,11 @@ export default function Practice() {
       setRound(r.data);
       setMatch((x) => (x ? { ...x, current: r.data, next_round: null, next_banker: null, next_banker_name: null } : x));
       setPhase('arranging');
-      play('deal');
       if (r.data.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
-      // All 13 cards are in: open the arrangement popup with empty rows and your cards in dealt
-      // order. Nothing is arranged for you — you place every card yourself.
-      setLuck(EMPTY);
+      // Play the shuffle-and-deal animation once per round (never again for the same round, e.g. on
+      // a resume); manual arrangement opens only when it has finished (dealDone).
+      if (firstShowing(r.data.id)) setDealing(r.data.id);
+      else setLuck(EMPTY);
     } catch (e) {
       const code = e instanceof ApiError ? e.code : undefined;
       say(false, code === 'insufficient_gold' ? `Not enough gold for ${tier.name}. You need at least ${fmt(tier.min_gold)} gold.` : errorText(e));
@@ -329,6 +345,12 @@ export default function Practice() {
       setBusy(false);
     }
   };
+
+  /** The deal animation finished (or was skipped): open manual arrangement with the cards in dealt order. */
+  const dealDone = useCallback((id: number) => {
+    setDealing((d) => (d === id ? null : d));
+    if (roundIdRef.current === id) setLuck(EMPTY);
+  }, []);
 
   /** After a round settles: refresh the match (running Gold, standings, next banker, match end). */
   const settled = async (r: RoundState) => {
@@ -563,6 +585,7 @@ export default function Practice() {
         </span>
       );
     }
+    if (phase === 'arranging' && dealing !== null) return <span className="text-white/80">Dealing…</span>;
     if (phase === 'arranging') return <span className="text-[#7dffa0]">Ready ✓{p && !p.is_banker ? ` · Bet ${fmt(p.bet)}` : ''}</span>;
     const s = match?.standings.find((x) => x.seat === seat);
     return s && match && match.rounds_played > 0 ? <span className={tone(s.gold)}>{signed(s.gold)}</span> : <span className="text-white/70">Waiting</span>;
@@ -623,7 +646,7 @@ export default function Practice() {
           const p = players.find((x) => x.seat === seat);
           return <SeatTile key={seat} face={s.face} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
         })}
-        {phase === 'arranging' &&
+        {phase === 'arranging' && dealing === null &&
           [2, 3, 4].map((seat) => (
             <div key={seat} className="pointer-events-none absolute" style={{ left: SEATS[seat].stack.x, top: SEATS[seat].stack.y }}>
               {[0, 1, 2].map((i) => (
@@ -662,7 +685,7 @@ export default function Practice() {
           </div>
         )}
 
-        {phase === 'arranging' && round && (
+        {phase === 'arranging' && round && dealing === null && (
           <>
             <div className="absolute left-[430px] top-[268px] z-[6] flex flex-col gap-[14px]">
               {LANES.map((lane) => {
@@ -800,7 +823,7 @@ export default function Practice() {
           {(phase === 'betting' || phase === 'loading') && tier && !tier.eligible && <span className="font-display text-[26px] font-black text-white/80">Not enough gold for {tier.name}</span>}
 
           {/* Your hand on the table only when the arrangement popup is closed (no second card panel). */}
-          {phase === 'arranging' && !luck && (
+          {phase === 'arranging' && !luck && dealing === null && (
             <div data-zone="hand" className="relative h-[120px] flex-1" aria-label="Your hand">
               {hand.map((c, i) => {
                 const on = picked.includes(c);
@@ -853,6 +876,11 @@ export default function Practice() {
             <span className="font-display text-[16px] font-bold text-white/80">{sortBy}</span>
           </button>
         </div>
+
+        {/* Shuffle and deal (once per round), then the arrangement popup */}
+        {dealing !== null && round && round.id === dealing && phase === 'arranging' && (
+          <DealAnimation key={round.id} roundId={round.id} banker={round.banker} cards={round.cards} names={{ 1: 'You', ...BOTS }} onDone={() => dealDone(round.id)} />
+        )}
 
         {/* Arrangement popup (after the deal): empty rows, your cards in dealt order */}
         {luck && round && phase === 'arranging' && rowsUse(luck, new Set(round.cards)) && (

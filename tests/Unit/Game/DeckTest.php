@@ -41,6 +41,19 @@ test('dealing gives four players thirteen cards each with no duplicates', functi
     expect(array_unique($all))->toHaveCount(52);
 });
 
+test('dealing starts at the given seat and goes clockwise one card at a time', function () {
+    $deck = Deck::shuffled(Deck::newSeed());
+    $hands = Deck::deal($deck, 4, 13, 3);
+
+    // deck[0] → seat 3, deck[1] → 4, deck[2] → 1, deck[3] → 2, deck[4] → 3 …; the last card goes to seat 2.
+    expect($hands[3][0])->toBe($deck[0])
+        ->and($hands[4][0])->toBe($deck[1])
+        ->and($hands[1][0])->toBe($deck[2])
+        ->and($hands[2][0])->toBe($deck[3])
+        ->and($hands[3][1])->toBe($deck[4])
+        ->and($hands[2][12])->toBe($deck[51]);
+});
+
 test('the shuffle commitment verifies against the revealed seed', function () {
     $seed = Deck::newSeed();
     $commitment = Deck::commitment($seed, Deck::shuffled($seed));

@@ -67,17 +67,19 @@ final class Deck
     }
 
     /**
-     * Deal 13 cards to each of four seats in round-robin order.
+     * Deal 13 cards to each of four seats in round-robin (clockwise) order, one card at a time
+     * from the top of the deck, starting at $firstSeat: deck[0] goes to $firstSeat, deck[1] to the
+     * next seat clockwise, and so on until every seat holds $perSeat cards.
      *
      * @param  list<string>  $deck
-     * @return array<int, list<string>> seat (1..4) => 13 cards
+     * @return array<int, list<string>> seat (1..4) => 13 cards, each in the order received
      */
-    public static function deal(array $deck, int $seats = 4, int $perSeat = 13): array
+    public static function deal(array $deck, int $seats = 4, int $perSeat = 13, int $firstSeat = 1): array
     {
         $hands = array_fill(1, $seats, []);
 
         for ($i = 0; $i < $seats * $perSeat; $i++) {
-            $hands[($i % $seats) + 1][] = $deck[$i];
+            $hands[(($firstSeat - 1 + $i) % $seats) + 1][] = $deck[$i];
         }
 
         return $hands;

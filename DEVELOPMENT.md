@@ -384,7 +384,10 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   `request_id` returns the same round, a second deal while one is open is 409 `round_in_progress`, after
   round 12 409 `match_over`.
 - **Deal:** every round — round 1 included — starts from the complete ordered 52-card deck, a fresh
-  256-bit CSPRNG seed and a full Fisher–Yates reshuffle, then deals 13 to each seat. Before the deal is
+  256-bit CSPRNG seed and a full Fisher–Yates reshuffle, then deals one card at a time clockwise
+  (You 1 → LuckyBot 2 → CardBot 3 → AceBot 4), starting with the seat after the banker and ending on the
+  banker (`Deck::deal($deck, 4, 13, PracticeService::firstToDeal($banker))`, i.e. `banker % 4 + 1`), until
+  every seat holds 13; each hand is stored in the order its cards were received. Before the deal is
   saved `PracticeService::assertFullDeal` checks 52 distinct cards, 13 per seat, nothing missing or
   duplicated; nothing (seed, order, hands) carries over between rounds (rounds are `practice_games` rows:
   `round_number`, `banker` = seat).
@@ -393,6 +396,18 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   of the rest) and keeps the best-balanced one by an estimated lane-win score — never fouls and is never
   worse than the greedy `AutoArranger`; the others play a random non-fouled hand. Bots declare their own
   Lucky Hands. Their cards stay hidden until settlement.
+- **Shuffle-and-deal animation** (`mobile/src/components/table/DealAnimation.tsx`): after a deal, the table
+  plays GATHER → FORM DECK → SPLIT → RIFFLE SHUFFLE → MERGE & SQUARE → DECK READY → DEAL CLOCKWISE →
+  DISTRIBUTION COMPLETE (~18 s: cards leave the deck every 0.18 s, each toss 0.56 s), then opens the manual
+  arrangement popup automatically right after your cards turn over (no tap needed). It is display only: card p from
+  the top of the server's deck flies to `dealOrder(banker)[p % 4]` (the server's own order), bot cards stay
+  face down, and your 13 land face down and turn over (your real cards, in received order) once all 52 are
+  out. Per-seat counters count to 13. Rendering is one CSS 3D scene (perspective, translateZ for deck height
+  and the toss arc) with one Web Animations timeline per card built up front — transform/opacity only, so
+  it is GPU-composited and nothing runs per frame on the main thread; low-end devices
+  (`hardwareConcurrency ≤ 4` or `deviceMemory ≤ 2`) drop the travelling shadows. It plays once per round
+  (`sessionStorage pusoy.dealt.<roundId>`; a resumed round goes straight to arrangement), has a Skip button,
+  and finishes at once under reduced motion (Settings → Motion) or without Web Animations support.
 - **Clean card state per round (table):** dealing a round, settling it and starting a match clear all
   arrangement state — lanes, selection, preview, lock and the arrangement popup — so the popup opens with
   only the new round's 13 cards. Late answers (Autoplay suggestion, hand-name preview) for a round no longer

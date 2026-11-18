@@ -482,7 +482,11 @@ test('a full 12-round match: every round is a fresh reshuffle of all 52 cards, 1
         $seeds[] = $game->server_seed;
         $deck = Deck::shuffled($game->server_seed);
         expect(Deck::commitment($game->server_seed, $deck))->toBe($game->deck_commitment);
-        expect($game->hands)->toEqual(Deck::deal($deck));
+        // Dealt clockwise one card at a time, starting with the seat after the banker.
+        $first = PracticeMatch::bankerFor($r) % 4 + 1;
+        expect($game->hands)->toEqual(Deck::deal($deck, 4, 13, $first));
+        expect($game->hands[$first][0])->toBe($deck[0]);
+        expect($game->hands[(int) $game->banker][12])->toBe($deck[51]);
 
         // All 52 accounted for: 13 per seat, no duplicates, none missing.
         $all = array_merge(...array_values($game->hands));

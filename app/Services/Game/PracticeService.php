@@ -188,8 +188,9 @@ class PracticeService
                 // CSPRNG seed, reshuffled before anything is dealt; nothing from earlier rounds carries over.
                 $seed = Deck::newSeed();
                 $deck = Deck::shuffled($seed);
-                // All 52 cards: 13 to each of the four seats.
-                $hands = Deck::deal($deck);
+                // All 52 cards, one at a time clockwise (You → LuckyBot → CardBot → AceBot), starting
+                // with the seat after the banker and ending on the banker: 13 to each seat.
+                $hands = Deck::deal($deck, 4, 13, self::firstToDeal($bankerSeat));
                 self::assertFullDeal($deck, $hands);
                 $arrangements = [];
 
@@ -571,6 +572,12 @@ class PracticeService
      * @param  list<string>  $deck
      * @param  array<int, list<string>>  $hands
      */
+    /** The seat dealt the first card: the one immediately after the banker, clockwise. */
+    public static function firstToDeal(int $bankerSeat): int
+    {
+        return ($bankerSeat % 4) + 1;
+    }
+
     private static function assertFullDeal(array $deck, array $hands): void
     {
         $full = Deck::ordered();
