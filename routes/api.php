@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\GameController;
 use App\Http\Controllers\Api\V1\PayoutController;
 use App\Http\Controllers\Api\V1\PlayerController;
+use App\Http\Controllers\Api\V1\PracticeController;
 use App\Http\Controllers\Api\V1\RoomController;
 use App\Http\Controllers\Api\V1\TableController;
 use App\Http\Controllers\Api\V1\WalletController;
@@ -82,6 +83,12 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('games/{session}/preview', [GameController::class, 'preview']);
         Route::post('games/{session}/bet', [GameController::class, 'bet'])->middleware('throttle:game-actions');
         Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
+
+        // Single Player practice vs server bots (no currency)
+        Route::post('practice', [PracticeController::class, 'store'])->middleware('throttle:game-actions');
+        Route::get('practice/{practiceGame}', [PracticeController::class, 'show']);
+        Route::post('practice/{practiceGame}/preview', [PracticeController::class, 'preview']);
+        Route::post('practice/{practiceGame}/submit', [PracticeController::class, 'submit'])->middleware('throttle:game-actions');
 
         // Friends
         Route::get('friends', [FriendController::class, 'index']);

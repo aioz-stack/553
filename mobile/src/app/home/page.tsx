@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
 import { Avatar, Diamond } from '@/components/game';
-import { CandyText, CrownArt, ExitArt, GearArt, LogoCrest, RoundBankArt, SpeakerArt } from '@/components/HomeArt';
+import { CandyText, CrownArt, ExitArt, GearArt, GoldCoins, LogoCrest, RoundBankArt, SpeakerArt } from '@/components/HomeArt';
 import { IconBell, IconGift, IconPlus, IconTrophy } from '@/components/icons';
 import LandscapeStage, { useToStage } from '@/components/LandscapeStage';
 import { Glitter, RimGlint } from '@/components/Sparkles';
@@ -141,6 +141,26 @@ function SmallRound({ x, y, label, href, onClick, tone, children, dot, motion = 
   );
 }
 
+/** Gold balance capsule (icon, live number, green "+" that opens the wallet). Display only. */
+function BalancePill({ x, w, label, value, icon, seed, delay }: { x: number; w: number; label: string; value: number | undefined; icon: ReactNode; seed: number; delay: number }) {
+  const text = value !== undefined ? value.toLocaleString() : '…';
+  return (
+    <div style={{ ...springStyle(label, 4.2, 1), left: x, width: w }} className="lx-gold lx-spring-soft absolute top-[40px] flex h-[88px] items-center rounded-full p-[7px] shadow-[0_8px_0_#8a4a00]">
+      <div className="lx-gloss relative flex h-full w-full items-center rounded-full bg-gradient-to-b from-[#3a2a12] to-[#160d04] pl-1 pr-1 shadow-[inset_0_-8px_14px_rgb(0_0_0/0.4)]">
+        <span className="lx-glint relative z-[4] -ml-7 inline-block">{icon}</span>
+        <Glitter count={5} seed={seed} size={0.8} />
+        <span className={`lx-text-glow relative z-[4] flex-1 truncate text-center font-display font-black text-white ${text.length > 8 ? 'text-[32px]' : 'text-[40px]'}`} aria-label={label}>
+          {text}
+        </span>
+        <Link href="/wallet/" aria-label={`Wallet — ${label}`} onClick={() => play('tap')} style={springStyle(`${label}-plus`, 2.4, 0.8)} className="lx-tile lx-spring relative z-[4] flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-4 border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] text-white shadow-[0_4px_0_#0b6b2a,inset_0_3px_0_rgb(255_255_255/0.5)]">
+          <RimGlint width={4} delay={delay} />
+          <IconPlus className="h-10 w-10" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 /** Animates a number from its previous value to the new one. */
 function useCountUp(target: number | undefined): number | undefined {
   const [shown, setShown] = useState(target);
@@ -205,7 +225,7 @@ function useLandscapeLock() {
 export default function Home() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const { vc } = useBalance(user?.id);
+  const { vc, cp } = useBalance(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
   const wallet = useFetch<{ meta: { daily_reward_enabled: boolean; daily_reward_claimed: boolean } }>(user ? '/wallet' : null);
   const unread = useFetch<{ meta: { unread: number } }>(user ? '/notifications' : null).data?.meta.unread ?? 0;
@@ -213,6 +233,7 @@ export default function Home() {
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [soundOn, toggleSound] = useSound();
   const diamonds = useCountUp(vc !== undefined ? Math.floor(Number(vc)) : undefined);
+  const coins = useCountUp(cp !== undefined ? Math.floor(Number(cp)) : undefined);
 
   useLandscapeLock();
 
@@ -275,26 +296,13 @@ export default function Home() {
         </Link>
 
         {/* Logo */}
-        <div className="absolute left-[500px] top-[0px]">
+        <div className="absolute left-[488px] top-[0px]">
           <LogoCrest title="Pusoy 553" />
         </div>
 
-        {/* Diamond balance */}
-        <div style={springStyle('diamonds', 4.2, 1)} className="lx-gold lx-spring-soft absolute left-[1150px] top-[38px] flex h-[96px] w-[410px] items-center rounded-full p-[7px] shadow-[0_8px_0_#8a4a00]">
-          <div className="lx-gloss relative flex h-full w-full items-center rounded-full bg-gradient-to-b from-[#24508f] to-[#0b1d45] pl-2 pr-2 shadow-[inset_0_-8px_14px_rgb(0_0_0/0.4)]">
-            <span className="lx-glint relative z-[4] -ml-6 inline-block">
-              <Diamond size={90} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />
-            </span>
-            <Glitter count={6} seed={11} size={0.8} />
-            <span className="lx-text-glow relative z-[4] flex-1 text-center font-display text-[48px] font-black text-white" aria-label="Diamond balance">
-              {diamonds !== undefined ? diamonds.toLocaleString() : '…'}
-            </span>
-            <Link href="/wallet/" aria-label="Wallet" onClick={() => play('tap')} style={springStyle('plus', 2.4, 0.8)} className="lx-tile lx-spring relative z-[4] flex h-[70px] w-[70px] items-center justify-center rounded-full border-4 border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] text-white shadow-[0_4px_0_#0b6b2a,inset_0_3px_0_rgb(255_255_255/0.5)]">
-              <RimGlint width={4} delay={1.5} />
-              <IconPlus className="h-11 w-11" />
-            </Link>
-          </div>
-        </div>
+        {/* Balances: gold coins = CP, diamonds = VC (never combined). "+" opens the wallet; no deposits. */}
+        <BalancePill x={1046} w={260} label="Coin (CP) balance" value={coins} icon={<GoldCoins size={78} />} seed={7} delay={0.6} />
+        <BalancePill x={1320} w={260} label="Diamond (VC) balance" value={diamonds} icon={<Diamond size={78} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} delay={1.5} />
 
         {/* Quick icons under the balance */}
         {bonus?.daily_reward_enabled && (
@@ -322,18 +330,18 @@ export default function Home() {
           </Link>
         )}
 
-        {/* Game modes */}
-        <Tile x={495} y={278} w={520} h={350} from="#c477ff" to="#5a14b8" label="Round Bank" href="/lobby/?mode=round_bank">
+        {/* Play: Single Player = practice vs server bots (free); Multiplayer = lobby (Classic, Round Bank, Banker Mode) */}
+        <Tile x={495} y={278} w={520} h={350} from="#c477ff" to="#5a14b8" label="Single Player" href="/practice/">
           <span className="mt-2">
             <RoundBankArt />
           </span>
-          <CandyText text="Round Bank" width={490} height={100} size={80} className="-mt-8" sweepDelay={0.4} />
+          <CandyText text="Single Player" width={490} height={100} size={74} className="-mt-8" sweepDelay={0.4} />
         </Tile>
-        <Tile x={1040} y={278} w={520} h={350} from="#ff6b5c" to="#9c0a12" label="Banker Mode" href="/lobby/?mode=banker" sweepDelay={1.2}>
+        <Tile x={1040} y={278} w={520} h={350} from="#ff6b5c" to="#9c0a12" label="Multiplayer" href="/lobby/" sweepDelay={1.2}>
           <span className="mt-2">
             <CrownArt />
           </span>
-          <CandyText text="Banker Mode" width={490} height={100} size={76} className="-mt-8" sweepDelay={1.6} />
+          <CandyText text="Multiplayer" width={490} height={100} size={78} className="-mt-8" sweepDelay={1.6} />
         </Tile>
 
         {/* Controls */}

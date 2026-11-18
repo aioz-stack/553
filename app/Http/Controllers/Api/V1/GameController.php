@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\GameStatus;
-use App\Game\HandEvaluator;
+use App\Game\ArrangementPreview;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitArrangementRequest;
 use App\Models\GameCard;
@@ -64,19 +64,8 @@ class GameController extends Controller
         ]);
 
         $dealt = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $request->user()->id)->value('cards') ?? [];
-        $labels = [];
-        $values = [];
 
-        foreach (['front' => 3, 'middle' => 5, 'back' => 5] as $position => $size) {
-            $cards = array_values(array_intersect($data[$position] ?? [], $dealt));
-            $values[$position] = count($cards) === $size ? HandEvaluator::evaluate($cards) : null;
-            $labels[$position] = $values[$position]?->label();
-        }
-
-        $complete = ! in_array(null, $values, true);
-        $foul = $complete && ($values['back']->compare($values['middle']) < 0 || $values['middle']->compare($values['front']) < 0);
-
-        return response()->json(['data' => ['labels' => $labels, 'complete' => $complete, 'is_foul' => $foul]]);
+        return response()->json(['data' => ArrangementPreview::evaluate($dealt, $data)]);
     }
 
     /**

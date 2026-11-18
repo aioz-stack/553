@@ -35,6 +35,24 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "mobile-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "mobile",
+        "run",
+        "dev"
+      ],
+      "env": {
+        "NEXT_PUBLIC_API_URL": "http://localhost:8000",
+        "NEXT_PUBLIC_REVERB_APP_KEY": "ep3ndrkpnopub9ueyuy8",
+        "NEXT_PUBLIC_REVERB_HOST": "localhost",
+        "NEXT_PUBLIC_REVERB_PORT": "8080",
+        "NEXT_PUBLIC_REVERB_SCHEME": "http"
+      },
+      "port": 3000
     }
   ]
 }

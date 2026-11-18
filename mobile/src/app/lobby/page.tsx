@@ -62,7 +62,7 @@ export default function Lobby() {
   };
 
   return (
-    <Screen title={info ? info.title : 'Choose a table'} back={!!info}>
+    <Screen title={info ? info.title : 'Multiplayer'} back>
       {rooms.data?.meta?.maintenance_message && <Notice tone="warning">{rooms.data.meta.maintenance_message}</Notice>}
       {rooms.data?.meta?.announcement && (
         <div className="glass mb-4 flex items-center gap-3 rounded-2xl px-4 py-3">
@@ -81,8 +81,24 @@ export default function Lobby() {
         </GlassCard>
       )}
 
+      {!info && (
+        <div className="mb-4 grid grid-cols-2 gap-3" aria-label="Game modes">
+          {(
+            [
+              ['round_bank', 'from-[#c477ff] to-[#5a14b8]', 'Rotating banker · 12 rounds'],
+              ['banker', 'from-[#ff6b5c] to-[#9c0a12]', 'Host & bank · 12 rounds'],
+            ] as const
+          ).map(([m, bg, sub]) => (
+            <Link key={m} href={`/lobby/?mode=${m}`} onClick={() => play('tap')} className={`rounded-2xl border-4 border-gold-400 bg-gradient-to-b ${bg} px-3 py-3 text-center shadow-[0_5px_0_#8a4a00]`}>
+              <span className="block font-display text-lg font-black text-white drop-shadow-[0_2px_0_rgb(0_0_0/0.4)]">{MODES[m].title}</span>
+              <span className="block text-[11px] font-bold text-white/80">{sub}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
       <div className="mb-3 flex items-center justify-between">
-        <Ribbon tone="pink">{info ? 'Open tables' : 'Lobby'}</Ribbon>
+        <Ribbon tone="pink">{info ? 'Open tables' : 'Classic tables'}</Ribbon>
         {!info && (
           <Link href="/rooms/" className="font-display text-sm font-extrabold text-gold-300">
             Private &amp; all rooms ›

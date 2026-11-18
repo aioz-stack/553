@@ -1,6 +1,6 @@
 # Pusoy 13 Platform — Development Guide
 
-Last updated: 2026-11-17 (round 2: concurrency fixes, push, payouts, frontend tests, Android build)
+Last updated: 2026-11-18 (Single Player practice vs bots, home: CP + VC pills, Single/Multiplayer tiles)
 
 This repository contains the **Laravel web application + shared backend** (repo root) and the
 **Next.js + Capacitor mobile application** (`mobile/`). Laravel is the single source of truth for
@@ -353,9 +353,27 @@ more XP). The friends list shows names, level and status only — never balances
 scales to the screen like a game canvas; artwork is original SVG (`BeachLandscape`, `HomeArt`).
 In the native app the home locks to landscape (`@capacitor/screen-orientation`, status bar hidden)
 and returns to portrait when you leave it; in a portrait browser the stage is rotated 90°. Every
-control is live: profile/level, diamond (VC) balance with live `wallet.updated`, daily bonus,
+control is live: profile/level, gold-coin (CP) and diamond (VC) balances shown separately with
+live `wallet.updated` (each "+" opens the wallet — there is no deposit), daily bonus,
 leaderboard, notifications, Friends List (search, add, accept/decline, online/last seen, invite),
-Round Bank, Banker Mode, Sound ON/OFF, Settings, Logout.
+Single Player, Multiplayer, Sound ON/OFF, Settings, Logout.
+
+`mobile/.env.local` points the dev app at the **hosted** backend. To run against local Laravel,
+start the `mobile-local` entry in `.claude/launch.json` (it overrides `NEXT_PUBLIC_*` with the
+local API/Reverb values), or set those variables yourself before `npm run dev`.
+
+### Single Player (practice vs bots)
+
+The home's **Single Player** tile opens `mobile/src/app/practice/page.tsx`: you against three
+server bots (LuckyBot, CardBot, AceBot). Service `App\Services\Game\PracticeService`, table
+`practice_games`, API `POST practice`, `GET practice/{id}`, `POST practice/{id}/preview|submit`.
+
+- Same deck, shuffle commitment (seed revealed after submit), arrangement validation, foul rule
+  and pairwise ±1 zero-sum scoring as a classic table. Bots arrange with the server
+  `AutoArranger` at deal time; their cards are never sent before you submit.
+- **No currency:** nothing reads or writes wallets, the ledger, XP, leaderboards or commissions.
+  No timer; starting a new practice marks an unfinished one `abandoned`. Owner-only (404 for others).
+- **Multiplayer** tile → `/lobby/`: Round Bank and Banker Mode cards on top, classic tables below.
 
 ### Local testing with bots
 
@@ -411,6 +429,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
+| Practice | `POST practice` (new deal vs 3 bots), `GET practice/{id}`, `POST practice/{id}/preview`, `practice/{id}/submit` — no currency |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
@@ -426,7 +445,8 @@ Spec tables and where they live: `users`, `player_profiles`, `user_devices`, `ro
 `game_rooms`, `game_tables`, `game_players`, `game_sessions`, `game_cards`, `game_submissions`,
 `game_results`, `game_hand_results`, `wallets`, `wallet_transactions`, `wallet_holds`,
 `wallet_allocations`, `wallet_adjustments`, `game_settlements`, `game_payouts`, `platform_fees`,
-`notifications`, `game_invitations`, `audit_logs`, `system_settings`, `personal_access_tokens`.
+`notifications`, `game_invitations`, `audit_logs`, `system_settings`, `personal_access_tokens`,
+`practice_games` (Single Player, no currency).
 `agent_wallets` / `agent_wallet_transactions` are intentionally **not** separate tables (see §5).
 All timestamps are stored in UTC and shown in the viewer's local time zone.
 
@@ -454,7 +474,18 @@ Verified 2026-11-18 (game modes):
   two bots — banker rotation, bets, drag-and-drop between lanes, timer auto-arrange, a declared
   Lucky Hand paid as `LUCKY_BONUS`, final scoreboard; hosting and abandoning a Banker Mode table.
 
+Verified 2026-11-18 (Single Player + home rework):
+
+- 191 Pest tests (adds practice: private bot hands, zero-sum scoring, seed verification, no wallet
+  transactions, duplicate submit, foreign cards, owner-only access, abandon on new deal), 14 mobile
+  Vitest tests (adds the practice screen).
+- Manual (mobile dev build against local Laravel): landscape home with coin + diamond pills and
+  Single Player / Multiplayer tiles; a full practice round at 375×812 (server hand names, results,
+  scores summing to 0, no ledger rows); Multiplayer lobby with mode cards.
+
 Not done / not verified:
+
+- **Single Player is mobile-only**; the web (Inertia) player app has no practice screen yet.
 
 - The **web (Inertia) player table** has not been updated for banker rounds (no bet panel, Lucky
   button, banker badge or standings) and was not tested with them; a connected web player would

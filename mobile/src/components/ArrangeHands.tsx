@@ -34,7 +34,23 @@ interface Drag {
  * never evaluates or scores hands. A detected Lucky Hand can be declared,
  * which locks the hand on the server.
  */
-export default function ArrangeHands({ sessionId, cards, allowFoul, onSubmitted, lucky }: { sessionId: number; cards: string[]; allowFoul: boolean; onSubmitted: () => void; lucky?: { type: string; label: string } | null }) {
+export default function ArrangeHands({
+  sessionId,
+  cards,
+  allowFoul,
+  onSubmitted,
+  lucky,
+  basePath,
+}: {
+  sessionId: number;
+  cards: string[];
+  allowFoul: boolean;
+  onSubmitted: (response?: unknown) => void;
+  lucky?: { type: string; label: string } | null;
+  /** API base for preview/submit/lucky; defaults to `/games/{sessionId}` (Single Player uses `/practice/{id}`). */
+  basePath?: string;
+}) {
+  const base = basePath ?? `/games/${sessionId}`;
   const [rows, setRows] = useState<Record<Row, string[]>>({ front: [], middle: [], back: [] });
   const [selected, setSelected] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'rank' | 'suit'>('rank');
@@ -53,12 +69,12 @@ export default function ArrangeHands({ sessionId, cards, allowFoul, onSubmitted,
 
   useEffect(() => {
     const t = setTimeout(() => {
-      api<{ data: { labels: Record<Row, string | null>; is_foul: boolean } }>(`/games/${sessionId}/preview`, { method: 'POST', body: rows })
+      api<{ data: { labels: Record<Row, string | null>; is_foul: boolean } }>(`${base}/preview`, { method: 'POST', body: rows })
         .then((r) => setPreview(r.data))
         .catch(() => undefined);
     }, 200);
     return () => clearTimeout(t);
-  }, [rows, sessionId]);
+  }, [rows, base]);
 
   const haptic = async () => {
     try {
@@ -166,9 +182,9 @@ export default function ArrangeHands({ sessionId, cards, allowFoul, onSubmitted,
     setBusy(true);
     setError(null);
     try {
-      await api(`/games/${sessionId}/submit`, { method: 'POST', body: rows });
+      const res = await api(`${base}/submit`, { method: 'POST', body: rows });
       play('start');
-      onSubmitted();
+      onSubmitted(res);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -180,7 +196,7 @@ export default function ArrangeHands({ sessionId, cards, allowFoul, onSubmitted,
     setBusy(true);
     setError(null);
     try {
-      await api(`/games/${sessionId}/lucky`, { method: 'POST' });
+      await api(`${base}/lucky`, { method: 'POST' });
       play('lucky');
       onSubmitted();
     } catch (e) {

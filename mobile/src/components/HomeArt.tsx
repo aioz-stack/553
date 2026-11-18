@@ -185,6 +185,36 @@ function CoinStack({ x, y, s = 1, d = 0 }: { x: number; y: number; s?: number; d
   );
 }
 
+/** Small stack of three gold coins (the CP balance icon on the home HUD). */
+export function GoldCoins({ size = 78 }: { size?: number }) {
+  const id = useId().replace(/:/g, '');
+  const coin = (cx: number, cy: number) => (
+    <g key={`${cx}-${cy}`}>
+      <ellipse cx={cx} cy={cy + 7} rx="26" ry="10" fill="#a45f00" />
+      <rect x={cx - 26} y={cy} width="52" height="7" fill="#d58a00" />
+      <ellipse cx={cx} cy={cy} rx="26" ry="10" fill={`url(#${id})`} stroke="#a86400" strokeWidth="2" />
+      <ellipse cx={cx - 9} cy={cy - 3} rx="9" ry="2.6" fill="#fff" opacity="0.6" />
+    </g>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 80 80" className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" aria-hidden="true">
+      <defs>
+        <radialGradient id={id} cx="0.4" cy="0.3" r="0.8">
+          <stop offset="0" stopColor="#fffbe0" />
+          <stop offset="0.5" stopColor="#ffd13a" />
+          <stop offset="1" stopColor="#e09000" />
+        </radialGradient>
+      </defs>
+      {coin(40, 58)}
+      {coin(40, 44)}
+      {coin(40, 30)}
+      <text x="40" y="35" textAnchor="middle" fontSize="15" fontWeight="900" fill="#9a5b00" fontFamily="system-ui">
+        ₱
+      </text>
+    </svg>
+  );
+}
+
 /** Fanned aces on a pile of bouncing gold coins. */
 export function RoundBankArt() {
   return (
