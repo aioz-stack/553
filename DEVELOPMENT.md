@@ -383,15 +383,26 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   `covered` (the total you cover). `POST practice/matches/{id}/deal {bet?, request_id}`; a repeated
   `request_id` returns the same round, a second deal while one is open is 409 `round_in_progress`, after
   round 12 409 `match_over`.
-- **Deal:** all 52 cards, 13 per seat (rounds are `practice_games` rows: `round_number`, `banker` = seat).
+- **Deal:** every round — round 1 included — starts from the complete ordered 52-card deck, a fresh
+  256-bit CSPRNG seed and a full Fisher–Yates reshuffle, then deals 13 to each seat. Before the deal is
+  saved `PracticeService::assertFullDeal` checks 52 distinct cards, 13 per seat, nothing missing or
+  duplicated; nothing (seed, order, hands) carries over between rounds (rounds are `practice_games` rows:
+  `round_number`, `banker` = seat).
 - **Bots:** arranged by the server at deal time; the first `strong_bots` bots of the tier (0 Beginner …
   3 Mastery) use **`App\Game\BotArranger`**, which searches many valid arrangements (top Backs × every Middle
   of the rest) and keeps the best-balanced one by an estimated lane-win score — never fouls and is never
   worse than the greedy `AutoArranger`; the others play a random non-fouled hand. Bots declare their own
   Lucky Hands. Their cards stay hidden until settlement.
-- **No timer, at every level:** Single Player rounds have no countdown, deadline or timeout. A dealt round
-  stays open until you Submit (or declare luck); `pusoy:sweep` never touches `practice_games`, and the
-  table never auto-submits. (Arrangement timers apply to multiplayer tables only.)
+- **Clean card state per round (table):** dealing a round, settling it and starting a match clear all
+  arrangement state — lanes, selection, preview, lock and the arrangement popup — so the popup opens with
+  only the new round's 13 cards. Late answers (Autoplay suggestion, hand-name preview) for a round no longer
+  on the table are ignored, lanes are cleared of any card not in the current hand, and Submit never sends
+  a card from another hand.
+- **No time limit, at every level (Beginner, Intermediate, Advance, Mastery):** no countdown, deadline or
+  timeout. You can move, swap and rearrange your cards for as long as you like; a dealt round stays open
+  until you press **SUBMIT** (in the arrangement popup or on the table) or declare luck. Nothing
+  auto-submits — not the table, the popup, Autoplay Arrange, nor `pusoy:sweep` (it never touches
+  `practice_games`). Arrangement timers apply to multiplayer tables only.
 - **You** arrange Front 3 / Middle 5 / Back 5. **A misplaced (fouled) hand is accepted** and penalised in
   settlement: it loses every lane, so as a player you pay **2 × bet** to the banker, and as banker you pay
   **2 × bet to every opponent** (both misplaced → the banker still wins, per the banker advantage). The

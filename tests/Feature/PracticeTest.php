@@ -464,3 +464,44 @@ test('Single Player has no timer at any level: a round waits indefinitely and is
         spSubmitAuto($this, $rich, $id)->assertCreated()->assertJsonPath('data.status', 'completed');
     }
 });
+
+test('a full 12-round match: every round is a fresh reshuffle of all 52 cards, 13 new cards to each seat', function () {
+    $me = practicePlayer();
+    $match = spStartMatch($this, $me);
+    $full = Deck::ordered();
+    sort($full);
+    $seeds = [];
+    $myHands = [];
+
+    for ($r = 1; $r <= 12; $r++) {
+        $res = spDealRound($this, $me, $match, 50)->assertCreated()->assertJsonPath('data.round', $r);
+        $game = PracticeGame::query()->findOrFail($res->json('data.id'));
+
+        // A new seed every round, and the hands are exactly that seed's shuffle of the full deck.
+        expect($seeds)->not->toContain($game->server_seed);
+        $seeds[] = $game->server_seed;
+        $deck = Deck::shuffled($game->server_seed);
+        expect(Deck::commitment($game->server_seed, $deck))->toBe($game->deck_commitment);
+        expect($game->hands)->toEqual(Deck::deal($deck));
+
+        // All 52 accounted for: 13 per seat, no duplicates, none missing.
+        $all = array_merge(...array_values($game->hands));
+        sort($all);
+        expect($all)->toBe($full);
+        foreach ([1, 2, 3, 4] as $seat) {
+            expect($game->hands[$seat])->toHaveCount(13);
+        }
+
+        // You see only this round's 13 cards.
+        expect($res->json('data.cards'))->toBe($game->hands[1]);
+        $myHands[] = $game->hands[1];
+
+        spSubmitAuto($this, $me, $game->id)->assertCreated();
+        expect(Deck::verify($game->server_seed, $game->deck_commitment))->toBeTrue();
+    }
+
+    // No two rounds share a deck order or hand.
+    expect(array_unique($seeds))->toHaveCount(12);
+    expect(array_unique(array_map(fn ($h) => implode(',', $h), $myHands)))->toHaveCount(12);
+    expect(PracticeMatch::query()->find($match)->status)->toBe('completed');
+});

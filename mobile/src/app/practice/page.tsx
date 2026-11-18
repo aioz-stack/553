@@ -105,6 +105,11 @@ function defaultSplit(cards: string[]): Rows {
   return { back: s.slice(0, 5), middle: s.slice(5, 10), front: s.slice(10, 13) };
 }
 
+/** True when every card in the lanes belongs to `hand` (no card from another round). */
+function rowsUse(rows: Rows, hand: Set<string>): boolean {
+  return [...rows.front, ...rows.middle, ...rows.back].every((c) => hand.has(c));
+}
+
 function readAutoplay(): boolean {
   try {
     return localStorage.getItem(AUTOPLAY_KEY) === '1';
@@ -221,6 +226,19 @@ export default function Practice() {
 
   const say = useCallback((ok: boolean, text: string) => setToast({ ok, text }), []);
 
+  // The round whose cards are on the table right now. Async answers (suggest, preview) for any other
+  // round are dropped, so nothing from a previous round can be written into the current one.
+  const roundIdRef = useRef<number | null>(null);
+
+  /** Clear every piece of card-arrangement state: lanes, selection, preview, lock and the popup. */
+  const clearCards = useCallback(() => {
+    setRows(EMPTY);
+    setPicked([]);
+    setPreview(null);
+    setLocked(false);
+    setLuck(null);
+  }, []);
+
   useEffect(() => {
     if (!toast) return undefined;
     const t = setTimeout(() => setToast(null), 3500);
@@ -235,6 +253,8 @@ export default function Practice() {
     async (g: RoundState): Promise<Rows | null> => {
       try {
         const r = await api<{ data: Rows }>(`/practice/${g.id}/suggest`, { method: 'POST' });
+        // A late answer for a round that is no longer on the table must not touch the new round.
+        if (roundIdRef.current !== g.id) return null;
         const next = { front: r.data.front, middle: r.data.middle, back: r.data.back };
         setRows(next);
         setPicked([]);
@@ -251,11 +271,12 @@ export default function Practice() {
   const newMatch = useCallback(async (t: PracticeTier) => {
     const r = await api<{ data: MatchState }>('/practice/matches', { method: 'POST', body: { tier: t.key } });
     setMatch(r.data);
+    clearCards();
+    roundIdRef.current = null;
     setRound(null);
-    setRows(EMPTY);
     setPhase('betting');
     return r.data;
-  }, []);
+  }, [clearCards]);
 
   // ---- load: tier → resume the active match at this tier, or start a new one ----
   useEffect(() => {
@@ -282,6 +303,8 @@ export default function Practice() {
         if (current.data && current.data.tier.key === t.key) {
           setMatch(current.data);
           if (current.data.current) {
+            clearCards();
+            roundIdRef.current = current.data.current.id;
             setRound(current.data.current);
             setBet(current.data.current.bet);
             setPhase('arranging');
@@ -303,7 +326,7 @@ export default function Practice() {
         setPhase('betting');
       }
     })();
-  }, [user, router, say, suggest, newMatch]);
+  }, [user, router, say, suggest, newMatch, clearCards]);
 
   // ---- bet + deal a round ----
   /** Place your bet (null when you are the banker: no bet, you cover the others) and deal. */
@@ -322,13 +345,13 @@ export default function Practice() {
       const m = match && match.status === 'active' ? match : await newMatch(tier);
       const r = await api<{ data: RoundState }>(`/practice/matches/${m.id}/deal`, { method: 'POST', body: { ...(amount !== null ? { bet: amount } : {}), request_id: requestId.current } });
       saveSelection({ tier: tier.key, bet: amount ?? bet ?? undefined });
+      // Start the new round from a clean card state: no lanes, selection, preview, lock or popup
+      // from the previous round survive (the popup reopens below with only the new cards).
+      clearCards();
+      roundIdRef.current = r.data.id;
       setRound(r.data);
       setMatch((x) => (x ? { ...x, current: r.data, next_round: null, next_banker: null, next_banker_name: null } : x));
-      setRows(EMPTY);
-      setPicked([]);
-      setPreview(null);
       setPhase('arranging');
-      setLocked(false);
       play('deal');
       if (r.data.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
       const suggested = autoplay ? await suggest(r.data) : null;
@@ -345,6 +368,9 @@ export default function Practice() {
 
   /** After a round settles: refresh the match (running Gold, standings, next banker, match end). */
   const settled = async (r: RoundState) => {
+    // The round is over: drop its arrangement state (the reveal is drawn from the server's result).
+    clearCards();
+    roundIdRef.current = r.id;
     setRound(r);
     setPhase('revealed');
     const g = r.result?.gold ?? 0;
@@ -390,13 +416,26 @@ export default function Practice() {
 
   useEffect(() => {
     if (phase !== 'arranging' || !round) return undefined;
+    let live = true;
+    const id = round.id;
     const t = setTimeout(() => {
-      api<{ data: { labels: Record<Lane, string | null>; is_foul: boolean } }>(`/practice/${round.id}/preview`, { method: 'POST', body: rows })
-        .then((r) => setPreview(r.data))
+      api<{ data: { labels: Record<Lane, string | null>; is_foul: boolean } }>(`/practice/${id}/preview`, { method: 'POST', body: rows })
+        // Ignore answers for older lanes or an earlier round.
+        .then((r) => live && roundIdRef.current === id && setPreview(r.data))
         .catch(() => undefined);
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
   }, [rows, round, phase]);
+
+  // Guard: whenever the round on the table changes, drop any card that is not in its hand.
+  useEffect(() => {
+    const mine = new Set(round?.cards ?? []);
+    setRows((r) => (rowsUse(r, mine) ? r : EMPTY));
+    setPicked((p) => p.filter((c) => mine.has(c)));
+  }, [round?.id, round?.cards]);
 
   const moveTo = (cards: string[], zone: Zone) => {
     // After READY the arrangement is locked; Reset reopens the arrangement popup.
@@ -431,7 +470,7 @@ export default function Practice() {
     play('tap');
     setLocked(false);
     setPicked([]);
-    setLuck(complete ? rows : defaultSplit(round.cards));
+    setLuck(complete && rowsUse(rows, new Set(round.cards)) ? rows : defaultSplit(round.cards));
   };
 
   /**
@@ -441,6 +480,13 @@ export default function Practice() {
    */
   const submit = async (lanes: Rows = rows) => {
     if (!round || busy) return;
+    // Only this round's cards may be sent (never a card left over from an earlier round).
+    if (!rowsUse(lanes, new Set(round.cards))) {
+      clearCards();
+      setLuck(defaultSplit(round.cards));
+      say(false, 'Your cards were refreshed for this round — please arrange and submit again.');
+      return;
+    }
     const full = lanes.front.length === 3 && lanes.middle.length === 5 && lanes.back.length === 5;
     if (!full) {
       say(false, 'Place all 13 cards first — or tap Reset to arrange them.');
@@ -863,7 +909,7 @@ export default function Practice() {
         </div>
 
         {/* Declared Luck popup (right after the deal) */}
-        {luck && round && phase === 'arranging' && (
+        {luck && round && phase === 'arranging' && rowsUse(luck, new Set(round.cards)) && (
           <LuckPopup
             key={round.id}
             gameId={round.id}

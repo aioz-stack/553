@@ -184,10 +184,13 @@ class PracticeService
 
                 $this->assertGold($user, $tier);
 
+                // Every round (round 1 included) starts from the complete 52-card deck and a fresh
+                // CSPRNG seed, reshuffled before anything is dealt; nothing from earlier rounds carries over.
                 $seed = Deck::newSeed();
                 $deck = Deck::shuffled($seed);
                 // All 52 cards: 13 to each of the four seats.
                 $hands = Deck::deal($deck);
+                self::assertFullDeal($deck, $hands);
                 $arrangements = [];
 
                 // Bot strength by tier: the first `strong_bots` bots arrange with BotArranger (searches for the
@@ -558,6 +561,33 @@ class PracticeService
         ksort($bets);
 
         return $bets;
+    }
+
+    /**
+     * Integrity check before a deal is saved: the shuffled deck is exactly the
+     * 52 distinct cards, and the four hands hold 13 each with no duplicates or
+     * missing cards. A failure aborts the deal (nothing is stored).
+     *
+     * @param  list<string>  $deck
+     * @param  array<int, list<string>>  $hands
+     */
+    private static function assertFullDeal(array $deck, array $hands): void
+    {
+        $full = Deck::ordered();
+        $sorted = $deck;
+        sort($sorted);
+        sort($full);
+        $dealt = array_merge(...array_values($hands));
+        sort($dealt);
+
+        $ok = $sorted === $full && $dealt === $full && count($hands) === 4;
+        foreach ($hands as $hand) {
+            $ok = $ok && count($hand) === 13;
+        }
+
+        if (! $ok) {
+            throw new \RuntimeException('Deal integrity check failed: the deck must be 52 distinct cards, 13 to each seat.');
+        }
     }
 
     /**
