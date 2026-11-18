@@ -192,7 +192,7 @@ export default function Play() {
               <GameButton tone={me.is_ready ? 'glass' : 'green'} size="lg" onClick={() => act(() => api(`/tables/${table.id}/ready`, { method: 'POST', body: { ready: !me.is_ready } }))}>
                 {me.is_ready ? 'NOT READY' : 'READY!'}
               </GameButton>
-              <GameButton tone="red" size="lg" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace(banker ? `/lobby/?mode=${table.game_mode}` : '/lobby/'); })}>
+              <GameButton tone="red" size="lg" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace('/lobby/'); })}>
                 LEAVE
               </GameButton>
             </div>
@@ -282,7 +282,7 @@ export default function Play() {
         )}
 
         {banker && inGame && me && !matchOver && (phase === 'COMPLETED' || phase === 'CANCELLED') && (
-          <GameButton tone="red" size="md" className="mt-4 w-full" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace(`/lobby/?mode=${table.game_mode}`); })}>
+          <GameButton tone="red" size="md" className="mt-4 w-full" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace('/lobby/'); })}>
             LEAVE BETWEEN ROUNDS
           </GameButton>
         )}
@@ -293,7 +293,7 @@ export default function Play() {
 
       {/* Final scoreboard */}
       {matchOver && (
-        <MatchOverSheet standings={table.standings ?? []} userId={user?.id} currency={currency} reason={table.end_reason} roundsPlayed={table.rounds_played ?? 0} onLobby={() => router.replace(`/lobby/?mode=${table.game_mode}`)} />
+        <MatchOverSheet standings={table.standings ?? []} userId={user?.id} currency={currency} reason={table.end_reason} roundsPlayed={table.rounds_played ?? 0} onLobby={() => router.replace('/lobby/')} />
       )}
 
       {/* Classic results sheet */}

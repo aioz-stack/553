@@ -81,12 +81,20 @@ class BankerMatchService
     /**
      * Start the match once enough players are seated and every one is ready.
      */
-    public function maybeStart(GameTable $table): ?GameSession
+    /**
+     * Start the match once everyone seated is ready. Lobby tables (`owner_starts`) never start on
+     * their own: the lobby owner presses Start (LobbyService::start → $byOwner = true).
+     */
+    public function maybeStart(GameTable $table, bool $byOwner = false): ?GameSession
     {
-        return DB::transaction(function () use ($table) {
+        return DB::transaction(function () use ($table, $byOwner) {
             $table = GameTable::query()->whereKey($table->id)->lockForUpdate()->firstOrFail();
 
             if (! $table->hasBanker() || ! in_array($table->status, [TableStatus::WaitingForPlayers, TableStatus::Ready], true)) {
+                return null;
+            }
+
+            if ($table->room->owner_starts && ! $byOwner) {
                 return null;
             }
 
@@ -249,6 +257,11 @@ class BankerMatchService
         }
 
         if ($table->banker_user_id === null) {
+            // Round Bank: the player who created the table banks first (then the seat rotates).
+            if ($creator = $bySeat->firstWhere('user_id', $table->creator_user_id)) {
+                return [$creator, 'room_creator'];
+            }
+
             return [$bySeat->first(), 'first_eligible'];
         }
 
@@ -849,6 +862,11 @@ class BankerMatchService
                 $this->end($table, 'abandoned');
             } elseif (! $remaining->contains('user_id', $table->creator_user_id)) {
                 $table->forceFill(['creator_user_id' => $remaining->first()->user_id])->save();
+                // A lobby's ownership (settings, Start) moves with it to the next seated player.
+                $room = $table->room;
+                if ($room->isLobby()) {
+                    $room->forceFill(['owner_id' => $remaining->first()->user_id])->save();
+                }
             }
 
             return;

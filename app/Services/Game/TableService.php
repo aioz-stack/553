@@ -371,6 +371,11 @@ class TableService
         }
 
         $balance = $this->wallets->for($user, $room->currency)->balance;
+
+        // Multiplayer lobbies: you must hold at least the lobby's Minimum Entry (nothing is deducted on entry).
+        if ($room->min_entry !== null && $balance < $room->min_entry && ! $this->activeSeat($user)) {
+            throw new BusinessRuleException('You need at least '.number_format(Points::decimal($room->min_entry)).' diamonds to enter this lobby.', 422, 'insufficient_balance');
+        }
         // Banker modes: enough to cover the minimum bet's 2× reserve.
         $needed = $room->game_mode->hasBanker()
             ? $room->entry_amount * (int) config('pusoy.banker.reserve_multiplier', 2)

@@ -3,7 +3,13 @@
 namespace App\Providers;
 
 use App\Enums\Ability;
+use App\Events\Game\LobbyEvent;
+use App\Events\Game\TableEvent;
+use App\Models\GameRoom;
 use App\Models\GameSession;
+use App\Models\GameTable;
+use App\Services\Game\LobbyService;
+use Illuminate\Support\Facades\Event;
 use App\Models\User;
 use App\Policies\GameSessionPolicy;
 use App\Policies\UserPolicy;
@@ -43,5 +49,19 @@ class AppServiceProvider extends ServiceProvider
         ]);
         RateLimiter::for('game-actions', fn (Request $request) => Limit::perMinute(60)->by($request->user()?->id ?: $request->ip()));
         RateLimiter::for('wallet-actions', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
+        // Joining a lobby (password guesses included): a few per minute per player.
+        RateLimiter::for('lobby-join', fn (Request $request) => Limit::perMinute(15)->by('lobby-join:'.($request->user()?->id ?: $request->ip())));
+
+        // Multiplayer lobbies: any seat change, ready toggle, start or end at a lobby's table also
+        // tells every open Lobby screen to refresh (public `lobbies` channel, public info only).
+        Event::listen(TableEvent::class, function (TableEvent $event) {
+            if (! in_array($event->name, LobbyService::TABLE_EVENTS_THAT_CHANGE_LOBBIES, true)) {
+                return;
+            }
+            $roomId = GameTable::query()->whereKey($event->tableId)->value('game_room_id');
+            if ($roomId && GameRoom::query()->whereKey($roomId)->whereNotNull('lobby_code')->exists()) {
+                event(new LobbyEvent((int) $roomId, $event->name));
+            }
+        });
     }
 }

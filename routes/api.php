@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\GameController;
+use App\Http\Controllers\Api\V1\LobbyController;
 use App\Http\Controllers\Api\V1\PayoutController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\PracticeController;
@@ -71,6 +72,16 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::get('rooms/{room}', [RoomController::class, 'show']);
         Route::post('rooms/{room}/join', [RoomController::class, 'join'])->middleware('throttle:game-actions');
         Route::post('rooms/{room}/invite', [RoomController::class, 'invite']);
+
+        // Multiplayer lobbies (553 Lobby): create / list / join / quick join / owner start
+        Route::get('lobbies', [LobbyController::class, 'index']);
+        Route::post('lobbies', [LobbyController::class, 'store'])->middleware('throttle:game-actions');
+        Route::post('lobbies/quick-join', [LobbyController::class, 'quickJoin'])->middleware('throttle:game-actions');
+        Route::get('lobbies/{room}', [LobbyController::class, 'show']);
+        Route::patch('lobbies/{room}', [LobbyController::class, 'update'])->middleware('throttle:game-actions');
+        Route::post('lobbies/{room}/join', [LobbyController::class, 'join'])->middleware('throttle:lobby-join');
+        Route::post('lobbies/{room}/start', [LobbyController::class, 'start'])->middleware('throttle:game-actions');
+        Route::post('lobbies/{room}/kick', [LobbyController::class, 'kick'])->middleware('throttle:game-actions');
 
         Route::get('tables/current', [TableController::class, 'current']);
         Route::get('tables/{table}', [TableController::class, 'show']);

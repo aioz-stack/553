@@ -23,6 +23,9 @@ class GameRoom extends Model
 
     protected $guarded = ['id', 'carry_over_amount'];
 
+    /** A lobby password is only ever stored hashed and never sent to clients. */
+    protected $hidden = ['lobby_password'];
+
     /**
      * Same defaults as the migration, so unsaved/new models behave alike.
      *
@@ -54,6 +57,8 @@ class GameRoom extends Model
             'rounds_total' => 'integer',
             'betting_seconds' => 'integer',
             'lucky_hands_enabled' => 'boolean',
+            'min_entry' => 'integer',
+            'owner_starts' => 'boolean',
         ];
     }
 
@@ -85,6 +90,23 @@ class GameRoom extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', RoomStatus::Active->value);
+    }
+
+    /** Player-created multiplayer lobbies (they have a Lobby ID). */
+    public function scopeLobby(Builder $query): Builder
+    {
+        return $query->whereNotNull('lobby_code');
+    }
+
+    public function isLobby(): bool
+    {
+        return $this->lobby_code !== null;
+    }
+
+    /** Private lobby = created with a password. */
+    public function isPrivateLobby(): bool
+    {
+        return $this->lobby_password !== null;
     }
 
     public function scopePublic(Builder $query): Builder

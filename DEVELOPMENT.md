@@ -526,6 +526,44 @@ locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/
   After round 12 a **Match results** panel shows the standings of all four players and the 12-round history.
 - Back (asks during a round; the match is kept), Settings (sound, autoplay), ? (rules).
 
+### Multiplayer — the 553 Lobby (player-created diamond lobbies)
+
+Home → Multiplayer opens `/lobby/` (mobile, 1600×900 stage). Built on the existing rooms → tables →
+12-round banker matches (BankerMatchService); `App\Services\Game\LobbyService` adds the lobby layer.
+
+- **A lobby** is a `game_room` with `lobby_code` (unique 6-digit Lobby ID), `lobby_password` (bcrypt
+  hash, never returned; set = Private, empty = Public), `min_entry` (diamonds you must **hold** to enter —
+  nothing is deducted on entry), `owner_starts` (true) and `min_players` = 4. Currency: VC (diamonds).
+  Minimum bet per round = Minimum Entry ÷ 10, so holding the entry always covers a round (worst case as
+  banker vs three players: 6 × bet). Preparation Time = the room's arrangement timer.
+- **Game type:** Banker Mode = the lobby owner banks all 12 rounds (if they leave, the richest player takes
+  over — unchanged rules); Round Bank = the owner banks first, then the banker rotates clockwise by seat
+  (`chooseBanker` now picks the table creator for the first Round Bank round).
+- **Create** (`POST lobbies`): validates fields and your diamonds, locks your user row (no double create),
+  refuses if you are already seated, creates the room, seats you in seat 1 as owner. **Join**: private
+  lobbies check the password (`Hash::check`, throttled `lobby-join` 15/min); `TableService` locks and
+  re-checks seats (max 4) and balance (`min_entry` and the 2× minimum-bet reserve); joining again is a
+  no-op. **Quick Join**: public lobbies only, affordable (`min_entry` and reserve ≤ your VC), with free
+  seats, fullest first then oldest; tries the next if one fills meanwhile; 404 `no_lobby` when none.
+- **Waiting room** (`/lobby/room/?id=`): four seats with owner crown, BANKER badge, Ready, online; players
+  toggle Ready (`tables/{id}/ready`); the owner can Edit (name / password / time), Remove a player, and
+  **Start** only with exactly four seated and the other three ready (`maybeStart(byOwner: true)`; lobby
+  tables never auto-start). On start every client moves to `/play/?table=`. Owner leaving → ownership
+  (and the creator/banker role) passes to the next seated player; last player leaving → the lobby closes.
+- **Money:** unchanged banker-match money — each round's bets are held in escrow from VC wallets and
+  settled with idempotent ledger entries (BankerMatchService); balances never come from the client.
+- **Live:** every lobby change (and table join/leave/ready/start/end at a lobby) broadcasts
+  `lobby.updated` on the public `lobbies` channel (`LobbyEvent`, public info only); the Lobby polls every
+  5 s without a socket (20 s with one), the Waiting Room listens on `table.{id}` and polls every 3 s, with
+  a 10 s heartbeat. Broadcasts are queued: run `php artisan queue:work` (and Reverb) for instant updates
+  and for the match timers (betting close, arrangement timeout) to advance.
+- **UI:** `app/lobby/page.tsx` (top bar, sidebar Friends / Ranking / Rewards / Daily Spin, Quick Join,
+  Create Lobby, tabs with counts, search, table — Lobby Name + ID, Game Type (the mode the creator chose:
+  Round Bank / Banker Mode, same label as the lobby details), Bet, Min. Entry, Prep, Players, Mode, Status —
+  « ‹ Page n of m › », hidden for one page),
+  `components/lobby/CreateLobbyModal.tsx` (also the owner's settings), `components/lobby/LobbyUI.tsx`.
+  The game itself is the existing `/play` table (not yet restyled to the 553 look).
+
 ### Local testing with bots
 
 `php artisan pusoy:bots {room} --players=2 --skip=demo4` seats demo players who heartbeat, ready,
@@ -580,6 +618,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
+| Multiplayer lobbies | `GET lobbies` (`tab` all/public/private, `search`, `page`; 5 per page + counts), `POST lobbies` (`name`, `password?`, `game_mode` banker/round_bank, `min_entry` 100/250/500/1000/2000, `preparation_seconds` 30/45/60/75), `POST lobbies/quick-join`, `GET lobbies/{id}`, `PATCH lobbies/{id}` (owner: name/password/time), `POST lobbies/{id}/join` (`password?`), `POST lobbies/{id}/start` (owner), `POST lobbies/{id}/kick` (owner, `user_id`); ready / leave / heartbeat use `tables/{id}/…` |
 | Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}` — Round Bank, you + 3 bots; CP only with `FEATURE_CP_WAGERING` |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
