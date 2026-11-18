@@ -496,6 +496,16 @@ locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/
   BANKER badge. Top right: Bet pill, round / banker, tier, match Gold and CP balance.
 - Betting: tap a chip to bet and deal; after each round the chips return for the next round's bet.
   Resuming: an open round of the active match at the same tier continues.
+- **Dragging cards** (`components/table/useCardDrag.tsx`, used by the arrangement popup and the table
+  rows/hand): the lifted card is the same card at exactly its slot's size (measured from the slot, drawn
+  in stage units inside the stage, so the stage's scale/rotation never resizes it) — lifting shows as a
+  small rise and a deeper shadow, never scaling. It stays under the finger at the grab point and pivots
+  there: a requestAnimationFrame loop follows the pointer with slight weight, tilts up to ±14° with
+  sideways speed and swings upright when you stop (transform only, no React render per frame). A drop on
+  a target commits the move, then FLIP animations glide the dropped card from where it was released into
+  its new slot (straightening) and slide the displaced card across; elsewhere it springs back to its slot
+  (with a timed fallback so a card is never left hidden). Listeners are subscribed once (state in refs),
+  so re-renders mid-drag cannot interrupt it. Low motion quality: no tilt or glide.
 - **Manual arrangement, cards directly in the rows** (`components/table/LuckPopup.tsx`): there is no
   separate card panel. After the deal (and when you come back to an open round) your 13 cards sit
   directly in **Front 3 / Middle 5 / Back 5, in dealt order** (cards 1-3, 4-8, 9-13) — nothing is sorted

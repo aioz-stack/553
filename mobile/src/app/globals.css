@@ -541,3 +541,9 @@ body {
    (sparkles, rim shimmer, shine sweeps, petals) stop. Low quality = data-motion="reduce" above. */
 :root[data-quality='medium'] .lx-fleck, :root[data-quality='medium'] .lx-dot, :root[data-quality='medium'] .lx-sheen::after, :root[data-quality='medium'] .lx-gold::after, :root[data-quality='medium'] .lx-rim, :root[data-quality='medium'] .lx-text-shine, :root[data-quality='medium'] .lx-gloss::after, :root[data-quality='medium'] .tb-petal { animation: none !important; }
 :root[data-quality='medium'] .lx-fleck, :root[data-quality='medium'] .lx-dot, :root[data-quality='medium'] .tb-petal { opacity: 0; }
+
+/* Card drag (components/table/useCardDrag.tsx): the lifted card rises and casts a deeper shadow —
+   its size never changes. */
+.cd-lift { animation: cd-lift .14s ease-out both; }
+@keyframes cd-lift { from { transform: translateY(0); filter: drop-shadow(0 3px 3px rgb(0 0 0 / .3)); } to { transform: translateY(-8px); filter: drop-shadow(0 18px 14px rgb(0 0 0 / .45)); } }
+:root[data-motion='reduce'] .cd-lift { animation: none; filter: drop-shadow(0 10px 10px rgb(0 0 0 / .4)); }

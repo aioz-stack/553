@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CandyText, GoldCoins } from '@/components/HomeArt';
 import LandscapeStage from '@/components/LandscapeStage';
 import PlayingCard, { sortCards } from '@/components/PlayingCard';
 import DealAnimation from '@/components/table/DealAnimation';
 import LuckPopup from '@/components/table/LuckPopup';
+import { useCardDrag } from '@/components/table/useCardDrag';
 import { fxAt, isUp, laneShown, RevealBanner, RevealFx, revealPlan, useRevealClock, type RevealPlan } from '@/components/table/RevealShow';
 import { Chip, Clover, Face, LanternRoom, MiniCrest, PokerTable, type FaceKind } from '@/components/table/TableArt';
 import { Screen } from '@/components/ui';
@@ -548,49 +549,19 @@ export default function Practice() {
     router.replace(PICKER_URL);
   };
 
-  // ---- drag and drop on the stage (DOM hit-testing follows the stage's scale/rotation) ----
-  const [drag, setDrag] = useState<{ card: string; from: Zone; sx: number; sy: number; x: number; y: number; moving: boolean } | null>(null);
-  const dragRef = useRef(drag);
-  const suppressClick = useRef(false);
-  const startDrag = (card: string, from: Zone) => (e: ReactPointerEvent) => {
-    if (e.button !== 0 || locked) return;
-    const v = { card, from, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, moving: false };
-    dragRef.current = v;
-    setDrag(v);
-  };
-  useEffect(() => {
-    if (!drag) return undefined;
-    const onMove = (e: PointerEvent) => {
-      const v = dragRef.current;
-      if (!v) return;
-      const next = { ...v, x: e.clientX, y: e.clientY, moving: v.moving || Math.hypot(e.clientX - v.sx, e.clientY - v.sy) > 8 };
-      dragRef.current = next;
-      setDrag(next);
-    };
-    const onUp = (e: PointerEvent) => {
-      const v = dragRef.current;
-      dragRef.current = null;
-      setDrag(null);
-      if (!v?.moving) return;
-      const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-zone]') as HTMLElement | null;
+  // ---- drag and drop on the stage: a real-feeling lifted card (useCardDrag), dropped into a row or the hand ----
+  const zoneOf = (card: string): Zone => LANES.find((l) => rows[l].includes(card)) ?? 'hand';
+  const { bind: bindDrag, dragging, ghost, suppressClick } = useCardDrag({
+    enabled: !locked,
+    resolve: ({ card, clientX, clientY }) => {
+      const el = (document.elementFromPoint(clientX, clientY) as HTMLElement | null)?.closest('[data-zone]') as HTMLElement | null;
       const zone = el?.dataset.zone as Zone | undefined;
-      const group = v.from === 'hand' && picked.includes(v.card) ? picked : [v.card];
-      if (zone && zone !== v.from) moveTo(group, zone);
-      suppressClick.current = true;
-      setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag?.card, drag?.from, picked]);
+      const from = zoneOf(card);
+      const group = from === 'hand' && picked.includes(card) ? picked : [card];
+      if (!zone || zone === from) return null;
+      return { moved: group.filter((c) => c !== card), commit: () => moveTo(group, zone) };
+    },
+  });
 
   // ---- derived ----
   const players = round?.players ?? [];
@@ -765,7 +736,7 @@ export default function Practice() {
                       className={`flex h-[122px] w-[436px] items-center gap-[8px] rounded-[18px] border-[3px] px-[8px] transition ${open ? 'border-[#ffe14d] bg-[#ffe14d]/15 shadow-[0_0_22px_rgb(255_225_77/0.55)]' : foul ? 'border-[#ff6b6b] bg-[#d81e3c]/15' : 'border-white/25 bg-black/20'}`}
                     >
                       {rows[lane].map((c) => (
-                        <span key={c} onPointerDown={startDrag(c, lane)} className={`touch-none ${drag?.moving && drag.card === c ? 'opacity-30' : ''}`}>
+                        <span key={c} data-card={c} onPointerDown={bindDrag(c)} className={`touch-none ${dragging === c ? 'opacity-0' : ''}`}>
                           <PlayingCard code={c} style={{ width: bigCard.w, height: bigCard.h, fontSize: bigCard.f }} onClick={() => !suppressClick.current && moveTo([c], 'hand')} />
                         </span>
                       ))}
@@ -884,7 +855,7 @@ export default function Practice() {
               {hand.map((c, i) => {
                 const on = picked.includes(c);
                 return (
-                  <span key={c} onPointerDown={startDrag(c, 'hand')} className={`absolute touch-none transition-[left] ${drag?.moving && drag.card === c ? 'opacity-30' : ''}`} style={{ left: i * Math.min(62, 760 / Math.max(hand.length, 1)), top: 8 }}>
+                  <span key={c} data-card={c} onPointerDown={bindDrag(c)} className={`absolute touch-none transition-[left] ${dragging === c ? 'opacity-0' : ''}`} style={{ left: i * Math.min(62, 760 / Math.max(hand.length, 1)), top: 8 }}>
                     <PlayingCard
                       code={c}
                       selected={on}
@@ -1124,13 +1095,9 @@ export default function Practice() {
             </div>
           </div>
         )}
+        {/* the card you are dragging (on the stage, same size as in its slot) */}
+        {ghost}
       </LandscapeStage>
-
-      {drag?.moving && (
-        <div className="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2 rotate-6 drop-shadow-[0_10px_16px_rgb(0_0_0/0.5)]" style={{ left: drag.x, top: drag.y }}>
-          <PlayingCard code={drag.card} />
-        </div>
-      )}
     </Screen>
   );
 }

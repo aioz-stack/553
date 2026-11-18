@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { GoldCoins } from '@/components/HomeArt';
 import PlayingCard from '@/components/PlayingCard';
 import { api } from '@/lib/api';
 import { play } from '@/lib/sound';
 import { CardBack553, Clover, MiniCrest } from './TableArt';
+import { useCardDrag } from './useCardDrag';
 
 type Lane = 'front' | 'middle' | 'back';
 export type Rows = Record<Lane, string[]>;
@@ -132,9 +133,16 @@ export default function LuckPopup({
   const [sel, setSel] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [drag, setDrag] = useState<{ card: string; sx: number; sy: number; x: number; y: number; moving: boolean } | null>(null);
-  const dragRef = useRef(drag);
-  const suppressClick = useRef(false);
+  // Drag a card like a real one and drop it on another card to swap the two (useCardDrag).
+  const { bind, dragging, ghost, suppressClick } = useCardDrag({
+    resolve: ({ card, clientX, clientY }) => {
+      const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+      const target = (el?.closest('[data-card]') as HTMLElement | null)?.dataset.card;
+      if (target && target !== card) return { moved: [target], commit: () => apply(exchange(rows, card, target)) };
+      if (el?.closest('[data-zone]')) setHint('Drop it on a card to swap the two.');
+      return null;
+    },
+  });
 
   useEffect(() => {
     let live = true;
@@ -176,50 +184,10 @@ export default function LuckPopup({
     setHint(`${lane[0].toUpperCase()}${lane.slice(1)} is full (${SIZE[lane]}/${SIZE[lane]}) — tap one of its cards to swap.`);
   };
 
-  // ---- drag and drop (pointer events: mouse, touch, pen): drop on a card to swap ----
-  const startDrag = (card: string) => (e: ReactPointerEvent) => {
-    if (e.button !== 0) return;
-    const v = { card, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, moving: false };
-    dragRef.current = v;
-    setDrag(v);
-  };
-  useEffect(() => {
-    if (!drag) return undefined;
-    const onMove = (e: PointerEvent) => {
-      const v = dragRef.current;
-      if (!v) return;
-      const next = { ...v, x: e.clientX, y: e.clientY, moving: v.moving || Math.hypot(e.clientX - v.sx, e.clientY - v.sy) > 8 };
-      dragRef.current = next;
-      setDrag(next);
-    };
-    const onUp = (e: PointerEvent) => {
-      const v = dragRef.current;
-      dragRef.current = null;
-      setDrag(null);
-      if (!v?.moving) return;
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      const target = (el?.closest('[data-card]') as HTMLElement | null)?.dataset.card;
-      if (target && target !== v.card) apply(exchange(rows, v.card, target));
-      else if (el?.closest('[data-zone]')) setHint('Drop it on a card to swap the two.');
-      suppressClick.current = true;
-      setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag?.card, rows]);
-
   const card = (c: string) => (
     // stopPropagation: tapping a card must not also count as tapping the row behind it.
-    <span key={c} data-card={c} onPointerDown={startDrag(c)} onClick={(e) => e.stopPropagation()} className={`touch-none ${drag?.moving && drag.card === c ? 'opacity-30' : ''}`}>
+    // While a card is lifted its slot is empty (the lifted card is drawn by `ghost`).
+    <span key={c} data-card={c} onPointerDown={bind(c)} onClick={(e) => e.stopPropagation()} className={`touch-none ${dragging === c ? 'opacity-0' : ''}`}>
       <PlayingCard code={c} selected={sel === c} onClick={() => tapCard(c)} style={{ width: CARD.w, height: CARD.h, fontSize: CARD.f }} />
     </span>
   );
@@ -370,11 +338,8 @@ export default function LuckPopup({
         </svg>
       </div>
 
-      {drag?.moving && (
-        <div className="pointer-events-none fixed z-[70] -translate-x-1/2 -translate-y-1/2 rotate-6 drop-shadow-[0_10px_16px_rgb(0_0_0/0.5)]" style={{ left: drag.x, top: drag.y }}>
-          <PlayingCard code={drag.card} />
-        </div>
-      )}
+      {/* the card you are dragging, same size as in its row */}
+      {ghost}
     </div>
   );
 }

@@ -242,6 +242,37 @@ describe('Single Player — Round Bank table', () => {
     expect(within(popup).getByRole('status')).toHaveTextContent('Drop it on a card to swap the two.');
   });
 
+  it('drag: the lifted card keeps exactly the size of its slot and the slot empties while it is held', async () => {
+    const popup = await dealToPopup();
+    const before = rowsIn(popup);
+    const slot = popup.querySelector('[data-card="4H"]') as HTMLElement;
+    const card = slot.firstElementChild as HTMLElement;
+    // jsdom has no layout: give the card its real size in the row (104 × 140).
+    Object.defineProperty(card, 'offsetWidth', { configurable: true, value: 104 });
+    Object.defineProperty(card, 'offsetHeight', { configurable: true, value: 140 });
+
+    fireEvent.pointerDown(slot, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 80, clientY: 40 });
+    const ghost = await waitFor(() => {
+      const g = popup.querySelector('.cd-lift')?.parentElement as HTMLElement | null;
+      expect(g).not.toBeNull();
+      return g as HTMLElement;
+    });
+    expect(ghost.style.width).toBe('104px');
+    expect(ghost.style.height).toBe('140px');
+    expect(within(ghost).getByRole('button', { name: '4 of hearts', hidden: true })).toHaveStyle({ width: '104px', height: '140px' });
+    expect(slot).toHaveClass('opacity-0');
+
+    // Released over nothing: it goes back (no swap) and the slot shows the card again.
+    if (!document.elementFromPoint) document.elementFromPoint = () => null;
+    const spy = vi.spyOn(document, 'elementFromPoint').mockReturnValue(null);
+    fireEvent.pointerUp(window, { clientX: 80, clientY: 40 });
+    spy.mockRestore();
+    await waitFor(() => expect(popup.querySelector('.cd-lift')).toBeNull());
+    expect(slot).not.toHaveClass('opacity-0');
+    expect(rowsIn(popup)).toEqual(before);
+  });
+
   it('shows the server\'s hand names and order marks, and SUBMIT sends exactly your rows', async () => {
     routes({ [PREVIEW_PATH]: { data: { labels: { front: 'High Card', middle: 'One Pair', back: 'Full House' }, is_foul: false, order: { front: true, middle: true, back: true } } } });
     const popup = await dealToPopup();
@@ -490,9 +521,8 @@ describe('reveal show after SUBMIT', () => {
   it('flips the Front cards first, one at a time, then Skip goes straight to the final results', async () => {
     await submitRound();
     // 1 s in: the intro is over and the first Front card (the first seat after you, the banker) is up.
-    await act(() => new Promise((r) => setTimeout(r, 1000)));
+    await waitFor(() => expect(faceDown(screen.getByLabelText("LuckyBot's hand"))).toBeLessThan(13), { timeout: 4000 });
     expect(screen.getByRole('status', { name: 'Reveal' })).toHaveTextContent('FRONT');
-    expect(faceDown(screen.getByLabelText("LuckyBot's hand"))).toBeLessThan(13);
     expect(faceDown(screen.getByLabelText("AceBot's hand"))).toBe(13);
 
     fireEvent.click(screen.getByRole('button', { name: /skip/i }));
