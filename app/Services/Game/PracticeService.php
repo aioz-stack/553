@@ -7,6 +7,7 @@ use App\Enums\TransactionType;
 use App\Exceptions\BusinessRuleException;
 use App\Exceptions\InsufficientBalanceException;
 use App\Game\Arrangement;
+use App\Game\ArrangementPreview;
 use App\Game\ArrangementValidator;
 use App\Game\AutoArranger;
 use App\Game\Banker\BankerRound;
@@ -41,9 +42,10 @@ use Illuminate\Support\Facades\DB;
  * Settlement (App\Game\Banker\BankerRound, banker advantage on): each
  * non-banker's lanes are compared with the banker's; an identical lane goes
  * to the banker. 3-0 = 2 × bet, 2-1 = 1 × bet, 1-2 = −1 ×, 0-3 = −2 ×
- * (config pusoy.banker.settlement). A Lucky Hand (Six Pairs / Three Flushes /
- * Three Straights) replaces the lane comparison and wins lucky_multiplier ×
- * bet; the player declares theirs, bots declare automatically.
+ * (config pusoy.banker.settlement). Declared Luck — any ONE of Three Flushes,
+ * No Face Cards or Six Pairs — replaces the lane comparison and wins
+ * lucky_multiplier (2) × bet; declaring without one loses 2 × bet. The player
+ * declares theirs, bots declare automatically (only ever with a qualifying hand).
  *
  * Gold (CP): when the match was started with the cp_wagering feature flag on,
  * each round reserves the player's worst case (2 × bet, or 6 × bet when the
@@ -254,21 +256,28 @@ class PracticeService
     }
 
     /**
-     * Declared Luck: the server checks the player's dealt cards. Qualifying
-     * hands settle the round at once; otherwise 422 not_lucky and play goes on.
+     * Declared Luck: the server checks the player's dealt cards for any ONE of
+     * Three Flushes, No Face Cards or Six Pairs and settles the round at once:
+     * a qualifying hand wins lucky_multiplier (2) × bet; a declaration that does
+     * not qualify loses 2 × bet (as the banker: 2 × each player's bet). The round
+     * is locked and settled once, so a declaration can never pay or charge twice.
      */
     public function declareLucky(User $user, PracticeGame $game): PracticeGame
     {
         return DB::transaction(function () use ($user, $game) {
             $game = $this->lockOpenRound($user, $game, luckyCheck: true);
 
-            $lucky = LuckyHand::detect($game->hands[self::PLAYER_SEAT])
-                ?? throw new BusinessRuleException('Your cards do not qualify for Declared Luck.', 422, 'not_lucky');
+            $hand = $game->hands[self::PLAYER_SEAT];
+            $lucky = LuckyHand::detect($hand);
 
-            $game = $this->settle($user, $game, $lucky['arrangement'], $lucky['type']);
+            // No qualifying combination: the declaration fails and costs double. Your cards are
+            // shown in a sensible (non-fouled) arrangement in the reveal; they decide nothing.
+            $game = $lucky
+                ? $this->settle($user, $game, $lucky['arrangement'], $lucky['type'])
+                : $this->settle($user, $game, AutoArranger::arrange($hand), null, failed: true);
 
-            AuditLogger::log($user, 'practice.lucky_declared', $game, null, [
-                'lucky_type' => $lucky['type'],
+            AuditLogger::log($user, $lucky ? 'practice.lucky_declared' : 'practice.lucky_failed', $game, null, [
+                'lucky_type' => $lucky['type'] ?? null,
                 'match_id' => $game->practice_match_id,
                 'round' => $game->round_number,
                 'bet' => (int) $game->bet,
@@ -282,7 +291,7 @@ class PracticeService
     /**
      * Settle one round (inside the caller's transaction, round row locked).
      */
-    private function settle(User $user, PracticeGame $game, Arrangement $mine, ?string $playerLucky): PracticeGame
+    private function settle(User $user, PracticeGame $game, Arrangement $mine, ?string $playerLucky, bool $failed = false): PracticeGame
     {
         /** @var PracticeMatch $match */
         $match = PracticeMatch::query()->whereKey($game->practice_match_id)->lockForUpdate()->firstOrFail();
@@ -313,7 +322,7 @@ class PracticeService
             (int) config('pusoy.banker.reserve_multiplier', 2),
             0,
             (bool) config('pusoy.practice.banker_wins_ties', true),
-        ))->settle($bankerSeat, $bets, $arrangements, [], $lucky);
+        ))->settle($bankerSeat, $bets, $arrangements, [], $lucky, [self::PLAYER_SEAT => $failed]);
 
         $seats = [];
         foreach (self::SEATS as $seat) {
@@ -327,6 +336,7 @@ class PracticeService
                 'net' => (int) $row['net'],
                 'is_foul' => (bool) $row['is_foul'],
                 'lucky' => $lucky[$seat],
+                'lucky_failed' => (bool) $row['lucky_failed'],
             ];
         }
 
@@ -340,11 +350,13 @@ class PracticeService
             'status' => PracticeGame::COMPLETED,
             'arrangements' => $stored,
             'lucky_type' => $playerLucky,
-            'lucky_declared_at' => $playerLucky ? now() : null,
+            'lucky_declared_at' => $playerLucky || $failed ? now() : null,
             'results' => [
                 'banker' => $bankerSeat,
                 'seats' => $seats,
                 'player_net' => $playerNet,
+                // You declared Luck without a qualifying hand (2 × bet penalty).
+                'lucky_failed' => $failed,
             ],
             'completed_at' => now(),
         ])->save();
@@ -572,6 +584,20 @@ class PracticeService
      * @param  list<string>  $deck
      * @param  array<int, list<string>>  $hands
      */
+    /**
+     * The lanes of a misplaced (fouled) arrangement that are out of order with a neighbour:
+     * Front stronger than Middle marks Front and Middle; Middle stronger than Back marks Middle and Back.
+     *
+     * @param  array{front: list<string>, middle: list<string>, back: list<string>}  $a
+     * @return list<string>
+     */
+    public static function misplacedLanes(array $a): array
+    {
+        $order = ArrangementPreview::evaluate([...$a['front'], ...$a['middle'], ...$a['back']], $a)['order'];
+
+        return array_keys(array_filter($order, fn (?bool $ok) => $ok === false));
+    }
+
     /** The seat dealt the first card: the one immediately after the banker, clockwise. */
     public static function firstToDeal(int $bankerSeat): int
     {
@@ -658,6 +684,8 @@ class PracticeService
                     'back' => $a['back'],
                     'labels' => (new Arrangement($a['front'], $a['middle'], $a['back']))->labels(),
                     'is_foul' => (bool) $s['is_foul'],
+                    // Misplaced hand: the lanes out of order with a neighbour (what the reveal's lightning strikes).
+                    'misplaced' => $s['is_foul'] ? self::misplacedLanes($a) : [],
                     'lucky' => $s['lucky'] ? ['type' => $s['lucky'], 'label' => LuckyHand::LABELS[$s['lucky']] ?? $s['lucky']] : null,
                     // Lanes vs the banker from this seat's side: 1 win, -1 loss (null for the banker / Lucky Hands).
                     'lanes' => $s['lanes'],
@@ -691,6 +719,8 @@ class PracticeService
                 'lanes' => $me['lanes'],
                 // You submitted a misplaced (fouled) hand: the 2 × bet penalty was applied.
                 'misplaced' => (bool) $me['is_foul'],
+                // Failed Declared Luck: no qualifying hand, 2 × bet lost.
+                'lucky_failed' => (bool) ($me['lucky_failed'] ?? false),
                 'multiple' => $me['multiple'],
                 'gold' => self::gold((int) $res['player_net']),
             ] : null,

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useMotionSync } from '@/lib/motion';
+import { useMusicPlayer } from '@/lib/music';
 
 /**
  * Native integration on device: status bar style, splash hide, keyboard
@@ -9,6 +10,7 @@ import { useMotionSync } from '@/lib/motion';
  */
 export default function NativeShell() {
   useMotionSync();
+  useMusicPlayer();
   useEffect(() => {
     (async () => {
       const { Capacitor } = await import('@capacitor/core');

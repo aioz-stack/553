@@ -495,3 +495,49 @@ body {
 @keyframes tb-clover { 0%, 100% { transform: rotate(-8deg) scale(1); } 50% { transform: rotate(8deg) scale(1.06); } }
 @keyframes tb-clover-burst { 0% { transform: scale(.2) rotate(-180deg); opacity: 0; } 70% { transform: scale(1.15) rotate(10deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
 @keyframes tb-sad { 0% { transform: translateY(-30px); opacity: 0; } 40% { transform: translateY(0); opacity: 1; } 55% { transform: rotate(-10deg); } 70% { transform: rotate(8deg); } 85% { transform: rotate(-4deg); } 100% { transform: rotate(0); } }
+
+/*
+ * Reveal show (components/table/RevealShow.tsx): card flips, centre banner, PUSOY! bomb and
+ * ARAYYY KOOOO! lightning. Transform/opacity only (GPU-composited); off under data-motion="reduce".
+ */
+.rv-card { transition: transform .26s cubic-bezier(.3,.7,.3,1.15); transform-style: preserve-3d; }
+.rv-banner { animation: rv-banner .35s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes rv-banner { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+.rv-throw { animation: rv-throw .75s cubic-bezier(.35,.05,.55,1) both, rv-gone .01s .75s both; will-change: transform; filter: drop-shadow(0 10px 8px rgb(0 0 0 / .45)); }
+@keyframes rv-throw {
+  0% { transform: translate(var(--sx), var(--sy)) scale(.3) rotate(0); opacity: 0; }
+  14% { transform: translate(var(--sx), var(--sy)) scale(1) rotate(-25deg); opacity: 1; }
+  58% { transform: translate(var(--mx), var(--my)) scale(1.3) rotate(250deg); opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(1) rotate(540deg); opacity: 1; }
+}
+@keyframes rv-gone { to { opacity: 0; visibility: hidden; } }
+.rv-fuse { animation: rv-fuse .12s steps(2) infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes rv-fuse { 50% { transform: translate(106px, 14px) scale(.7) rotate(30deg); } }
+.rv-burst { animation: rv-burst .65s .75s cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes rv-burst { 0% { transform: scale(.1) rotate(0); opacity: 0; } 10% { opacity: 1; } 55% { transform: scale(1.15) rotate(18deg); opacity: 1; } 100% { transform: scale(1.35) rotate(30deg); opacity: 0; } }
+.rv-ring { animation: rv-ring .6s .75s ease-out both; }
+@keyframes rv-ring { 0% { transform: scale(.1); opacity: 0; } 10% { opacity: 1; } 100% { transform: scale(2.6); opacity: 0; } }
+.rv-smoke { animation: rv-smoke 1.2s ease-out both; }
+@keyframes rv-smoke { 0% { transform: translate(0, 0) scale(.3); opacity: 0; } 15% { opacity: .95; } 100% { transform: translate(var(--dx), var(--dy)) scale(1.7); opacity: 0; } }
+.rv-spark { animation: rv-spark .7s .75s cubic-bezier(.1,.7,.3,1) both; }
+@keyframes rv-spark { 0% { transform: translate(0, 0) scale(1.2); opacity: 0; } 8% { opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
+.rv-debris { animation: rv-debris .9s .75s cubic-bezier(.15,.6,.4,1) both; }
+@keyframes rv-debris { 0% { transform: translate(0, 0) rotate(0); opacity: 0; } 8% { opacity: 1; } 100% { transform: translate(var(--dx), calc(var(--dy) + 120px)) rotate(var(--r)); opacity: 0; } }
+.rv-pop { animation: rv-pop .5s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes rv-pop { 0% { transform: scale(.2) rotate(-14deg); opacity: 0; } 100% { transform: scale(1) rotate(-5deg); opacity: 1; } }
+.rv-dim { animation: rv-dim 2.2s ease both; }
+@keyframes rv-dim { 0% { opacity: 0; } 12%, 80% { opacity: .5; } 100% { opacity: 0; } }
+.rv-flash { animation: rv-flash .5s .25s ease-out both; }
+@keyframes rv-flash { 0% { opacity: 0; } 10% { opacity: .75; } 30% { opacity: .1; } 45% { opacity: .5; } 100% { opacity: 0; } }
+.rv-bolt { animation: rv-bolt 1s .25s steps(1, end) both; filter: drop-shadow(0 0 14px #b98cff) drop-shadow(0 0 4px #fff); }
+@keyframes rv-bolt { 0% { opacity: 1; } 18% { opacity: .15; } 28% { opacity: 1; } 50% { opacity: .3; } 60% { opacity: 1; } 85% { opacity: .6; } 100% { opacity: 0; } }
+.rv-glow { animation: rv-glow 1.4s .25s ease-out both; }
+@keyframes rv-glow { 0% { transform: scale(.3); opacity: 0; } 15% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+.rv-hit { animation: rv-shake .45s .3s linear 3; filter: drop-shadow(0 0 10px #c9a8ff) drop-shadow(0 0 3px #fff) brightness(1.15); }
+@keyframes rv-shake { 0%, 100% { translate: 0 0; } 20% { translate: -6px 2px; } 40% { translate: 5px -3px; } 60% { translate: -4px 3px; } 80% { translate: 3px -2px; } }
+:root[data-motion='reduce'] [class*='rv-'] { animation: none !important; transition: none !important; }
+
+/* Medium motion quality (Settings → Motion Effects): game animations stay, ambient decoration loops
+   (sparkles, rim shimmer, shine sweeps, petals) stop. Low quality = data-motion="reduce" above. */
+:root[data-quality='medium'] .lx-fleck, :root[data-quality='medium'] .lx-dot, :root[data-quality='medium'] .lx-sheen::after, :root[data-quality='medium'] .lx-gold::after, :root[data-quality='medium'] .lx-rim, :root[data-quality='medium'] .lx-text-shine, :root[data-quality='medium'] .lx-gloss::after, :root[data-quality='medium'] .tb-petal { animation: none !important; }
+:root[data-quality='medium'] .lx-fleck, :root[data-quality='medium'] .lx-dot, :root[data-quality='medium'] .tb-petal { opacity: 0; }

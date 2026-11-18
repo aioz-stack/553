@@ -8,14 +8,17 @@ import LandscapeStage from '@/components/LandscapeStage';
 import PlayingCard, { sortCards } from '@/components/PlayingCard';
 import DealAnimation from '@/components/table/DealAnimation';
 import LuckPopup from '@/components/table/LuckPopup';
+import { fxAt, isUp, laneShown, RevealBanner, RevealFx, revealPlan, useRevealClock, type RevealPlan } from '@/components/table/RevealShow';
 import { Chip, Clover, Face, LanternRoom, MiniCrest, PokerTable, type FaceKind } from '@/components/table/TableArt';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PICKER_URL, saveSelection, selectionFromUrl, type PracticeTier } from '@/lib/singlePlayer';
+import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import { useBalance } from '@/lib/useBalance';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
+import { reducedNow } from '@/lib/motion';
 
 type Lane = 'front' | 'middle' | 'back';
 type Zone = Lane | 'hand';
@@ -33,6 +36,8 @@ export interface RoundPlayer {
   back?: string[];
   labels?: Record<Lane, string>;
   is_foul?: boolean;
+  /** On a misplaced hand: the lanes out of order. */
+  misplaced?: string[];
   lucky?: { type: string; label: string } | null;
   /** This seat's lanes vs the banker (1 win / -1 loss); null for the banker or when a Lucky Hand decided. */
   lanes?: Record<Lane, number> | null;
@@ -57,7 +62,7 @@ export interface RoundState {
   cards: string[];
   players: RoundPlayer[];
   /** Your result: lanes vs the banker (null when you bank or a Lucky Hand decided), the bet multiple, Gold won/lost. */
-  result: { lanes: Record<Lane, number> | null; multiple: number | null; gold: number; misplaced?: boolean } | null;
+  result: { lanes: Record<Lane, number> | null; multiple: number | null; gold: number; misplaced?: boolean; lucky_failed?: boolean } | null;
   lucky?: { type: string; label: string; multiplier: number } | null;
   deck_commitment: string;
   server_seed: string | null;
@@ -112,6 +117,24 @@ function firstShowing(roundId: number): boolean {
   return true;
 }
 
+/** True the first time a round's reveal show is played in this browser session (it never replays). */
+function firstReveal(roundId: number): boolean {
+  const key = `pusoy.revealed.${roundId}`;
+  try {
+    if (sessionStorage.getItem(key)) return false;
+    sessionStorage.setItem(key, '1');
+  } catch {
+    // No storage: the in-page state still plays it once per submit.
+  }
+  return true;
+}
+
+/** Win / lose / even jingle for your result in a settled round. */
+function resultSound(r: RoundState) {
+  const g = r.result?.gold ?? 0;
+  play(g > 0 ? 'win' : g < 0 ? 'lose' : 'start');
+}
+
 function rowsUse(rows: Rows, hand: Set<string>): boolean {
   return [...rows.front, ...rows.middle, ...rows.back].every((c) => hand.has(c));
 }
@@ -155,20 +178,30 @@ function Outcome({ v }: { v: number }) {
 }
 
 /** A revealed hand, laid out in rows or side by side, with this seat's lane results vs the banker. */
-function RevealedHand({ p, card, step, gap, horizontal }: { p: RoundPlayer; card: { w: number; h: number; f: number }; step: number; gap: number; horizontal?: boolean }) {
+function RevealedHand({ p, card, step, gap, horizontal, plan = null, now = Number.POSITIVE_INFINITY, hit = false }: { p: RoundPlayer; card: { w: number; h: number; f: number }; step: number; gap: number; horizontal?: boolean; plan?: RevealPlan | null; now?: number; hit?: boolean }) {
   return (
     <div className={`flex ${horizontal ? 'flex-row items-start' : 'flex-col'}`} style={{ gap }} aria-label={`${p.is_you ? 'Your' : `${p.name}'s`} hand`}>
       {LANES.map((lane) => (
         <div key={lane} className={`flex gap-2 ${horizontal ? 'flex-col items-center' : 'items-center'}`}>
-          <div className="relative shrink-0" style={{ width: card.w + step * (SIZE[lane] - 1), height: card.h }}>
+          <div className={`relative shrink-0 ${hit && p.misplaced?.includes(lane) ? 'rv-hit' : ''}`} style={{ width: card.w + step * (SIZE[lane] - 1), height: card.h }}>
             {(p[lane] ?? []).map((c, i) => (
-              // The wrapper carries the position: PlayingCard is itself `relative`.
-              <span key={c} className="tb-flip absolute top-0" style={{ left: i * step, animationDelay: `${i * 0.05}s` }}>
-                <PlayingCard code={c} style={{ width: card.w, height: card.h, fontSize: card.f }} />
+              // The wrapper carries the position: PlayingCard is itself `relative`. During the reveal show each
+              // card is a two-sided 3D card that turns face up at its moment (the back only exists until then).
+              <span key={c} className="absolute top-0 [perspective:600px]" style={{ left: i * step, width: card.w, height: card.h }}>
+                <span className="rv-card relative block h-full w-full" style={{ transform: isUp(plan, now, p.seat, lane, i) ? 'none' : 'rotateY(180deg)' }}>
+                  <span className="absolute inset-0 [backface-visibility:hidden]">
+                    <PlayingCard code={c} style={{ width: card.w, height: card.h, fontSize: card.f }} />
+                  </span>
+                  {plan && (
+                    <span className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                      <PlayingCard faceDown style={{ width: card.w, height: card.h }} />
+                    </span>
+                  )}
+                </span>
               </span>
             ))}
           </div>
-          <span className={`flex gap-1 ${horizontal ? 'flex-row' : 'flex-col items-start'}`}>
+          <span className={`flex gap-1 ${horizontal ? 'flex-row' : 'flex-col items-start'} ${laneShown(plan, now, lane) ? '' : 'invisible'}`}>
             {p.labels && <span className="whitespace-nowrap rounded-full bg-black/55 px-2 font-display text-[15px] font-black text-[#ffe14d]">{p.labels[lane]}</span>}
             {p.lanes && <Outcome v={p.lanes[lane]} />}
           </span>
@@ -194,7 +227,7 @@ export default function Practice() {
   const { user } = useAuth();
   const router = useRouter();
   const { cp } = useBalance(user?.id);
-  const [soundOn, toggleSound] = useSound();
+  const [soundOn] = useSound();
   useLandscapeLock();
 
   const [tier, setTier] = useState<PracticeTier | null>(null);
@@ -212,6 +245,10 @@ export default function Practice() {
   const [locked, setLocked] = useState(false);
   // The round whose shuffle-and-deal animation is playing (manual arrangement opens when it ends).
   const [dealing, setDealing] = useState<number | null>(null);
+  // The reveal show after you submit (Front → Middle → Back, then PUSOY! / ARAYYY KOOOO!), once per round.
+  const [reveal, setReveal] = useState<{ id: number; plan: RevealPlan } | null>(null);
+  // The reveal clock (ms into the show; Infinity when no show is playing).
+  const now = useRevealClock(reveal?.plan ?? null, () => revealDone());
 
   // arrangement
   const [rows, setRows] = useState<Rows>(EMPTY);
@@ -238,6 +275,7 @@ export default function Practice() {
     setLocked(false);
     setLuck(null);
     setDealing(null);
+    setReveal(null);
   }, []);
 
   useEffect(() => {
@@ -352,21 +390,31 @@ export default function Practice() {
     if (roundIdRef.current === id) setLuck(EMPTY);
   }, []);
 
+  /** The reveal show ended (or was skipped): show the final results and play the result sound. */
+  const revealDone = () => {
+    if (!reveal) return;
+    setReveal(null);
+    if (round) resultSound(round);
+  };
+
   /** After a round settles: refresh the match (running Gold, standings, next banker, match end). */
-  const settled = async (r: RoundState) => {
+  const settled = async (r: RoundState, show = false) => {
     // The round is over: drop its arrangement state (the reveal is drawn from the server's result).
     clearCards();
     roundIdRef.current = r.id;
     setRound(r);
     setPhase('revealed');
-    const g = r.result?.gold ?? 0;
-    play(g > 0 ? 'win' : g < 0 ? 'lose' : 'start');
+    // After a submit, play the reveal show once for this round (not under reduced motion); the
+    // result sound then plays when it ends (revealDone).
+    const plan = show && !reducedNow() && firstReveal(r.id) ? revealPlan(r.players, r.banker) : null;
+    if (plan) setReveal({ id: r.id, plan });
+    else resultSound(r);
     if (r.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
     if (!match) return;
     try {
       const m = await api<{ data: MatchState }>(`/practice/matches/${match.id}`);
       setMatch(m.data);
-      if (m.data.status === 'completed') setTimeout(() => setPanel('summary'), 1600);
+      if (m.data.status === 'completed') setTimeout(() => setPanel('summary'), 1600 + (plan?.done ?? 0));
     } catch {
       // the round result is already on screen
     }
@@ -377,10 +425,13 @@ export default function Practice() {
     if (!round || declaring || round.status !== 'arranging') return;
     setDeclaring(true);
     try {
+      // The server checks your 13 cards and settles the round either way: a qualifying hand wins 2× bet,
+      // a declaration without one loses 2× bet.
       const r = await api<{ data: RoundState }>(`/practice/${round.id}/lucky`, { method: 'POST' });
       setLuck(null);
-      setNotice('lucky');
-      play('lucky');
+      const failed = !!r.data.result?.lucky_failed;
+      setNotice(failed ? 'noluck' : 'lucky');
+      play(failed ? 'lose' : 'lucky');
       await settled(r.data);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'not_lucky') {
@@ -469,7 +520,7 @@ export default function Practice() {
     setBusy(true);
     try {
       const r = await api<{ data: RoundState }>(`/practice/${round.id}/submit`, { method: 'POST', body: lanes });
-      await settled(r.data);
+      await settled(r.data, true);
     } catch (e) {
       say(false, errorText(e));
     } finally {
@@ -545,6 +596,9 @@ export default function Practice() {
   const players = round?.players ?? [];
   const me = players.find((p) => p.is_you);
   const revealed = phase === 'revealed';
+  // The reveal show is playing for the round on the table.
+  const revealing = !!reveal && revealed && round?.id === reveal.id;
+  const fx = revealing ? fxAt(reveal.plan, now) : null;
   const name = user ? (user.display_name ?? user.name) : 'You';
   const shownBet = bet ?? tier?.bets[0] ?? 0;
   const bigCard = { w: 76, h: 106, f: 24 };
@@ -554,7 +608,7 @@ export default function Practice() {
   const roundNo = inRound ? (round?.round ?? 1) : (match?.next_round ?? (match ? match.rounds_played + 1 : 1));
   const total = match?.rounds_total ?? 12;
   const banker = inRound ? (round?.banker ?? 1) : (match?.next_banker ?? bankerFor(roundNo));
-  const canBet = !!tier && tier.eligible && (phase === 'betting' || (revealed && !matchOver));
+  const canBet = !!tier && tier.eligible && !revealing && (phase === 'betting' || (revealed && !matchOver));
   // Who banks the round the chips (or Deal) are for.
   const nextBanker = revealed ? bankerFor(roundNo + 1) : banker;
   const gold = cp !== undefined ? Math.floor(Number(cp)) : undefined;
@@ -562,6 +616,7 @@ export default function Practice() {
   const outcomeText = (() => {
     if (!result || !round) return '';
     if (round.lucky) return `Declared Luck — ${round.lucky.label}`;
+    if (result.lucky_failed) return round.banker === 1 ? 'Declared Luck failed — 2× bet to each player' : 'Declared Luck failed — 2× bet';
     if (result.misplaced) return round.banker === 1 ? 'Misplaced cards — 2× penalty to each player' : 'Misplaced cards — 2× penalty';
     if (round.banker === 1) {
       const bots = players.filter((p) => !p.is_you);
@@ -577,6 +632,7 @@ export default function Practice() {
 
   const botStatus = (seat: number): ReactNode => {
     const p = players.find((x) => x.seat === seat);
+    if (revealing) return <span className="text-[#7dffa0]">Submitted ✓</span>;
     if (revealed && p) {
       return (
         <span className={tone(p.gold ?? 0)}>
@@ -644,7 +700,7 @@ export default function Practice() {
         {[2, 3, 4].map((seat) => {
           const s = SEATS[seat];
           const p = players.find((x) => x.seat === seat);
-          return <SeatTile key={seat} face={s.face} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
+          return <SeatTile key={seat} face={s.face} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && !revealing && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
         })}
         {phase === 'arranging' && dealing === null &&
           [2, 3, 4].map((seat) => (
@@ -659,7 +715,7 @@ export default function Practice() {
             .filter((p) => !p.is_you)
             .map((p) => (
               <div key={p.seat} className="absolute z-[5]" style={{ left: SEATS[p.seat].reveal.x, top: SEATS[p.seat].reveal.y }}>
-                <RevealedHand p={p} card={{ w: 44, h: 62, f: 15 }} step={26} gap={SEATS[p.seat].horizontal ? 18 : 4} horizontal={SEATS[p.seat].horizontal} />
+                <RevealedHand p={p} card={{ w: 44, h: 62, f: 15 }} step={26} gap={SEATS[p.seat].horizontal ? 18 : 4} horizontal={SEATS[p.seat].horizontal} plan={reveal?.plan} now={now} hit={fx?.kind === 'zap' && fx.seat === p.seat} />
               </div>
             ))}
 
@@ -764,9 +820,9 @@ export default function Practice() {
         {revealed && me && (
           <>
             <div className="absolute left-[520px] top-[392px] z-[6]">
-              <RevealedHand p={me} card={{ w: 58, h: 80, f: 19 }} step={40} gap={6} />
+              <RevealedHand p={me} card={{ w: 58, h: 80, f: 19 }} step={40} gap={6} plan={reveal?.plan} now={now} hit={fx?.kind === 'zap' && fx.seat === me.seat} />
             </div>
-            {result && (
+            {result && !revealing && (
               <div className="absolute left-[880px] top-[430px] z-[6] flex w-[300px] flex-col items-center text-center" aria-label="Round result">
                 <span className="font-display text-[22px] font-black text-white/85">Round {round?.round} · you</span>
                 <span className={`font-display text-[56px] font-black leading-tight drop-shadow-[0_3px_0_rgb(0_0_0/0.5)] ${tone(result.gold)}`}>{signed(result.gold)}</span>
@@ -846,7 +902,7 @@ export default function Practice() {
             </div>
           )}
 
-          {revealed && matchOver && match && (
+          {revealed && !revealing && matchOver && match && (
             <div className="flex flex-1 items-center justify-between">
               <span className="font-display text-[28px] font-black text-white">
                 Match over · <span className={tone(match.gold)}>{signed(match.gold)} Gold</span>
@@ -917,9 +973,16 @@ export default function Practice() {
                 {notice === 'lucky' && round?.lucky ? (
                   <>
                     <p className="font-display text-[40px] font-black text-white">{round.lucky.label}</p>
-                    <p className="mt-1 font-display text-[26px] font-bold text-white/85">A Lucky Hand beats the lane comparison · {round.lucky.multiplier}× bet{round.banker === 1 ? ' from each bot' : ''}</p>
+                    <p className="mt-1 font-display text-[26px] font-bold text-white/85">Double winnings · {round.lucky.multiplier}× bet{round.banker === 1 ? ' from each bot' : ''}</p>
                     <p className={`mt-2 font-display text-[44px] font-black ${tone(result?.gold ?? 0)}`}>{signed(result?.gold ?? 0)} Gold</p>
                     {!round.wagering && <p className="text-[18px] text-white/60">Practice Gold — not credited</p>}
+                  </>
+                ) : result?.lucky_failed ? (
+                  <>
+                    <p className="font-display text-[26px] font-bold text-white/90">No Three Flushes, No Face Cards or Six Pairs in your 13 cards.</p>
+                    <p className="mt-1 font-display text-[28px] font-black text-white">Declaration failed · 2× bet{round?.banker === 1 ? ' to each bot' : ''}</p>
+                    <p className={`mt-2 font-display text-[44px] font-black ${tone(result.gold)}`}>{signed(result.gold)} Gold</p>
+                    {!round?.wagering && <p className="text-[18px] text-white/60">Practice Gold — not credited</p>}
                   </>
                 ) : (
                   <p className="font-display text-[28px] font-bold text-white/90">Your cards do not qualify for Declared Luck. Keep arranging and play the hand normally.</p>
@@ -937,6 +1000,14 @@ export default function Practice() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Reveal show: centre banner, Skip, and the PUSOY! / ARAYYY KOOOO! effects */}
+        {reveal && revealing && (
+          <>
+            <RevealBanner plan={reveal.plan} now={now} onSkip={revealDone} />
+            <RevealFx fx={fx} />
+          </>
         )}
 
         {/* Toast */}
@@ -958,7 +1029,7 @@ export default function Practice() {
                 {panel === 'settings' && (
                   <div className="space-y-5">
                     <h2 className="font-display text-[40px] font-black">Settings</h2>
-                    <button type="button" role="switch" aria-checked={soundOn} onClick={toggleSound} className="flex w-full items-center justify-between rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
+                    <button type="button" role="switch" aria-checked={soundOn} onClick={() => savePrefs({ sfx: !soundOn })} className="flex w-full items-center justify-between rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
                       Sound <span className={soundOn ? 'text-[#7dffa0]' : 'text-white/50'}>{soundOn ? 'ON' : 'OFF'}</span>
                     </button>
                     <Link href="/settings/" className="block rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
@@ -973,7 +1044,7 @@ export default function Practice() {
                     <p>Four players — you, LuckyBot, CardBot and AceBot — for 12 rounds. The banker rotates: round 1 you, then LuckyBot, CardBot, AceBot, and around again.</p>
                     <p>The banker places no bet — it covers everyone else's bets. When you are not the banker, tap a chip to place your bet (each bot places its own); when you are, just tap Deal. Everyone gets 13 cards; arrange yours into <b className="text-[#ffe14d]">Front</b> (3), <b className="text-[#ffe14d]">Middle</b> (5) and <b className="text-[#ffe14d]">Back</b> (5). Back must be at least as strong as Middle, and Middle at least as strong as Front. Tap <b className="text-[#ffe14d]">READY</b> to lock your cards, <b className="text-[#ffe14d]">Reset</b> to rearrange, then <b className="text-[#ffe14d]">Submit</b>. A misplaced hand can still be submitted but pays a 2× bet penalty — to the banker, or as banker to every player.</p>
                     <p>Every player is compared with the banker lane by lane (Front vs Front, Middle vs Middle, Back vs Back). Win all 3 = 2× bet, win 2 = 1× bet; lose 2 = −1×, lose all 3 = −2×. <b className="text-[#ffe14d]">An identical lane goes to the banker.</b></p>
-                    <p>Declared Luck (Six Pairs, Three Flushes or Three Straights) beats the lane comparison and pays 2× bet. The bots declare their own Lucky Hands.</p>
+                    <p>Declared Luck: any ONE of Three Flushes (Front, Middle and Back each one suit), No Face Cards (no J, Q or K in your 13 cards) or Six Pairs. It beats the lane comparison and pays 2× bet; declaring without one loses 2× bet. The bots declare their own Lucky Hands.</p>
                     <p className="text-white/70">Nothing is arranged for you: your 13 cards go straight into Front, Middle and Back in the order they were dealt. Tap a card, then another card to swap them (or drag one onto another) until the rows are how you want them. Sort changes your hand's order on the table (dealt / rank / suit).</p>
                   </div>
                 )}

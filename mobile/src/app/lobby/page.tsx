@@ -20,7 +20,7 @@ const MODES: Record<string, { title: string; ribbon: 'blue' | 'pink' | 'gold'; r
       '12 rounds. Everyone plays against the banker.',
       'The banker seat rotates to the next player after every round.',
       'Bet each round. Win all 3 lanes = +2× bet, win 2 = +1×, lose 2 = −1×, lose all 3 = −2×. Any tie = 0.',
-      'Lucky Hands (Six Pairs, Three Flushes, Three Straights) pay 2×.',
+      'Lucky Hands (Three Flushes, No Face Cards, Six Pairs) pay 2×.',
     ],
   },
   banker: {

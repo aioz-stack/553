@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import SettingsPanel from '@/components/SettingsPanel';
 import SinglePlayerPicker from '@/components/SinglePlayerPicker';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -16,6 +17,7 @@ import { Screen } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFetch } from '@/lib/hooks';
+import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
@@ -200,8 +202,9 @@ export default function Home() {
   const unread = useFetch<{ meta: { unread: number } }>(user ? '/notifications' : null).data?.meta.unread ?? 0;
   const [seat, setSeat] = useState<TableState | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-  const [soundOn, toggleSound] = useSound();
+  const [soundOn] = useSound();
   const [picker, setPicker] = useState(false);
+  const [settings, setSettings] = useState(false);
   const diamonds = useCountUp(vc !== undefined ? Math.floor(Number(vc)) : undefined);
   const coins = useCountUp(cp !== undefined ? Math.floor(Number(cp)) : undefined);
 
@@ -328,7 +331,7 @@ export default function Home() {
         </Tile>
 
         {/* Controls */}
-        <Tile x={515} y={660} w={320} h={210} from="#c477ff" to="#6a1fc9" label={soundOn ? 'Sound on — tap to turn off' : 'Sound off — tap to turn on'} onClick={toggleSound} sweepDelay={2.0}>
+        <Tile x={515} y={660} w={320} h={210} from="#c477ff" to="#6a1fc9" label={soundOn ? 'Sound on — tap to turn off' : 'Sound off — tap to turn on'} onClick={() => savePrefs({ sfx: !soundOn })} sweepDelay={2.0}>
           <SpeakerArt on={soundOn} />
           <CandyText text="Sound" width={300} height={56} size={46} stroke="#2b0a5c" fill={['#ffffff', '#ffffff', '#ece4ff']} className="-mt-1" sweepDelay={2.2} />
           <span className="-mt-1 font-display text-[34px] font-black leading-none drop-shadow-[0_3px_0_rgb(0_0_0/0.5)]">
@@ -337,7 +340,7 @@ export default function Home() {
             <span className={soundOn ? 'text-white/40' : 'lx-text-glow text-[#ffe14d]'}>OFF</span>
           </span>
         </Tile>
-        <Tile x={858} y={660} w={320} h={210} from="#6fd4ff" to="#1560d0" label="Settings" href="/settings/" sweepDelay={2.6}>
+        <Tile x={858} y={660} w={320} h={210} from="#6fd4ff" to="#1560d0" label="Settings" onClick={() => setSettings(true)} sweepDelay={2.6}>
           <GearArt />
           <CandyText text="Settings" width={300} height={64} size={52} stroke="#0d3270" fill={['#ffffff', '#ffffff', '#e4f3ff']} sweepDelay={2.8} />
         </Tile>
@@ -346,6 +349,7 @@ export default function Home() {
           <CandyText text="Logout" width={300} height={64} size={52} stroke="#6d0a33" fill={['#ffffff', '#ffffff', '#ffe4ef']} sweepDelay={3.4} />
         </Tile>
 
+        {settings && <SettingsPanel onClose={() => setSettings(false)} />}
         {picker && <SinglePlayerPicker onClose={() => setPicker(false)} onContinue={(sel) => router.push(practiceUrl(sel))} />}
 
         {toast && (

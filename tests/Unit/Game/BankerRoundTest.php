@@ -97,3 +97,24 @@ test('banker advantage: identical lanes go to the banker (opt-in), so 3 identica
     expect($adv['players'][2]['lanes'])->toBe(['front' => -1, 'middle' => -1, 'back' => -1])
         ->and($adv['players'][2]['gross'])->toBe(-200)->and($adv['banker']['gross'])->toBe(200);
 });
+
+test('a failed Declared Luck loses double in every pairing, even with a winning hand or against luck', function () {
+    $calc = new BankerRound;
+
+    // A player's failed declaration: −2 × bet to the banker, despite holding the stronger hand.
+    $r = $calc->settle(1, [2 => 1000, 3 => 500], [1 => weakHand(), 2 => strongHand(), 3 => strongHand()], [], [], [2 => true]);
+    expect($r['players'][2]['multiple'])->toBe(-2)
+        ->and($r['players'][2]['lanes'])->toBeNull()
+        ->and($r['players'][2]['lucky_failed'])->toBeTrue()
+        ->and($r['players'][3]['multiple'])->toBe(2) // the other player is compared as usual
+        ->and($r['banker']['net'])->toBe(2000 - 1000);
+
+    // The banker's failed declaration: +2 × bet to every player, even a lucky one or a weaker hand.
+    $b = $calc->settle(1, [2 => 1000, 3 => 500], [1 => strongHand(), 2 => weakHand(), 3 => weakHand()], [], [3 => 'six_pairs'], [1 => true]);
+    expect($b['players'][2]['multiple'])->toBe(2)
+        ->and($b['players'][3]['multiple'])->toBe(2)
+        ->and($b['banker']['lucky_failed'])->toBeTrue()
+        ->and($b['banker']['net'])->toBe(-3000)
+        ->and(array_sum(array_column($b['players'], 'payout')) + $b['banker']['payout'])
+        ->toBe(array_sum(array_column($b['players'], 'reserve')) + $b['banker']['reserve']);
+});

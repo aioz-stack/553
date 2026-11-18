@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * Game sound effects synthesised with the Web Audio API (no audio files, so
  * nothing to license or download). The ON/OFF choice is stored per device.
  */
-export type SoundName = 'tap' | 'deal' | 'chip' | 'win' | 'lose' | 'lucky' | 'tick' | 'start';
+export type SoundName = 'tap' | 'deal' | 'chip' | 'win' | 'lose' | 'lucky' | 'tick' | 'start' | 'flip' | 'boom' | 'zap';
 
 const KEY = 'pusoy.sound';
 const listeners = new Set<(on: boolean) => void>();
@@ -60,7 +60,7 @@ function tone(ac: AudioContext, freq: number, start: number, duration: number, t
   osc.stop(ac.currentTime + start + duration + 0.02);
 }
 
-function noise(ac: AudioContext, start: number, duration: number, gain = 0.12) {
+function noise(ac: AudioContext, start: number, duration: number, gain = 0.12, type: BiquadFilterType = 'highpass', freq = 1800) {
   const buffer = ac.createBuffer(1, Math.floor(ac.sampleRate * duration), ac.sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < data.length; i++) {
@@ -69,8 +69,8 @@ function noise(ac: AudioContext, start: number, duration: number, gain = 0.12) {
   const src = ac.createBufferSource();
   const amp = ac.createGain();
   const filter = ac.createBiquadFilter();
-  filter.type = 'highpass';
-  filter.frequency.value = 1800;
+  filter.type = type;
+  filter.frequency.value = freq;
   amp.gain.value = gain;
   src.buffer = buffer;
   src.connect(filter).connect(amp).connect(ac.destination);
@@ -109,6 +109,32 @@ export function play(name: SoundName): void {
       break;
     case 'lose':
       [392, 330, 262].forEach((f, i) => tone(ac, f, i * 0.12, 0.25, 'sawtooth', 0.08));
+      break;
+    case 'flip':
+      // a crisp card snap
+      noise(ac, 0, 0.045, 0.1, 'bandpass', 3200);
+      tone(ac, 1400, 0, 0.03, 'triangle', 0.05);
+      break;
+    case 'boom': {
+      // cartoon explosion: a falling thump plus a rumble
+      const osc = ac.createOscillator();
+      const amp = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(140, ac.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(38, ac.currentTime + 0.5);
+      amp.gain.setValueAtTime(0.4, ac.currentTime);
+      amp.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.6);
+      osc.connect(amp).connect(ac.destination);
+      osc.start();
+      osc.stop(ac.currentTime + 0.62);
+      noise(ac, 0, 0.7, 0.35, 'lowpass', 700);
+      break;
+    }
+    case 'zap':
+      // electric crackle
+      [0, 0.09, 0.2].forEach((t) => noise(ac, t, 0.08, 0.16, 'highpass', 2500));
+      tone(ac, 880, 0, 0.25, 'sawtooth', 0.05);
+      tone(ac, 220, 0.05, 0.3, 'square', 0.04);
       break;
     case 'lucky':
       [784, 988, 1175, 1568, 1976].forEach((f, i) => tone(ac, f, i * 0.07, 0.3, 'sine', 0.16));

@@ -327,8 +327,8 @@ stay settled). Hosted rooms are retired with their table.
 
   Configured in `config('pusoy.banker.settlement')` and snapshotted into each round. The banker
   receives the opposite of all players combined.
-- **Lucky Hands:** six pairs (trips = 1 pair, quads = 2), three flushes (3/5/5 single-suit lanes),
-  three straights (A low or high). Detected on the server from the dealt cards; `POST
+- **Lucky Hands (Declared Luck):** any ONE of three flushes (3/5/5 single-suit lanes), no face cards
+  (no J, Q or K among the 13 cards) or six pairs (trips = 1 pair, quads = 2). Detected on the server from the dealt cards; `POST
   games/{id}/lucky` re-checks and locks the hand as the submission before any reveal. Lucky vs
   non-lucky pays 2 × bet (either direction); lucky vs lucky = 0. Paid with ledger type
   `LUCKY_BONUS`.
@@ -357,6 +357,25 @@ control is live: profile/level, gold-coin (CP) and diamond (VC) balances shown s
 live `wallet.updated` (each "+" opens the wallet — there is no deposit), daily bonus,
 leaderboard, notifications, Friends List (search, add, accept/decline, online/last seen, invite),
 Single Player, Multiplayer, Sound ON/OFF, Settings, Logout.
+
+**Settings panel** (`mobile/src/components/SettingsPanel.tsx`; opened by the home Settings tile, also
+at `/settings/`, whose Close returns to `/home/`; signed-in devices moved to `/settings/devices/`):
+- **Audio:** BGM ON/OFF (`lib/music.ts` — a looping pentatonic tune synthesised with Web Audio, no audio
+  files; starts on the first tap because browsers block audio before one, pauses in the background,
+  stops at once when off) and Sound Effects ON/OFF (`lib/sound.ts`).
+- **Motion Effects:** Low / Medium / High (`lib/motion.ts` → `<html data-quality>` + `data-motion`).
+  Low = no animations (same as reduced motion: deal / reveal shows skipped, CSS animations off);
+  Medium = game animations without travelling card shadows, with half the explosion particles and no
+  screen shake, ambient sparkle / shine / petal loops off; High = everything. Before a level is chosen
+  the older auto/on/off choice decides (auto follows the device's reduce-motion setting).
+- **Saved with the account:** `users.preferences` JSON (`bgm`, `sfx`, `motion`; defaults on / on /
+  high), `GET|PUT /api/v1/profile/preferences`, also returned as `user.preferences` by `auth/me` and
+  login. `lib/prefs.ts` applies a change on this device at once and saves it; `lib/auth.tsx` applies
+  the saved settings whenever you sign in, so they are the same after logging out and in again.
+- **Change Password:** current / new / confirm with show-hide eyes. The form checks the fields first;
+  `PUT /api/v1/profile/password` (throttled 10/min) verifies the current password, requires 8+
+  characters with letters and numbers, a matching confirmation and a different password, stores it
+  hashed (User `password` cast) and writes an `user.password_changed` audit log.
 
 `mobile/.env.local` points the dev app at the **hosted** backend. To run against local Laravel,
 start the `mobile-local` entry in `.claude/launch.json` (it overrides `NEXT_PUBLIC_*` with the
@@ -398,7 +417,8 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   Lucky Hands. Their cards stay hidden until settlement.
 - **Shuffle-and-deal animation** (`mobile/src/components/table/DealAnimation.tsx`): after a deal, the table
   plays GATHER → FORM DECK → SPLIT → RIFFLE SHUFFLE → MERGE & SQUARE → DECK READY → DEAL CLOCKWISE →
-  DISTRIBUTION COMPLETE (~18 s: cards leave the deck every 0.18 s, each toss 0.56 s), then opens the manual
+  DISTRIBUTION COMPLETE (~5.5 s: the shuffle runs at `SHUFFLE_SPEED` 0.275 of its design pace, ~2 s; then a card leaves the deck
+  every 0.055 s, each toss 0.21 s, ~3 s for all 52), then opens the manual
   arrangement popup automatically right after your cards turn over (no tap needed). It is display only: card p from
   the top of the server's deck flies to `dealOrder(banker)[p % 4]` (the server's own order), bot cards stay
   face down, and your 13 land face down and turn over (your real cards, in received order) once all 52 are
@@ -408,6 +428,18 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   (`hardwareConcurrency ≤ 4` or `deviceMemory ≤ 2`) drop the travelling shadows. It plays once per round
   (`sessionStorage pusoy.dealt.<roundId>`; a resumed round goes straight to arrangement), has a Skip button,
   and finishes at once under reduced motion (Settings → Motion) or without Web Animations support.
+- **Reveal show** (`mobile/src/components/table/RevealShow.tsx`): after SUBMIT the server has already
+  settled the round; the table then plays ALL PLAYERS SUBMITTED → FRONT (each seat's 3 cards flip one at a
+  time, clockwise from the seat after the banker) → FRONT RESULT (hand names + win/loss) → MIDDLE → BACK,
+  then the special effects, then the final results and Gold. `revealPlan(players, banker)` is a pure
+  timeline (52 flips 50 ms apart, 0.26 s flips, 0.65 s result holds); `useRevealClock` plays it with one
+  timer per moment and everything moves with CSS transforms (`rv-*` in globals.css). Effects, from the
+  settled result only: **PUSOY!** — a bomb thrown at each non-banker that lost all three lanes, or at the
+  banker when a player swept it (explosion, smoke, sparks, debris, stage shake, the 2× bet); **ARAYYY
+  KOOOO!** — lightning on a misplaced hand, striking the out-of-order lanes (`players[].misplaced`, from
+  `PracticeService::misplacedLanes`), with the 2× penalty (a misplaced hand gets no bomb as well). Sounds:
+  `flip`, `boom`, `zap`. Plays once per round (`sessionStorage pusoy.revealed.<roundId>`), not after a
+  Declared Luck, has Skip, and is off under reduced motion. Chips and results wait until it ends.
 - **Clean card state per round (table):** dealing a round, settling it and starting a match clear all
   arrangement state — lanes, selection, preview, lock and the arrangement popup — so the popup opens with
   only the new round's 13 cards. Late answers (Autoplay suggestion, hand-name preview) for a round no longer
@@ -425,8 +457,12 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
 - **Settlement** — `App\Game\Banker\BankerRound` with **banker advantage** (`pusoy.practice.banker_wins_ties`):
   each non-banker's Front / Middle / Back is compared with the banker's; **an identical lane goes to the
   banker** (no ties). Win 3 = +2 × bet, win 2 = +1 ×, lose 2 = −1 ×, lose 3 = −2 × (`pusoy.banker.settlement`).
-  A Lucky Hand (Six Pairs / Three Flushes / Three Straights) replaces the comparison and pays 2 × bet
-  (both lucky = 0). Bot-vs-bank results between bots are computed too (standings), every round is
+  Declared Luck — any ONE of Three Flushes / No Face Cards / Six Pairs — replaces the comparison and pays
+  2 × bet (both lucky = 0). **A failed declaration** (none of the three) settles the round at once and loses
+  2 × bet in every pairing the player is in (`BankerRound` `$failed`): as a non-banker 2 × your bet to the
+  banker, as the banker 2 × each bot's bet; results carry `lucky_failed`, audit `practice.lucky_failed`.
+  Bots only declare with a qualifying hand, so they never fail. (Multiplayer Banker Mode still answers a
+  non-qualifying declaration with 422 `not_lucky` and no penalty.) Bot-vs-bank results between bots are computed too (standings), every round is
   zero-sum, and each round settles once (row lock + status).
 - **Gold (CP):** only when `FEATURE_CP_WAGERING=true` at match start (`practice_matches.wagering`). The bots
   are house players; only your result moves Gold. Each deal reserves your worst case — 2 × your bet, or

@@ -25,6 +25,11 @@ use App\Game\Scorer;
  * banker wins `luckyMultiplier` × bet; a lucky banker vs a non-lucky player
  * wins the same from that player; both lucky = 0.
  *
+ * Failed Declared Luck ($failed): a seat that declared Luck without a
+ * qualifying hand loses `luckyMultiplier` × bet in every pairing it is in
+ * (as a player: to the banker; as the banker: to each player), whatever the
+ * other hands are.
+ *
  * Money: player and banker each reserved 2 × bet in escrow for every bet, so
  * escrow always covers the worst case. The platform fee is `feeBps` of each
  * positive net win (player or banker), taken from the winner's payout.
@@ -56,25 +61,31 @@ final class BankerRound
      * @param  array<int, Arrangement>  $arrangements  includes the banker
      * @param  array<int, bool>  $fouls
      * @param  array<int, string|null>  $lucky  userId => lucky type
+     * @param  array<int, bool>  $failed  userId => declared Luck without a qualifying hand
      * @return array{players: array<int, array<string, mixed>>, banker: array<string, mixed>}
      */
-    public function settle(int $bankerId, array $bets, array $arrangements, array $fouls = [], array $lucky = []): array
+    public function settle(int $bankerId, array $bets, array $arrangements, array $fouls = [], array $lucky = [], array $failed = []): array
     {
         $banker = $arrangements[$bankerId];
-        $bankerLucky = $lucky[$bankerId] ?? null;
-        $bankerFoul = $bankerLucky === null && (($fouls[$bankerId] ?? false) || $banker->isFoul());
+        $bankerFailed = (bool) ($failed[$bankerId] ?? false);
+        $bankerLucky = $bankerFailed ? null : ($lucky[$bankerId] ?? null);
+        $bankerFoul = ! $bankerFailed && $bankerLucky === null && (($fouls[$bankerId] ?? false) || $banker->isFoul());
         $players = [];
         $bankerGross = 0;
         $bankerReserve = 0;
 
         foreach ($bets as $playerId => $bet) {
             $mine = $arrangements[$playerId];
-            $myLucky = $lucky[$playerId] ?? null;
-            $myFoul = $myLucky === null && (($fouls[$playerId] ?? false) || $mine->isFoul());
+            $myFailed = (bool) ($failed[$playerId] ?? false);
+            $myLucky = $myFailed ? null : ($lucky[$playerId] ?? null);
+            $myFoul = ! $myFailed && $myLucky === null && (($fouls[$playerId] ?? false) || $mine->isFoul());
             $lanes = null;
             $luckyWin = false;
 
-            if ($myLucky !== null || $bankerLucky !== null) {
+            if ($myFailed || $bankerFailed) {
+                // A failed declaration loses double in this pairing.
+                $multiple = $myFailed ? -$this->luckyMultiplier : $this->luckyMultiplier;
+            } elseif ($myLucky !== null || $bankerLucky !== null) {
                 $multiple = match (true) {
                     $myLucky !== null && $bankerLucky !== null => 0,
                     $myLucky !== null => $this->luckyMultiplier,
@@ -112,6 +123,7 @@ final class BankerRound
                 'is_foul' => $myFoul,
                 'lucky_type' => $myLucky,
                 'lucky_bonus' => $luckyWin ? $gross : 0,
+                'lucky_failed' => $myFailed,
             ];
 
             $bankerGross -= $gross;
@@ -134,6 +146,7 @@ final class BankerRound
                 'is_foul' => $bankerFoul,
                 'lucky_type' => $bankerLucky,
                 'lucky_bonus' => max(0, $bankerLuckyBonus),
+                'lucky_failed' => $bankerFailed,
             ],
         ];
     }

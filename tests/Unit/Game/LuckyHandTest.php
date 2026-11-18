@@ -28,15 +28,27 @@ test('three flushes needs suit counts that split into 3 + 5 + 5', function () {
         ->and(LuckyHand::threeFlushes(['2H', '3H', '4H', '6H', '2S', '5S', '8S', 'TS', '4D', '6D', '9D', 'JD', 'AD']))->toBeNull();
 });
 
-test('three straights including ace-low and ace-high lanes', function () {
-    // A-2-3 front, 4-5-6-7-8 middle, 9-T-J-Q-K back (mixed suits)
-    $hand = ['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'JH', 'QS', 'KC'];
+test('no face cards: only 2-10 and Aces, any single J, Q or K disqualifies', function () {
+    $hand = ['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'AH', '3S', '7C'];
+    $lucky = LuckyHand::detect($hand);
 
-    expect(LuckyHand::detect($hand)['type'])->toBe('three_straights')
-        ->and(LuckyHand::isStraight(['QC', 'KD', 'AH']))->toBeTrue()
-        ->and(LuckyHand::isStraight(['AC', '2D', '3H', '4S', '5C']))->toBeTrue()
-        ->and(LuckyHand::isStraight(['KC', 'AD', '2H']))->toBeFalse()
-        ->and(LuckyHand::detect(['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'JH', 'QS', '2C']))->toBeNull();
+    expect($lucky['type'])->toBe('no_face_cards')
+        ->and($lucky['label'])->toBe('No Face Cards')
+        ->and(count($lucky['arrangement']->allCards()))->toBe(13)
+        ->and($lucky['arrangement']->isFoul())->toBeFalse()
+        // one Jack, one Queen or one King is enough to fail
+        ->and(LuckyHand::hasNoFaceCards([...array_slice($hand, 0, 12), 'JC']))->toBeFalse()
+        ->and(LuckyHand::hasNoFaceCards([...array_slice($hand, 0, 12), 'QC']))->toBeFalse()
+        ->and(LuckyHand::hasNoFaceCards([...array_slice($hand, 0, 12), 'KC']))->toBeFalse()
+        // the old Three Straights hand (has J, Q, K) no longer qualifies
+        ->and(LuckyHand::detect(['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'JH', 'QS', 'KC']))->toBeNull();
+});
+
+test('any one of the three combinations is enough; they are not needed together', function () {
+    // Six pairs with face cards and mixed suits: only Six Pairs applies.
+    expect(LuckyHand::detect(['2C', '2D', '5H', '5S', '7C', '7D', '9H', '9S', 'JC', 'JD', 'KH', 'KS', 'AC'])['type'])->toBe('six_pairs')
+        // Three flushes that contain face cards and no pairs: only Three Flushes applies.
+        ->and(LuckyHand::detect(['2H', '7H', 'KH', '3S', '5S', '8S', 'TS', 'QS', '4D', '6D', '9D', 'JD', 'AD'])['type'])->toBe('three_flushes');
 });
 
 test('an ordinary hand is not lucky', function () {

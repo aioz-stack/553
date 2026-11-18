@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMock = vi.fn();
 const replace = vi.fn();
@@ -17,6 +17,9 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 1, name: 'Pat Player', username: 'player' } }) }));
 vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ cp: '10000.00', vc: '0.00' }) }));
 vi.mock('@/lib/useLandscapeLock', () => ({ useLandscapeLock: () => undefined }));
+// Most tests run like a reduced-motion device (no deal / reveal show); the reveal-show tests turn motion on.
+const motion = vi.hoisted(() => ({ reduced: true }));
+vi.mock('@/lib/motion', async (orig) => ({ ...(await orig<object>()), reducedNow: () => motion.reduced }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn(), useSound: () => [true, vi.fn()] }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace, push: vi.fn(), back: vi.fn() }), usePathname: () => '/practice/' }));
 vi.mock('@/components/ui', async (orig) => ({ ...(await orig<object>()), Screen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
@@ -372,13 +375,19 @@ describe('Declared Luck', () => {
     expect(within(popup).queryByText('BANKER')).toBeNull();
   });
 
-  it('shows NO LUCK! when the cards do not qualify, and play continues', async () => {
-    routes({ '/practice/9/lucky': new ApiError('Your cards do not qualify for Declared Luck.', 422, 'not_lucky') });
+  it('a failed declaration shows NO LUCK! with the 2× loss and ends the round', async () => {
+    const FAILED = { ...SETTLED, lucky: null, result: { lanes: null, multiple: -2, gold: -600, lucky_failed: true } };
+    routes({ '/practice/9/lucky': { data: FAILED } });
     const popup = await dealToPopup();
     fireEvent.click(within(popup).getByRole('button', { name: /Declared/ }));
     const note = await screen.findByRole('alertdialog', { name: 'No luck' });
+    expect(note).toHaveTextContent('No Three Flushes, No Face Cards or Six Pairs');
+    expect(note).toHaveTextContent('Declaration failed · 2× bet to each bot');
+    expect(note).toHaveTextContent('−600 Gold');
     fireEvent.click(within(note).getByRole('button', { name: 'OK' }));
-    expect(screen.getByRole('dialog', { name: 'Declared Luck' })).toBeInTheDocument();
+    // The round is settled: no arrangement popup to go back to.
+    expect(screen.queryByRole('dialog', { name: 'Declared Luck' })).toBeNull();
+    expect(screen.getByLabelText('Round result')).toHaveTextContent('Declared Luck failed — 2× bet to each player');
   });
 
   it('declares luck once and settles the round', async () => {
@@ -444,5 +453,51 @@ describe('round transitions: no cards from the previous round survive', () => {
     expect(screen.getByRole('dialog', { name: 'Declared Luck' })).toBe(popup2);
     expect(rowsIn(popup2)).toEqual(dealtRowsOf(CARDS2));
     for (const old of CARDS) expect(screen.queryByRole('button', { name: cardName(old) })).toBeNull();
+  });
+});
+
+describe('reveal show after SUBMIT', () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    sessionStorage.clear();
+    localStorage.clear();
+    window.history.replaceState(null, '', '/practice/?tier=beginner');
+    routes();
+    motion.reduced = false;
+  });
+  afterEach(() => {
+    motion.reduced = true;
+  });
+
+  const submitRound = async () => {
+    const popup = await dealToPopup();
+    fireEvent.click(within(popup).getByRole('button', { name: 'SUBMIT' }));
+    return screen.findByRole('status', { name: 'Reveal' });
+  };
+  const faceDown = (hand: HTMLElement) => Array.from(hand.querySelectorAll<HTMLElement>('.rv-card')).filter((el) => el.style.transform.includes('rotateY(180deg)')).length;
+
+  it('starts with "All Players Submitted": every card face down, results and chips held back', async () => {
+    const banner = await submitRound();
+    expect(banner).toHaveTextContent('All Players Submitted');
+    for (const name of ["LuckyBot's hand", "CardBot's hand", "AceBot's hand", 'Your hand']) {
+      expect(faceDown(screen.getByLabelText(name))).toBe(13);
+    }
+    expect(screen.getByLabelText('LuckyBot')).toHaveTextContent('Submitted ✓');
+    expect(screen.queryByLabelText('Round result')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Bet 50' })).toBeNull();
+  });
+
+  it('flips the Front cards first, one at a time, then Skip goes straight to the final results', async () => {
+    await submitRound();
+    // 1 s in: the intro is over and the first Front card (the first seat after you, the banker) is up.
+    await act(() => new Promise((r) => setTimeout(r, 1000)));
+    expect(screen.getByRole('status', { name: 'Reveal' })).toHaveTextContent('FRONT');
+    expect(faceDown(screen.getByLabelText("LuckyBot's hand"))).toBeLessThan(13);
+    expect(faceDown(screen.getByLabelText("AceBot's hand"))).toBe(13);
+
+    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    expect(await screen.findByLabelText('Round result')).toHaveTextContent('+600');
+    expect(screen.queryByRole('status', { name: 'Reveal' })).toBeNull();
+    expect(faceDown(screen.getByLabelText('Your hand'))).toBe(0);
   });
 });

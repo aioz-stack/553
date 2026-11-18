@@ -45,7 +45,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Player
         Route::get('profile', [PlayerController::class, 'profile']);
         Route::patch('profile', [PlayerController::class, 'updateProfile']);
-        Route::put('profile/password', [PlayerController::class, 'updatePassword']);
+        Route::put('profile/password', [PlayerController::class, 'updatePassword'])->middleware('throttle:10,1');
+        Route::get('profile/preferences', [PlayerController::class, 'preferences']);
+        Route::put('profile/preferences', [PlayerController::class, 'updatePreferences']);
         Route::get('profile/stats', [PlayerController::class, 'stats']);
         Route::get('profile/games', [PlayerController::class, 'history']);
         Route::get('leaderboard', [PlayerController::class, 'leaderboard']);

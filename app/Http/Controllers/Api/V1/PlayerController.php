@@ -7,6 +7,7 @@ use App\Http\Resources\GameSessionResource;
 use App\Http\Resources\UserResource;
 use App\Models\GameSession;
 use App\Models\PlayerProfile;
+use App\Models\User;
 use App\Services\Audit\AuditLogger;
 use App\Services\Reports\ReportService;
 use Illuminate\Http\JsonResponse;
@@ -40,11 +41,40 @@ class PlayerController extends Controller
         return new UserResource($user->load('profile'));
     }
 
+    /** Your saved game settings: { bgm: bool, sfx: bool, motion: low|medium|high }. */
+    public function preferences(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $request->user()->gamePreferences()]);
+    }
+
+    /** Save any of bgm / sfx / motion; the others keep their saved values. */
+    public function updatePreferences(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'bgm' => ['sometimes', 'boolean'],
+            'sfx' => ['sometimes', 'boolean'],
+            'motion' => ['sometimes', 'string', 'in:'.implode(',', User::MOTION_LEVELS)],
+        ]);
+
+        $user = $request->user();
+        $user->forceFill(['preferences' => array_merge($user->gamePreferences(), array_map(fn ($v) => is_string($v) ? $v : (bool) $v, $data))])->save();
+
+        return response()->json(['data' => $user->gamePreferences()]);
+    }
+
+    /**
+     * Change your password: the current password must be right, the new one at least 8 characters with
+     * letters and numbers, confirmed, and different from the current one. Stored hashed (User cast).
+     */
     public function updatePassword(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'current_password' => ['required', 'current_password:sanctum'],
-            'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
+            'current_password' => ['required', 'string', 'current_password:sanctum'],
+            'password' => ['required', 'string', 'confirmed', 'different:current_password', Password::min(8)->letters()->numbers()],
+        ], [
+            'current_password.current_password' => 'Your current password is incorrect.',
+            'password.different' => 'The new password must be different from your current password.',
+            'password.confirmed' => 'The new password and confirmation do not match.',
         ]);
 
         $request->user()->forceFill(['password' => $data['password']])->save();

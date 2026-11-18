@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, getToken, setToken, setUnauthorizedHandler } from './api';
 import { resetEcho } from './echo';
+import { applyPrefs } from './prefs';
 import type { User } from './types';
 
 interface AuthState {
@@ -30,6 +31,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
   const router = useRouter();
+
+  // Your saved game settings (BGM, sound effects, motion quality) follow your account: apply them
+  // whenever you sign in or the app loads your profile.
+  const prefsKey = user?.preferences ? `${user.id}:${JSON.stringify(user.preferences)}` : null;
+  useEffect(() => {
+    if (user?.preferences) applyPrefs(user.preferences);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsKey]);
 
   const refresh = useCallback(async () => {
     if (!(await getToken())) {

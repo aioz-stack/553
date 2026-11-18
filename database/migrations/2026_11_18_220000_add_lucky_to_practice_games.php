@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Single Player "Declared Luck": which special hand the player declared
- * (six_pairs / three_flushes / three_straights) and when. A practice game can
+ * (three_flushes / no_face_cards / six_pairs) and when. A practice game can
  * be declared at most once (it completes on declaration).
  */
 return new class extends Migration

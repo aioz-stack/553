@@ -10,6 +10,8 @@ export interface User {
   role_label: string;
   display_name?: string | null;
   level?: Level;
+  /** Your saved game settings (only on your own record). */
+  preferences?: { bgm: boolean; sfx: boolean; motion: 'low' | 'medium' | 'high' };
 }
 
 export interface Level {
@@ -215,4 +217,4 @@ export interface FriendsData {
   online_count: number;
 }
 
-export const LUCKY_LABELS: Record<string, string> = { six_pairs: 'Six Pairs', three_flushes: 'Three Flushes', three_straights: 'Three Straights' };
+export const LUCKY_LABELS: Record<string, string> = { three_flushes: 'Three Flushes', no_face_cards: 'No Face Cards', six_pairs: 'Six Pairs' };

@@ -3,29 +3,27 @@
 namespace App\Game;
 
 /**
- * Lucky Hand detection on a player's dealt 13 cards (banker modes).
+ * Declared Luck: Lucky Hand detection on a player's dealt 13 cards (banker modes).
  *
- * Qualifying combinations:
- *  - six_pairs:      six pairs among the 13 cards. Pairs are counted per rank as
- *                    floor(count / 2), so trips give one pair and quads give two.
+ * Any ONE of these qualifies (they are not required together):
  *  - three_flushes:  the cards split into a 3-card Front, 5-card Middle and
  *                    5-card Back that are each a single suit.
- *  - three_straights: the cards split into a 3-card Front straight and 5-card
- *                    Middle and Back straights. The Ace plays high or low
- *                    (A-2-3 / Q-K-A in front, A-2-3-4-5 / 10-J-Q-K-A in five-card lanes).
+ *  - no_face_cards:  none of the 13 cards is a Jack, Queen or King (only 2–10 and Aces).
+ *  - six_pairs:      six pairs among the 13 cards. Pairs are counted per rank as
+ *                    floor(count / 2), so trips give one pair and quads give two.
  *
  * Detection is server-side only and runs on the dealt cards, so a declaration
  * can never be faked by the client. When several apply, the first in
- * TYPES order is reported (the bonus is the same).
+ * TYPES order is reported (the payout is the same: lucky_multiplier × bet).
  */
 final class LuckyHand
 {
-    public const TYPES = ['six_pairs', 'three_flushes', 'three_straights'];
+    public const TYPES = ['three_flushes', 'no_face_cards', 'six_pairs'];
 
     public const LABELS = [
-        'six_pairs' => 'Six Pairs',
         'three_flushes' => 'Three Flushes',
-        'three_straights' => 'Three Straights',
+        'no_face_cards' => 'No Face Cards',
+        'six_pairs' => 'Six Pairs',
     ];
 
     /**
@@ -38,19 +36,35 @@ final class LuckyHand
             return null;
         }
 
-        if (self::isSixPairs($cards)) {
-            return self::found('six_pairs', AutoArranger::arrange($cards));
-        }
-
         if ($lanes = self::threeFlushes($cards)) {
             return self::found('three_flushes', self::order($lanes));
         }
 
-        if ($lanes = self::threeStraights($cards)) {
-            return self::found('three_straights', self::order($lanes));
+        if (self::hasNoFaceCards($cards)) {
+            return self::found('no_face_cards', AutoArranger::arrange($cards));
+        }
+
+        if (self::isSixPairs($cards)) {
+            return self::found('six_pairs', AutoArranger::arrange($cards));
         }
 
         return null;
+    }
+
+    /**
+     * No Jack, Queen or King among the cards (2–10 and Aces only).
+     *
+     * @param  list<string>  $cards
+     */
+    public static function hasNoFaceCards(array $cards): bool
+    {
+        foreach ($cards as $card) {
+            if (in_array($card[0], ['J', 'Q', 'K'], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -107,90 +121,6 @@ final class LuckyHand
         }
 
         return null;
-    }
-
-    /**
-     * @param  list<string>  $cards
-     * @return array{0: list<string>, 1: list<string>, 2: list<string>}|null
-     */
-    public static function threeStraights(array $cards): ?array
-    {
-        $n = count($cards);
-
-        for ($i = 0; $i < $n - 2; $i++) {
-            for ($j = $i + 1; $j < $n - 1; $j++) {
-                for ($k = $j + 1; $k < $n; $k++) {
-                    $front = [$cards[$i], $cards[$j], $cards[$k]];
-
-                    if (! self::isStraight($front)) {
-                        continue;
-                    }
-
-                    $rest = array_values(array_diff($cards, $front));
-
-                    foreach (self::fiveOfTen($rest) as $five) {
-                        $other = array_values(array_diff($rest, $five));
-
-                        if (self::isStraight($five) && self::isStraight($other)) {
-                            return [$front, $five, $other];
-                        }
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Consecutive distinct ranks; the Ace may play low.
-     *
-     * @param  list<string>  $cards
-     */
-    public static function isStraight(array $cards): bool
-    {
-        $ranks = array_map(fn (string $c) => Card::fromString($c)->rank, $cards);
-        sort($ranks);
-
-        if (count(array_unique($ranks)) !== count($ranks)) {
-            return false;
-        }
-
-        $consecutive = fn (array $r) => end($r) - $r[0] === count($r) - 1;
-
-        if ($consecutive($ranks)) {
-            return true;
-        }
-
-        if (in_array(14, $ranks, true)) {
-            $low = array_map(fn (int $r) => $r === 14 ? 1 : $r, $ranks);
-            sort($low);
-
-            return $consecutive($low);
-        }
-
-        return false;
-    }
-
-    /**
-     * @param  list<string>  $cards  exactly 10 cards
-     * @return \Generator<list<string>>
-     */
-    private static function fiveOfTen(array $cards): \Generator
-    {
-        $n = count($cards);
-
-        for ($a = 0; $a < $n; $a++) {
-            for ($b = $a + 1; $b < $n; $b++) {
-                for ($c = $b + 1; $c < $n; $c++) {
-                    for ($d = $c + 1; $d < $n; $d++) {
-                        for ($e = $d + 1; $e < $n; $e++) {
-                            yield [$cards[$a], $cards[$b], $cards[$c], $cards[$d], $cards[$e]];
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /**

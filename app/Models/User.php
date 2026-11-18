@@ -58,6 +58,30 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => Role::class,
             'status' => UserStatus::class,
+            'preferences' => 'array',
+        ];
+    }
+
+    /** Motion quality levels for the game's animations (Settings → Motion Effects). */
+    public const MOTION_LEVELS = ['low', 'medium', 'high'];
+
+    /** Default game settings for a player who has never changed them. */
+    public const DEFAULT_PREFERENCES = ['bgm' => true, 'sfx' => true, 'motion' => 'high'];
+
+    /**
+     * This player's game settings (BGM, sound effects, motion quality), defaults filled in.
+     *
+     * @return array{bgm: bool, sfx: bool, motion: string}
+     */
+    public function gamePreferences(): array
+    {
+        $saved = is_array($this->preferences) ? $this->preferences : [];
+        $p = array_merge(self::DEFAULT_PREFERENCES, array_intersect_key($saved, self::DEFAULT_PREFERENCES));
+
+        return [
+            'bgm' => (bool) $p['bgm'],
+            'sfx' => (bool) $p['sfx'],
+            'motion' => in_array($p['motion'], self::MOTION_LEVELS, true) ? $p['motion'] : 'high',
         ];
     }
 

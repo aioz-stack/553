@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { reducedNow } from '@/lib/motion';
+import { lightNow, reducedNow } from '@/lib/motion';
 import { play } from '@/lib/sound';
 
 /**
@@ -37,23 +37,33 @@ export function dealOrder(banker: number): number[] {
   return [0, 1, 2, 3].map((i) => ((first - 1 + i) % 4) + 1);
 }
 
+/**
+ * Shuffle tempo: every shuffle timing below is written at a relaxed design pace and played at
+ * SHUFFLE_SPEED of it, so the whole shuffle speeds up evenly — same motions, same easing, no step lost.
+ */
+const SHUFFLE_SPEED = 0.275;
+const T = (ms: number) => Math.round(ms * SHUFFLE_SPEED);
+
 /** Phase start times (ms). */
 export const PHASES = {
   gather: 0,
-  form: 1900,
-  split: 2650,
-  riffle: 3800,
-  merge: 5800,
-  ready: 6500,
-  deal: 7200,
+  form: T(1900),
+  split: T(2650),
+  riffle: T(3800),
+  merge: T(5800),
+  ready: T(6500),
+  deal: T(7200),
   complete: 0, // filled below
   done: 0,
 };
-export const DEAL_GAP = 180; // a new card leaves the deck every 180 ms
-const FLIGHT = 560; // each toss takes 0.56 s from the deck to the player
-PHASES.complete = PHASES.deal + 51 * DEAL_GAP + FLIGHT + 260;
+export const DEAL_GAP = 55; // a new card leaves the deck every 55 ms (one at a time, no pauses)
+const FLIGHT = 210; // each toss takes 0.21 s from the deck to the player
+const BOUNCE = 30; // landing bounce: up and settle, 30 ms each
+const FLIP_GAP = 18; // your cards turn over 18 ms apart…
+const FLIP = 150; // …each turn taking 0.15 s
+PHASES.complete = PHASES.deal + 51 * DEAL_GAP + FLIGHT + 2 * BOUNCE + 40;
 // Your cards turn over, then arrangement opens straight away (a short beat, no waiting).
-PHASES.done = PHASES.complete + 12 * 45 + 380 + 250;
+PHASES.done = PHASES.complete + 12 * FLIP_GAP + FLIP + 100;
 
 /** Which phase is showing at time t. */
 export function phaseAt(t: number): 'gather' | 'form' | 'split' | 'riffle' | 'merge' | 'ready' | 'deal' | 'complete' {
@@ -135,34 +145,34 @@ export function cardKeys(p: number, banker: number, seed: number): Key[] {
   const rad = 0.45 + r() * 0.55;
   const sx = CX + Math.cos(ang) * 470 * rad;
   const sy = CY + Math.sin(ang) * 190 * rad;
-  const lands = 700 + h * 20;
+  const lands = T(700 + h * 20);
   at(0, { x: sx, y: sy, z: 1, rz: r() * 360 - 180, s: 0.9 });
-  at(lands - 650, {}, 'cubic-bezier(.45,0,.2,1)');
-  at(lands - 300, { x: (sx + CX) / 2, y: (sy + CY) / 2 - 10, z: 40 + h * STEP, rz: (keys[0].rz + (r() * 14 - 7)) / 2, s: 0.95 }, 'cubic-bezier(.2,.6,.3,1)');
+  at(lands - T(650), {}, 'cubic-bezier(.45,0,.2,1)');
+  at(lands - T(300), { x: (sx + CX) / 2, y: (sy + CY) / 2 - 10, z: 40 + h * STEP, rz: (keys[0].rz + (r() * 14 - 7)) / 2, s: 0.95 }, 'cubic-bezier(.2,.6,.3,1)');
   at(lands, { x: CX + (r() * 8 - 4), y: CY + (r() * 6 - 3), z: deckZ(h), rz: r() * 14 - 7, s: 1 });
 
   // 2 FORM THE DECK: square it up, then lift it slightly off the felt.
   at(PHASES.form, {}, 'cubic-bezier(.3,0,.2,1)');
-  at(PHASES.form + 550, { x: CX, y: CY, rz: 0 }, 'ease-in-out');
-  at(PHASES.split - 50, { z: deckZ(h) + 22 }, 'cubic-bezier(.3,0,.2,1)');
+  at(PHASES.form + T(550), { x: CX, y: CY, rz: 0 }, 'ease-in-out');
+  at(PHASES.split - T(50), { z: deckZ(h) + 22 }, 'cubic-bezier(.3,0,.2,1)');
 
   // 3 SPLIT: the top half lifts away to the left, the bottom half slides right.
   const pileZ = deckZ(pileH) + 10;
-  at(PHASES.split + 250, left ? { x: CX - 70, z: deckZ(h) + 60, rz: -3 } : { x: CX + 25, z: pileZ + 12, rz: 2 }, 'cubic-bezier(.3,0,.2,1)');
-  at(PHASES.split + 700, { x: CX + side * 190, y: CY + 6, z: pileZ, rz: side * 7 }, 'ease-in-out');
+  at(PHASES.split + T(250), left ? { x: CX - 70, z: deckZ(h) + 60, rz: -3 } : { x: CX + 25, z: pileZ + 12, rz: 2 }, 'cubic-bezier(.3,0,.2,1)');
+  at(PHASES.split + T(700), { x: CX + side * 190, y: CY + 6, z: pileZ, rz: side * 7 }, 'ease-in-out');
   // …and the two piles move toward each other, inner corners raised for the riffle.
-  at(PHASES.riffle - 100, { x: CX + side * 122, z: pileZ + 6, ry: side * 16, rz: side * 4 });
+  at(PHASES.riffle - T(100), { x: CX + side * 122, z: pileZ + 6, ry: side * 16, rz: side * 4 });
 
   // 4 RIFFLE: cards fall one at a time, alternating piles, bending as they leave the thumb.
   const k = 51 - p; // bottom of the new deck drops first
-  const drop = PHASES.riffle + k * 34;
+  const drop = PHASES.riffle + T(k * 34);
   at(drop, {}, 'cubic-bezier(.5,0,.6,1)');
-  at(drop + 70, { x: CX + side * 58, z: deckZ(51 - p) + 18, ry: side * 46, rz: side * 2 }, 'cubic-bezier(.2,.6,.3,1)');
-  at(drop + 170, { x: CX + (r() * 4 - 2), y: CY, z: deckZ(51 - p), ry: 0, rz: r() * 4 - 2 });
+  at(drop + T(70), { x: CX + side * 58, z: deckZ(51 - p) + 18, ry: side * 46, rz: side * 2 }, 'cubic-bezier(.2,.6,.3,1)');
+  at(drop + T(170), { x: CX + (r() * 4 - 2), y: CY, z: deckZ(51 - p), ry: 0, rz: r() * 4 - 2 });
 
   // 5 MERGE & SQUARE: a gentle swirl, then the deck is squared at the centre.
   at(PHASES.merge, {}, 'ease-in-out');
-  at(PHASES.merge + 330, { rz: (51 - p) * 0.14 + 3, z: deckZ(51 - p) + 4 }, 'ease-in-out');
+  at(PHASES.merge + T(330), { rz: (51 - p) * 0.14 + 3, z: deckZ(51 - p) + 4 }, 'ease-in-out');
   at(PHASES.ready, { x: CX, y: CY, rz: 0, z: deckZ(51 - p) });
 
   // 6 DECK READY: hold while the camera settles.  7-8 DEAL CLOCKWISE from the top, one card at a time.
@@ -173,15 +183,15 @@ export function cardKeys(p: number, banker: number, seed: number): Key[] {
   at(go, {}, 'cubic-bezier(.35,0,.25,1)');
   at(go + FLIGHT * 0.5, { x: (CX + target.x) / 2, y: (CY + target.y) / 2 - 30, z: 150, rz: target.rz / 2 + spin * 160, s: (1 + target.s) / 2 + 0.08 }, 'cubic-bezier(.15,.55,.3,1)');
   at(go + FLIGHT, { ...target, rz: target.rz + spin * 360 }, 'ease-out');
-  at(go + FLIGHT + 80, { z: target.z + 7 }, 'ease-in');
-  at(go + FLIGHT + 160, { z: target.z });
+  at(go + FLIGHT + BOUNCE, { z: target.z + 7 }, 'ease-in');
+  at(go + FLIGHT + 2 * BOUNCE, { z: target.z });
 
   // 9 COMPLETE: your cards turn over, left to right.
   if (seat === 1) {
-    const flip = PHASES.complete + Math.floor(p / 4) * 45;
+    const flip = PHASES.complete + Math.floor(p / 4) * FLIP_GAP;
     at(flip, {}, 'ease-in');
-    at(flip + 190, { z: target.z + 26, ry: 90 }, 'ease-out');
-    at(flip + 380, { z: target.z, ry: 180 });
+    at(flip + FLIP / 2, { z: target.z + 26, ry: 90 }, 'ease-out');
+    at(flip + FLIP, { z: target.z, ry: 180 });
   }
   at(PHASES.done, {});
   return keys;
@@ -278,7 +288,8 @@ export default function DealAnimation({
     finished.current = true;
     done.current();
   };
-  const shadows = useMemo(() => !lowEnd(), []);
+  // Travelling shadows: not on low-end devices or at Medium motion quality.
+  const shadows = useMemo(() => !lowEnd() && !lightNow(), []);
   const order = dealOrder(banker);
 
   useEffect(() => {

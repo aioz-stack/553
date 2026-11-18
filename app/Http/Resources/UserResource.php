@@ -27,6 +27,8 @@ class UserResource extends JsonResource
             'display_name' => $this->whenLoaded('profile', fn () => $this->profile?->display_name),
             'level' => $this->whenLoaded('profile', fn () => Level::fromXp((int) ($this->profile?->xp ?? 0))),
             'abilities' => $this->when($request->user()?->id === $this->id, fn () => $this->abilityKeys()),
+            // Your own game settings (BGM, sound effects, motion quality) — only on your own record.
+            'preferences' => $this->when($request->user()?->id === $this->id, fn () => $this->resource->gamePreferences()),
             'permissions' => $this->whenLoaded('permissions', fn () => $this->permissions->pluck('key')->values()),
             'agent' => $this->whenLoaded('agent', fn () => $this->agent ? ['id' => $this->agent->id, 'code' => $this->agent->code, 'status' => $this->agent->status] : null),
             'owning_agent' => $this->whenLoaded('agentLink', fn () => $this->agentLink ? [
