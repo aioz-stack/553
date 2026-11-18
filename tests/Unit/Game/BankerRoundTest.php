@@ -85,3 +85,15 @@ test('lucky hands pay the lucky multiple and replace the lane comparison', funct
         ->and($b['players'][3]['multiple'])->toBe(0)
         ->and($b['banker']['lucky_bonus'])->toBe(200);
 });
+
+test('banker advantage: identical lanes go to the banker (opt-in), so 3 identical lanes = −2 × bet', function () {
+    $same = new App\Game\Arrangement(['2C', '3D', '5H'], ['7C', '8D', '9H', 'JS', 'KC'], ['AC', 'AD', '4S', '6C', 'TH']);
+    $copy = new App\Game\Arrangement(['2D', '3H', '5S'], ['7D', '8H', '9S', 'JC', 'KD'], ['AH', 'AS', '4C', '6D', 'TS']);
+
+    $plain = (new BankerRound)->settle(1, [2 => 100], [1 => $same, 2 => $copy]);
+    expect($plain['players'][2]['lanes'])->toBe(['front' => 0, 'middle' => 0, 'back' => 0])->and($plain['players'][2]['gross'])->toBe(0);
+
+    $adv = (new BankerRound(bankerWinsTies: true))->settle(1, [2 => 100], [1 => $same, 2 => $copy]);
+    expect($adv['players'][2]['lanes'])->toBe(['front' => -1, 'middle' => -1, 'back' => -1])
+        ->and($adv['players'][2]['gross'])->toBe(-200)->and($adv['banker']['gross'])->toBe(200);
+});

@@ -2,41 +2,75 @@
 
 namespace App\Services\Game;
 
+use App\Enums\Currency;
+use App\Enums\TransactionType;
 use App\Exceptions\BusinessRuleException;
+use App\Exceptions\InsufficientBalanceException;
 use App\Game\Arrangement;
 use App\Game\ArrangementValidator;
 use App\Game\AutoArranger;
+use App\Game\Banker\BankerRound;
+use App\Game\BotArranger;
 use App\Game\Deck;
 use App\Game\Exceptions\InvalidArrangementException;
-use App\Game\Scorer;
+use App\Game\LuckyHand;
 use App\Models\PracticeGame;
-use App\Enums\Currency;
+use App\Models\PracticeMatch;
 use App\Models\User;
+use App\Services\Audit\AuditLogger;
+use App\Services\Wallet\LedgerService;
+use App\Services\Wallet\TransferRequest;
+use App\Services\Wallet\WalletService;
 use App\Support\Points;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-
 /**
- * Single Player practice: the player against three server bots.
+ * Single Player — Round Bank Pusoy (Chinese Poker): the player and three bots
+ * (LuckyBot, CardBot, AceBot) at one four-seat table.
  *
- * Same deck, shuffle commitment, validation, foul rule and pairwise ±1
- * scoring as a classic table, but no currency: nothing here writes
- * wallets, the ledger, XP, leaderboards or commissions (the CP balance is only
- * read to check a difficulty tier's minimum gold). The bots arrange
- * at deal time (tier-dependent: strong bots use AutoArranger, casual bots a
- * random non-fouled hand); their hands stay hidden until
- * the player submits.
+ * A match is 12 rounds. The banker rotates seat by seat — round 1 the player,
+ * then LuckyBot, CardBot, AceBot, and around again (each seat banks 3 times).
+ * The banker places no bet: it covers every other seat. Each non-banker bets
+ * — you with a chip from the tier's options, each bot with its own pick. The
+ * server deals all 52 cards (13 to each seat), arranges the bots (BotArranger
+ * or casual by tier) and validates the player's Front (3) / Middle (5) /
+ * Back (5). A misplaced (fouled) arrangement may be submitted and pays the
+ * 2 × bet penalty (it loses every lane: to the banker, or as banker to every
+ * opponent).
+ *
+ * Settlement (App\Game\Banker\BankerRound, banker advantage on): each
+ * non-banker's lanes are compared with the banker's; an identical lane goes
+ * to the banker. 3-0 = 2 × bet, 2-1 = 1 × bet, 1-2 = −1 ×, 0-3 = −2 ×
+ * (config pusoy.banker.settlement). A Lucky Hand (Six Pairs / Three Flushes /
+ * Three Straights) replaces the lane comparison and wins lucky_multiplier ×
+ * bet; the player declares theirs, bots declare automatically.
+ *
+ * Gold (CP): when the match was started with the cp_wagering feature flag on,
+ * each round reserves the player's worst case (2 × bet, or 6 × bet when the
+ * player banks against three bots) from the player's CP wallet and the same
+ * from the house (platform CP wallet) into escrow, and pays both out from
+ * escrow on settlement — always covered, zero-sum, idempotent (one settlement
+ * per round, ledger idempotency keys). The bots are house players: only the
+ * player's own result moves Gold. With the flag off (the default until legal
+ * approval) nothing touches wallets: rounds settle as practice Gold.
  */
 class PracticeService
 {
     public const PLAYER_SEAT = 1;
 
-    /** seat => display name */
+    /** seat => bot name (the three bots that join every match) */
     public const BOTS = [2 => 'LuckyBot', 3 => 'CardBot', 4 => 'AceBot'];
 
+    public const SEATS = [1, 2, 3, 4];
+
+    public function __construct(
+        private readonly LedgerService $ledger,
+        private readonly WalletService $wallets,
+    ) {}
+
+    // ------------------------------------------------------------------ tiers
+
     /**
-     * The difficulty tiers with the player's eligibility for each.
-     *
      * @return list<array<string, mixed>>
      */
     public function tiers(User $user): array
@@ -59,73 +93,377 @@ class PracticeService
         return $rows;
     }
 
+    // ------------------------------------------------------------------ match
+
+    /** Start a new 12-round match at a tier (any unfinished match is abandoned and its reserves released). */
+    public function startMatch(User $user, string $tierKey): PracticeMatch
+    {
+        $tier = $this->tier($tierKey);
+
+        return DB::transaction(function () use ($user, $tierKey, $tier) {
+            User::query()->whereKey($user->id)->lockForUpdate()->first();
+            $this->assertGold($user, $tier);
+
+            foreach (PracticeMatch::query()->where('user_id', $user->id)->where('status', PracticeMatch::ACTIVE)->lockForUpdate()->get() as $old) {
+                $this->abandon($old);
+            }
+
+            // Legacy open practice deals (before Round Bank) are closed too.
+            PracticeGame::query()->where('user_id', $user->id)->whereNull('practice_match_id')
+                ->where('status', PracticeGame::ARRANGING)->update(['status' => PracticeGame::ABANDONED]);
+
+            return PracticeMatch::create([
+                'user_id' => $user->id,
+                'tier' => $tierKey,
+                'status' => PracticeMatch::ACTIVE,
+                'rounds_total' => (int) config('pusoy.practice.rounds', 12),
+                'wagering' => (bool) config('pusoy.features.cp_wagering', false),
+            ])->refresh();
+        });
+    }
+
+    public function activeMatch(User $user): ?PracticeMatch
+    {
+        return PracticeMatch::query()->where('user_id', $user->id)->where('status', PracticeMatch::ACTIVE)->latest('id')->first();
+    }
+
     /**
-     * Start a new deal at the chosen tier. The bet is optional (the picker shows
-     * bets as information only) and defaults to the tier's lowest bet. The tier/bet are
-     * validated here (never trusted from the client), and the player's CP
-     * balance must meet the tier's minimum — it is only read, never charged.
-     *
-     * A repeated $requestId (double tap, network retry) returns the deal it
-     * already created instead of starting another one.
+     * Deal the next round of a match with the bet the player chose. A repeated
+     * $requestId returns the round it already dealt.
      */
-    public function start(User $user, string $tierKey, ?int $bet, ?string $requestId = null): PracticeGame
+    public function deal(User $user, PracticeMatch $match, ?int $bet, ?string $requestId = null): PracticeGame
     {
         if ($requestId !== null && ($existing = $this->byRequest($user, $requestId))) {
             return $existing;
         }
 
-        $tier = config("pusoy.practice.tiers.{$tierKey}");
-
-        if (! is_array($tier)) {
-            throw new BusinessRuleException('Choose a valid difficulty level.', 422, 'invalid_tier');
-        }
-
-        $bet ??= min(array_map('intval', $tier['bets']));
-
-        if (! in_array($bet, array_map('intval', $tier['bets']), true)) {
-            throw new BusinessRuleException("That bet is not offered at {$tier['name']}.", 422, 'invalid_bet');
-        }
-
         try {
-            return DB::transaction(function () use ($user, $tierKey, $tier, $bet, $requestId) {
-                // Serialise starts per player so two taps can never leave two open deals.
-                User::query()->whereKey($user->id)->lockForUpdate()->first();
+            return DB::transaction(function () use ($user, $match, $bet, $requestId) {
+                /** @var PracticeMatch $match */
+                $match = PracticeMatch::query()->whereKey($match->id)->lockForUpdate()->firstOrFail();
+                $this->ownMatch($user, $match);
 
-                if ($this->goldMinor($user) < Points::toMinor((int) $tier['min_gold'])) {
-                    throw new BusinessRuleException('You need at least '.number_format((int) $tier['min_gold'])." gold to play {$tier['name']}.", 422, 'insufficient_gold');
+                if ($match->status !== PracticeMatch::ACTIVE) {
+                    throw new BusinessRuleException('This match is over. Start a new one.', 409, 'match_over');
                 }
 
-                PracticeGame::query()->where('user_id', $user->id)->where('status', PracticeGame::ARRANGING)
-                    ->update(['status' => PracticeGame::ABANDONED]);
+                if (PracticeGame::query()->where('practice_match_id', $match->id)->where('status', PracticeGame::ARRANGING)->exists()) {
+                    throw new BusinessRuleException('Finish the current round first.', 409, 'round_in_progress');
+                }
+
+                $tier = $this->tier($match->tier);
+                $options = array_map('intval', $tier['bets']);
+                $round = $match->rounds_played + 1;
+                $bankerSeat = PracticeMatch::bankerFor($round);
+
+                // The banker places no bet: it covers every other seat's bet. Each non-banker bets:
+                // you (your chip, default the lowest) and each bot (its own pick from the tier's options).
+                if ($bankerSeat === self::PLAYER_SEAT) {
+                    $bet = 0;
+                } else {
+                    $bet ??= min($options);
+
+                    if (! in_array($bet, $options, true)) {
+                        throw new BusinessRuleException("That bet is not offered at {$tier['name']}.", 422, 'invalid_bet');
+                    }
+                }
+
+                $bets = [];
+                foreach (self::SEATS as $seat) {
+                    if ($seat === $bankerSeat) {
+                        continue;
+                    }
+                    $bets[$seat] = $seat === self::PLAYER_SEAT ? $bet : self::botBet($options);
+                }
+
+                // When you bank with Gold on the line, the bots only bet what you can cover
+                // (2 × their total must fit your balance): they step down their largest bets.
+                if ($match->wagering && $bankerSeat === self::PLAYER_SEAT) {
+                    $bets = self::fitBets($bets, $options, intdiv($this->goldMinor($user), Points::SCALE));
+                }
+
+                $this->assertGold($user, $tier);
 
                 $seed = Deck::newSeed();
                 $deck = Deck::shuffled($seed);
+                // All 52 cards: 13 to each of the four seats.
                 $hands = Deck::deal($deck);
                 $arrangements = [];
-                $strong = (int) $tier['strong_bots'];
 
+                // Bot strength by tier: the first `strong_bots` bots arrange with BotArranger (searches for the
+                // best-balanced valid arrangement); the others play casually (random but never fouled).
                 foreach (array_keys(self::BOTS) as $i => $seat) {
-                    // Strong bots fill the highest seats first.
-                    $a = $i >= count(self::BOTS) - $strong ? AutoArranger::arrange($hands[$seat]) : self::casualArrange($hands[$seat]);
+                    $a = $i < (int) $tier['strong_bots'] ? BotArranger::arrange($hands[$seat]) : self::casualArrange($hands[$seat]);
                     $arrangements[$seat] = ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back];
                 }
 
-                return PracticeGame::create([
+                $game = PracticeGame::create([
                     'user_id' => $user->id,
+                    'practice_match_id' => $match->id,
+                    'round_number' => $round,
+                    'banker' => (string) $bankerSeat,
                     'status' => PracticeGame::ARRANGING,
-                    'tier' => $tierKey,
+                    'tier' => $match->tier,
                     'bet' => $bet,
+                    'bets' => $bets,
                     'request_id' => $requestId,
                     'server_seed' => $seed,
                     'deck_commitment' => Deck::commitment($seed, $deck),
                     'hands' => $hands,
                     'arrangements' => $arrangements,
                 ]);
+
+                if ($match->wagering) {
+                    $this->reserve($user, $game);
+                }
+
+                return $game;
             });
         } catch (UniqueConstraintViolationException $e) {
-            // A concurrent request with the same id won the race; return its deal.
-            return $this->byRequest($user, (string) $requestId) ?? throw $e;
+            return ($requestId !== null ? $this->byRequest($user, $requestId) : null) ?? throw $e;
         }
+    }
+
+    // ------------------------------------------------------------------ play
+
+    /**
+     * @param  mixed  $front
+     * @param  mixed  $middle
+     * @param  mixed  $back
+     */
+    public function submit(User $user, PracticeGame $game, $front, $middle, $back): PracticeGame
+    {
+        return DB::transaction(function () use ($user, $game, $front, $middle, $back) {
+            $game = $this->lockOpenRound($user, $game);
+
+            try {
+                $mine = ArrangementValidator::build($game->hands[self::PLAYER_SEAT], $front, $middle, $back);
+            } catch (InvalidArrangementException $e) {
+                throw new BusinessRuleException($e->getMessage(), 422, 'invalid_arrangement');
+            }
+
+            // A misplaced (fouled) arrangement is accepted and penalised in settlement:
+            // it loses every lane against the banker / every opponent → 2 × bet each.
+
+            return $this->settle($user, $game, $mine, null);
+        });
+    }
+
+    /**
+     * Declared Luck: the server checks the player's dealt cards. Qualifying
+     * hands settle the round at once; otherwise 422 not_lucky and play goes on.
+     */
+    public function declareLucky(User $user, PracticeGame $game): PracticeGame
+    {
+        return DB::transaction(function () use ($user, $game) {
+            $game = $this->lockOpenRound($user, $game, luckyCheck: true);
+
+            $lucky = LuckyHand::detect($game->hands[self::PLAYER_SEAT])
+                ?? throw new BusinessRuleException('Your cards do not qualify for Declared Luck.', 422, 'not_lucky');
+
+            $game = $this->settle($user, $game, $lucky['arrangement'], $lucky['type']);
+
+            AuditLogger::log($user, 'practice.lucky_declared', $game, null, [
+                'lucky_type' => $lucky['type'],
+                'match_id' => $game->practice_match_id,
+                'round' => $game->round_number,
+                'bet' => (int) $game->bet,
+                'player_net' => (int) $game->results['player_net'],
+            ]);
+
+            return $game;
+        });
+    }
+
+    /**
+     * Settle one round (inside the caller's transaction, round row locked).
+     */
+    private function settle(User $user, PracticeGame $game, Arrangement $mine, ?string $playerLucky): PracticeGame
+    {
+        /** @var PracticeMatch $match */
+        $match = PracticeMatch::query()->whereKey($game->practice_match_id)->lockForUpdate()->firstOrFail();
+        $stored = $game->arrangements;
+        $stored[self::PLAYER_SEAT] = ['front' => $mine->front, 'middle' => $mine->middle, 'back' => $mine->back];
+        $arrangements = [self::PLAYER_SEAT => $mine];
+        $lucky = [self::PLAYER_SEAT => $playerLucky];
+
+        // Bots declare their own Lucky Hands (checked on their dealt cards).
+        foreach (array_keys(self::BOTS) as $seat) {
+            $found = LuckyHand::detect($game->hands[$seat]);
+            $lucky[$seat] = $found['type'] ?? null;
+            $arrangements[$seat] = $found['arrangement'] ?? new Arrangement($stored[$seat]['front'], $stored[$seat]['middle'], $stored[$seat]['back']);
+            $stored[$seat] = ['front' => $arrangements[$seat]->front, 'middle' => $arrangements[$seat]->middle, 'back' => $arrangements[$seat]->back];
+        }
+
+        $bankerSeat = (int) $game->banker;
+        // Each non-banker's own bet (the banker has none and covers them all).
+        $bets = [];
+        foreach (self::seatBets($game) as $seat => $points) {
+            $bets[$seat] = Points::toMinor($points);
+        }
+
+        // Round Bank with banker advantage: identical lanes go to the banker.
+        $r = (new BankerRound(
+            (array) config('pusoy.banker.settlement', BankerRound::DEFAULT_TABLE),
+            (int) config('pusoy.banker.lucky_multiplier', 2),
+            (int) config('pusoy.banker.reserve_multiplier', 2),
+            0,
+            (bool) config('pusoy.practice.banker_wins_ties', true),
+        ))->settle($bankerSeat, $bets, $arrangements, [], $lucky);
+
+        $seats = [];
+        foreach (self::SEATS as $seat) {
+            $row = $seat === $bankerSeat ? $r['banker'] : $r['players'][$seat];
+            $seats[$seat] = [
+                'banker' => $seat === $bankerSeat,
+                'bet' => $seat === $bankerSeat ? 0 : (int) (self::seatBets($game)[$seat] ?? 0),
+                // vs the banker, from this seat's side (null for the banker and when a Lucky Hand decided)
+                'lanes' => $seat === $bankerSeat ? null : $row['lanes'],
+                'multiple' => $seat === $bankerSeat ? null : (int) $row['multiple'],
+                'net' => (int) $row['net'],
+                'is_foul' => (bool) $row['is_foul'],
+                'lucky' => $lucky[$seat],
+            ];
+        }
+
+        $playerNet = $seats[self::PLAYER_SEAT]['net'];
+
+        if ($match->wagering && $game->reserve_status === 'held') {
+            $this->payout($user, $game, $playerNet);
+        }
+
+        $game->forceFill([
+            'status' => PracticeGame::COMPLETED,
+            'arrangements' => $stored,
+            'lucky_type' => $playerLucky,
+            'lucky_declared_at' => $playerLucky ? now() : null,
+            'results' => [
+                'banker' => $bankerSeat,
+                'seats' => $seats,
+                'player_net' => $playerNet,
+            ],
+            'completed_at' => now(),
+        ])->save();
+
+        $match->forceFill(['rounds_played' => $match->rounds_played + 1, 'player_net' => $match->player_net + $playerNet])->save();
+
+        if ($match->rounds_played >= $match->rounds_total) {
+            $match->forceFill(['status' => PracticeMatch::COMPLETED, 'completed_at' => now()])->save();
+        }
+
+        return $game;
+    }
+
+    // ------------------------------------------------------------------ gold
+
+    /** Move reserve_multiplier × bet from the player and from the house into escrow. */
+    private function reserve(User $user, PracticeGame $game): void
+    {
+        // Worst case for the player: as banker, lose 2 × bet to each of the three bots; otherwise 2 × bet.
+        // Your worst case: as banker, 2 × every bot's bet; otherwise 2 × your own bet.
+        $covered = (int) $game->banker === self::PLAYER_SEAT ? array_sum(self::seatBets($game)) : (int) $game->bet;
+        $amount = Points::toMinor($covered) * (int) config('pusoy.banker.reserve_multiplier', 2);
+        $escrow = $this->wallets->escrow(Currency::CP);
+        $label = "Single Player round {$game->round_number} (match #{$game->practice_match_id})";
+
+        try {
+            $this->transfer(TransactionType::GameEntry, $this->wallets->for($user, Currency::CP), $escrow, $amount, "{$label}: bet reserve", $user, "sp:{$game->id}:reserve:player");
+        } catch (InsufficientBalanceException) {
+            throw new BusinessRuleException('Not enough gold to cover this round (your worst case is reserved: 2 × bet, or 6 × bet as banker).', 422, 'insufficient_gold');
+        }
+
+        try {
+            $this->transfer(TransactionType::GameEntry, $this->wallets->platform(Currency::CP), $escrow, $amount, "{$label}: house reserve", $user, "sp:{$game->id}:reserve:house");
+        } catch (InsufficientBalanceException) {
+            throw new BusinessRuleException('The house bank cannot cover this bet right now.', 422, 'house_insufficient');
+        }
+
+        $game->forceFill(['player_reserve' => $amount, 'house_reserve' => $amount, 'reserve_status' => 'held'])->save();
+    }
+
+    /** Pay both reserves out of escrow after settlement (|net| ≤ reserve, so it always balances). */
+    private function payout(User $user, PracticeGame $game, int $playerNet): void
+    {
+        $escrow = $this->wallets->escrow(Currency::CP);
+        $toPlayer = $game->player_reserve + $playerNet;
+        $toHouse = $game->house_reserve - $playerNet;
+        $label = "Single Player round {$game->round_number} (match #{$game->practice_match_id})";
+
+        if ($toPlayer > 0) {
+            $this->transfer($playerNet > 0 ? TransactionType::GameReward : TransactionType::GameRefund, $escrow, $this->wallets->for($user, Currency::CP), $toPlayer, "{$label}: payout (net ".Points::decimal($playerNet).')', $user, "sp:{$game->id}:payout:player");
+        }
+
+        if ($toHouse > 0) {
+            $this->transfer(TransactionType::GameRefund, $escrow, $this->wallets->platform(Currency::CP), $toHouse, "{$label}: house settlement", $user, "sp:{$game->id}:payout:house");
+        }
+
+        $game->forceFill(['reserve_status' => 'settled'])->save();
+    }
+
+    /** Return held reserves (abandoned round). */
+    private function release(User $user, PracticeGame $game): void
+    {
+        $escrow = $this->wallets->escrow(Currency::CP);
+        $label = "Single Player round {$game->round_number} (match #{$game->practice_match_id}) abandoned";
+
+        $this->transfer(TransactionType::GameRefund, $escrow, $this->wallets->for($user, Currency::CP), $game->player_reserve, "{$label}: reserve returned", $user, "sp:{$game->id}:release:player");
+        $this->transfer(TransactionType::GameRefund, $escrow, $this->wallets->platform(Currency::CP), $game->house_reserve, "{$label}: house reserve returned", $user, "sp:{$game->id}:release:house");
+        $game->forceFill(['reserve_status' => 'released'])->save();
+    }
+
+    private function transfer(TransactionType $type, $source, $destination, int $amount, string $reason, User $user, string $key): void
+    {
+        $this->ledger->transfer(new TransferRequest(
+            type: $type,
+            currency: Currency::CP,
+            source: $source,
+            destination: $destination,
+            amount: $amount,
+            reason: $reason,
+            actor: $user,
+            idempotencyKey: $key,
+            relatedPlayerId: $user->id,
+            metadata: ['single_player' => true],
+        ));
+    }
+
+    private function abandon(PracticeMatch $match): void
+    {
+        foreach (PracticeGame::query()->where('practice_match_id', $match->id)->where('status', PracticeGame::ARRANGING)->lockForUpdate()->get() as $open) {
+            if ($open->reserve_status === 'held') {
+                $this->release($match->user, $open);
+            }
+            $open->forceFill(['status' => PracticeGame::ABANDONED])->save();
+        }
+
+        $match->forceFill(['status' => PracticeMatch::ABANDONED])->save();
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    /** @return array<string, mixed> */
+    private function tier(string $key): array
+    {
+        $tier = config("pusoy.practice.tiers.{$key}");
+
+        if (! is_array($tier)) {
+            throw new BusinessRuleException('Choose a valid difficulty level.', 422, 'invalid_tier');
+        }
+
+        return $tier;
+    }
+
+    /** @param  array<string, mixed>  $tier */
+    private function assertGold(User $user, array $tier): void
+    {
+        if ($this->goldMinor($user) < Points::toMinor((int) $tier['min_gold'])) {
+            throw new BusinessRuleException('You need at least '.number_format((int) $tier['min_gold'])." gold to play {$tier['name']}.", 422, 'insufficient_gold');
+        }
+    }
+
+    private function goldMinor(User $user): int
+    {
+        return (int) ($user->wallet(Currency::CP)?->balance ?? 0);
     }
 
     private function byRequest(User $user, string $requestId): ?PracticeGame
@@ -133,9 +471,93 @@ class PracticeService
         return PracticeGame::query()->where('user_id', $user->id)->where('request_id', $requestId)->first();
     }
 
-    private function goldMinor(User $user): int
+    private function ownMatch(User $user, PracticeMatch $match): void
     {
-        return (int) ($user->wallet(Currency::CP)?->balance ?? 0);
+        if ($match->user_id !== $user->id) {
+            throw new BusinessRuleException('This is not your match.', 403, 'forbidden');
+        }
+    }
+
+    private function lockOpenRound(User $user, PracticeGame $game, bool $luckyCheck = false): PracticeGame
+    {
+        /** @var PracticeGame $game */
+        $game = PracticeGame::query()->whereKey($game->id)->lockForUpdate()->firstOrFail();
+
+        if ($game->user_id !== $user->id) {
+            throw new BusinessRuleException('This is not your round.', 403, 'forbidden');
+        }
+
+        if ($luckyCheck && $game->lucky_type !== null) {
+            throw new BusinessRuleException('Luck was already declared for this hand.', 409, 'already_declared');
+        }
+
+        if ($game->status !== PracticeGame::ARRANGING || $game->practice_match_id === null) {
+            throw new BusinessRuleException('This round is already finished.', 409, 'already_submitted');
+        }
+
+        return $game;
+    }
+
+    /**
+     * Each non-banker seat's bet (Gold points); the banker has none. Rounds
+     * stored before per-seat bets fall back to the single table bet.
+     *
+     * @return array<int, int>
+     */
+    public static function seatBets(PracticeGame $game): array
+    {
+        if (is_array($game->bets)) {
+            $out = [];
+            foreach ($game->bets as $seat => $bet) {
+                $out[(int) $seat] = (int) $bet;
+            }
+
+            return $out;
+        }
+
+        return array_fill_keys(array_values(array_diff(self::SEATS, [(int) $game->banker])), (int) $game->bet);
+    }
+
+    /**
+     * A bot's bet before the deal (it cannot see its cards yet): one of the
+     * tier's options, usually the lower ones.
+     *
+     * @param  list<int>  $options
+     */
+    private static function botBet(array $options): int
+    {
+        sort($options);
+        $roll = random_int(1, 100);
+
+        return $options[$roll <= 50 ? 0 : ($roll <= 85 ? min(1, count($options) - 1) : count($options) - 1)];
+    }
+
+    /**
+     * Lower the largest bets one option at a time until reserve_multiplier ×
+     * their total fits $gold (or every bet is already the minimum).
+     *
+     * @param  array<int, int>  $bets
+     * @param  list<int>  $options
+     * @return array<int, int>
+     */
+    private static function fitBets(array $bets, array $options, int $gold): array
+    {
+        sort($options);
+        $multiplier = (int) config('pusoy.banker.reserve_multiplier', 2);
+
+        while ($multiplier * array_sum($bets) > $gold) {
+            arsort($bets);
+            $seat = array_key_first($bets);
+            $index = array_search($bets[$seat], $options, true);
+
+            if ($index === false || $index === 0) {
+                break;
+            }
+            $bets[$seat] = $options[$index - 1];
+        }
+        ksort($bets);
+
+        return $bets;
     }
 
     /**
@@ -161,116 +583,138 @@ class PracticeService
         return AutoArranger::arrange($cards);
     }
 
-    /**
-     * @param  mixed  $front
-     * @param  mixed  $middle
-     * @param  mixed  $back
-     */
-    public function submit(User $user, PracticeGame $game, $front, $middle, $back, bool $allowFoul = true): PracticeGame
+    // ------------------------------------------------------------------ presentation
+
+    private static function gold(int $minor): int
     {
-        return DB::transaction(function () use ($user, $game, $front, $middle, $back, $allowFoul) {
-            /** @var PracticeGame $game */
-            $game = PracticeGame::query()->whereKey($game->id)->lockForUpdate()->firstOrFail();
+        return intdiv($minor, Points::SCALE);
+    }
 
-            if ($game->user_id !== $user->id) {
-                throw new BusinessRuleException('This is not your practice game.', 403, 'forbidden');
-            }
-
-            if ($game->status !== PracticeGame::ARRANGING) {
-                throw new BusinessRuleException('This practice game is already finished.', 409, 'already_submitted');
-            }
-
-            try {
-                $mine = ArrangementValidator::build($game->hands[self::PLAYER_SEAT], $front, $middle, $back);
-            } catch (InvalidArrangementException $e) {
-                throw new BusinessRuleException($e->getMessage(), 422, 'invalid_arrangement');
-            }
-
-            if (! $allowFoul && $mine->isFoul()) {
-                throw new BusinessRuleException('Foul: Back must be at least as strong as Middle, and Middle at least as strong as Front.', 422, 'foul');
-            }
-
-            $arrangements = [self::PLAYER_SEAT => $mine];
-            $stored = $game->arrangements;
-            $stored[self::PLAYER_SEAT] = ['front' => $mine->front, 'middle' => $mine->middle, 'back' => $mine->back];
-
-            foreach (array_keys(self::BOTS) as $seat) {
-                $arrangements[$seat] = new Arrangement($stored[$seat]['front'], $stored[$seat]['middle'], $stored[$seat]['back']);
-            }
-
-            $result = (new Scorer((int) config('pusoy.game.score_win', 1), (int) config('pusoy.game.score_loss', -1), (int) config('pusoy.game.score_tie', 0)))->score($arrangements);
-
-            $vsYou = [];
-            foreach ($result['comparisons'] as $row) {
-                if ($row['opponent'] === self::PLAYER_SEAT) {
-                    // Outcome from the bot's side; flip so it reads "you vs bot".
-                    $vsYou[$row['player']][$row['position']] = -$row['outcome'];
-                }
-            }
-
-            $game->forceFill([
-                'status' => PracticeGame::COMPLETED,
-                'arrangements' => $stored,
-                'results' => [
-                    'totals' => $result['totals'],
-                    'fouls' => $result['fouls'],
-                    'placements' => array_map(fn (int $t) => 1 + count(array_filter($result['totals'], fn (int $o) => $o > $t)), $result['totals']),
-                    'vs_you' => $vsYou,
-                ],
-                'completed_at' => now(),
-            ])->save();
-
-            return $game;
-        });
+    public static function seatName(int $seat): string
+    {
+        return $seat === self::PLAYER_SEAT ? 'You' : (self::BOTS[$seat] ?? 'Bot');
     }
 
     /**
-     * What the owner may see: their own cards always; bots' hands, scores and
-     * the server seed only once the game is completed.
+     * One round as its owner may see it: their own cards always; the bots'
+     * hands, results and the seed only once the round is settled.
      *
      * @return array<string, mixed>
      */
     public function present(PracticeGame $game): array
     {
         $done = $game->status === PracticeGame::COMPLETED;
+        $res = $game->results ?? [];
+        $bankerSeat = (int) $game->banker;
         $players = [];
+        $bets = self::seatBets($game);
 
-        foreach ([self::PLAYER_SEAT => 'You'] + self::BOTS as $seat => $name) {
-            $row = ['seat' => $seat, 'name' => $name, 'is_you' => $seat === self::PLAYER_SEAT];
+        foreach (self::SEATS as $seat) {
+            $row = ['seat' => $seat, 'name' => self::seatName($seat), 'is_you' => $seat === self::PLAYER_SEAT, 'is_banker' => $seat === $bankerSeat, 'bet' => $bets[$seat] ?? 0];
 
             if ($done) {
                 $a = $game->arrangements[$seat];
+                $s = $res['seats'][$seat];
                 $row += [
                     'front' => $a['front'],
                     'middle' => $a['middle'],
                     'back' => $a['back'],
                     'labels' => (new Arrangement($a['front'], $a['middle'], $a['back']))->labels(),
-                    'is_foul' => (bool) $game->results['fouls'][$seat],
-                    'score' => (int) $game->results['totals'][$seat],
-                    'placement' => (int) $game->results['placements'][$seat],
-                    'vs_you' => $game->results['vs_you'][$seat] ?? null,
-                    // Score × bet, for display only: nothing is charged or paid.
-                    'stake_result' => (int) $game->results['totals'][$seat] * (int) $game->bet,
+                    'is_foul' => (bool) $s['is_foul'],
+                    'lucky' => $s['lucky'] ? ['type' => $s['lucky'], 'label' => LuckyHand::LABELS[$s['lucky']] ?? $s['lucky']] : null,
+                    // Lanes vs the banker from this seat's side: 1 win, -1 loss (null for the banker / Lucky Hands).
+                    'lanes' => $s['lanes'],
+                    'multiple' => $s['multiple'],
+                    'gold' => self::gold((int) $s['net']),
                 ];
             }
 
             $players[] = $row;
         }
 
+        $match = $game->match;
+        $me = $res['seats'][self::PLAYER_SEAT] ?? null;
+
         return [
             'id' => $game->id,
             'status' => $game->status,
-            'tier' => [
-                'key' => $game->tier,
-                'name' => config("pusoy.practice.tiers.{$game->tier}.name", ucfirst((string) $game->tier)),
-            ],
+            'round' => (int) $game->round_number,
+            'rounds_total' => (int) ($match->rounds_total ?? 12),
+            'banker' => $bankerSeat,
+            'banker_name' => self::seatName($bankerSeat),
+            'tier' => ['key' => $game->tier, 'name' => config("pusoy.practice.tiers.{$game->tier}.name", ucfirst((string) $game->tier))],
+            // Your bet (0 when you bank: the banker places no bet and covers the others).
             'bet' => (int) $game->bet,
+            'covered' => (int) $game->banker === self::PLAYER_SEAT ? array_sum(self::seatBets($game)) : 0,
+            'wagering' => (bool) ($match->wagering ?? false),
+            'reserved' => self::gold((int) $game->player_reserve),
             'cards' => $game->hands[self::PLAYER_SEAT],
             'players' => $players,
+            'result' => $done && $me ? [
+                'lanes' => $me['lanes'],
+                // You submitted a misplaced (fouled) hand: the 2 × bet penalty was applied.
+                'misplaced' => (bool) $me['is_foul'],
+                'multiple' => $me['multiple'],
+                'gold' => self::gold((int) $res['player_net']),
+            ] : null,
+            'lucky' => $game->lucky_type ? [
+                'type' => $game->lucky_type,
+                'label' => LuckyHand::LABELS[$game->lucky_type] ?? $game->lucky_type,
+                'multiplier' => (int) config('pusoy.banker.lucky_multiplier', 2),
+            ] : null,
             'deck_commitment' => $game->deck_commitment,
             'server_seed' => $done ? $game->server_seed : null,
+            // Misplaced hands may be submitted; they pay the 2 × bet penalty.
             'allow_foul' => true,
             'completed_at' => $game->completed_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function presentMatch(PracticeMatch $match): array
+    {
+        $rounds = $match->rounds()->get();
+        $open = $rounds->firstWhere('status', PracticeGame::ARRANGING);
+        $next = $match->rounds_played + 1;
+        $nextBanker = $match->status === PracticeMatch::ACTIVE && ! $open ? PracticeMatch::bankerFor($next) : null;
+        $totals = array_fill_keys(self::SEATS, 0);
+
+        $history = $rounds->where('status', PracticeGame::COMPLETED)->values()->map(function (PracticeGame $g) use (&$totals) {
+            foreach ($g->results['seats'] ?? [] as $seat => $s) {
+                $totals[(int) $seat] += (int) $s['net'];
+            }
+            $me = $g->results['seats'][self::PLAYER_SEAT] ?? [];
+
+            return [
+                'round' => (int) $g->round_number,
+                'banker' => (int) $g->banker,
+                'banker_name' => self::seatName((int) $g->banker),
+                'bet' => (int) $g->bet,
+                'covered' => (int) $g->banker === self::PLAYER_SEAT ? array_sum(self::seatBets($g)) : 0,
+                'multiple' => $me['multiple'] ?? null,
+                'gold' => self::gold((int) ($g->results['player_net'] ?? 0)),
+                'lucky' => $me['lucky'] ?? null,
+            ];
+        })->all();
+
+        return [
+            'id' => $match->id,
+            'status' => $match->status,
+            'tier' => ['key' => $match->tier, 'name' => config("pusoy.practice.tiers.{$match->tier}.name", ucfirst($match->tier))],
+            'rounds_total' => $match->rounds_total,
+            'rounds_played' => $match->rounds_played,
+            'next_round' => $nextBanker ? $next : null,
+            'next_banker' => $nextBanker,
+            'next_banker_name' => $nextBanker ? self::seatName($nextBanker) : null,
+            'wagering' => $match->wagering,
+            'gold' => self::gold($match->player_net),
+            // Running Gold per seat (you and the three bots).
+            'standings' => array_map(fn (int $seat) => ['seat' => $seat, 'name' => self::seatName($seat), 'gold' => self::gold($totals[$seat])], self::SEATS),
+            'history' => $history,
+            'current' => $open ? $this->present($open) : null,
+            'completed_at' => $match->completed_at?->toIso8601String(),
         ];
     }
 }

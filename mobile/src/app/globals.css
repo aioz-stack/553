@@ -470,3 +470,28 @@ body {
 @keyframes sp-rise { from { transform: translateY(40px) scale(.92); opacity: 0; } to { opacity: 1; } }
 @keyframes sp-sel-pulse { 0%, 100% { opacity: .75; } 50% { opacity: 1; } }
 :root[data-motion='reduce'] [class*='sp-'], :root[data-motion='reduce'] .sp-card-selected::after { animation: none !important; transition: none !important; }
+
+/*
+ * Single Player table (practice/page.tsx, table/TableArt.tsx).
+ */
+.tb-swing { animation: tb-swing 4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 0; }
+.tb-sway-soft { animation: tb-sway-soft 5s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+.tb-petal { animation: tb-petal 9s linear infinite; transform-box: fill-box; }
+.tb-flip { animation: tb-flip .45s cubic-bezier(.2,1.2,.4,1) backwards; }
+.tb-chip { transition: transform .2s cubic-bezier(.2,1.5,.4,1), filter .2s; filter: drop-shadow(0 6px 0 rgb(0 0 0 / .35)); }
+.tb-chip:not(:disabled):hover { transform: translateY(-8px) rotate(-6deg); }
+.tb-chip:not(:disabled):active { transform: scale(.92); }
+.tb-chip-on { transform: translateY(-12px); filter: drop-shadow(0 0 16px rgb(255 225 77 / .95)) drop-shadow(0 6px 0 rgb(0 0 0 / .35)); }
+.tb-winner { animation: tb-winner 1.2s ease-in-out infinite; }
+@keyframes tb-swing { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes tb-sway-soft { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes tb-petal { 0% { transform: translate(0, -40px) rotate(0); opacity: 0; } 10% { opacity: .9; } 100% { transform: translate(120px, 260px) rotate(320deg); opacity: 0; } }
+@keyframes tb-flip { from { transform: rotateY(90deg) scale(.8); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tb-winner { 0%, 100% { box-shadow: 0 0 0 0 rgb(255 225 77 / .0), 0 6px 0 #7a3e00; } 50% { box-shadow: 0 0 34px 10px rgb(255 225 77 / .9), 0 6px 0 #7a3e00; } }
+:root[data-motion='reduce'] [class*='tb-'] { animation: none !important; transition: none !important; }
+.tb-clover { animation: tb-clover 2.4s ease-in-out infinite; }
+.tb-clover-burst { animation: tb-clover-burst .9s cubic-bezier(.2,1.6,.4,1) both; display: inline-block; filter: drop-shadow(0 0 24px rgb(166 255 122 / .9)); }
+.tb-sad { animation: tb-sad 1.2s ease-in-out both; display: inline-block; }
+@keyframes tb-clover { 0%, 100% { transform: rotate(-8deg) scale(1); } 50% { transform: rotate(8deg) scale(1.06); } }
+@keyframes tb-clover-burst { 0% { transform: scale(.2) rotate(-180deg); opacity: 0; } 70% { transform: scale(1.15) rotate(10deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+@keyframes tb-sad { 0% { transform: translateY(-30px); opacity: 0; } 40% { transform: translateY(0); opacity: 1; } 55% { transform: rotate(-10deg); } 70% { transform: rotate(8deg); } 85% { transform: rotate(-4deg); } 100% { transform: rotate(0); } }

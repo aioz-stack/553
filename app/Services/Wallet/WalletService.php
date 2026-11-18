@@ -137,11 +137,16 @@ class WalletService
         foreach (Currency::cases() as $currency) {
             $held = (int) WalletHold::query()->where('currency', $currency->value)->where('status', HoldStatus::Held->value)->sum('amount');
             $banks = (int) GameRoom::query()->where('currency', $currency->value)->sum('carry_over_amount');
+            // Single Player Round Bank reserves (player + house) are CP only.
+            $practice = $currency === Currency::CP
+                ? (int) DB::table('practice_games')->where('reserve_status', 'held')->sum(DB::raw('player_reserve + house_reserve'))
+                : 0;
+            $expected = $held + $banks + $practice;
             $balance = (int) Wallet::query()->where('system_key', WalletType::Escrow->value.':'.$currency->value)->value('balance');
-            $escrow[$currency->value] = ['balance' => $balance, 'expected' => $held + $banks];
+            $escrow[$currency->value] = ['balance' => $balance, 'expected' => $expected];
 
-            if ($balance !== $held + $banks) {
-                $mismatches[] = ['escrow' => $currency->value, 'balance' => $balance, 'expected' => $held + $banks];
+            if ($balance !== $expected) {
+                $mismatches[] = ['escrow' => $currency->value, 'balance' => $balance, 'expected' => $expected];
             }
         }
 

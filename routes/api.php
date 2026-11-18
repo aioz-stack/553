@@ -84,11 +84,16 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('games/{session}/bet', [GameController::class, 'bet'])->middleware('throttle:game-actions');
         Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
 
-        // Single Player practice vs server bots (no currency)
+        // Single Player: Round Bank Pusoy vs one bot (12 rounds, alternating banker)
         Route::get('practice/tiers', [PracticeController::class, 'tiers']);
-        Route::post('practice', [PracticeController::class, 'store'])->middleware('throttle:game-actions');
+        Route::post('practice/matches', [PracticeController::class, 'startMatch'])->middleware('throttle:game-actions');
+        Route::get('practice/matches/current', [PracticeController::class, 'currentMatch']);
+        Route::get('practice/matches/{practiceMatch}', [PracticeController::class, 'showMatch']);
+        Route::post('practice/matches/{practiceMatch}/deal', [PracticeController::class, 'deal'])->middleware('throttle:game-actions');
         Route::get('practice/{practiceGame}', [PracticeController::class, 'show']);
         Route::post('practice/{practiceGame}/preview', [PracticeController::class, 'preview']);
+        Route::post('practice/{practiceGame}/suggest', [PracticeController::class, 'suggest']);
+        Route::post('practice/{practiceGame}/lucky', [PracticeController::class, 'lucky'])->middleware('throttle:game-actions');
         Route::post('practice/{practiceGame}/submit', [PracticeController::class, 'submit'])->middleware('throttle:game-actions');
 
         // Friends

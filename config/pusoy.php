@@ -52,14 +52,19 @@ return [
     ],
 
     /*
-    | Single Player difficulty tiers (player vs three server bots).
+    | Single Player — Round Bank, you + 3 bots (App\Services\Game\PracticeService).
+    | rounds: rounds per match; the banker rotates seat by seat (you first).
     | min_gold: CP balance (in points) the player must hold to pick the tier.
-    | bets: the stakes offered for the tier. Single Player never moves coins:
-    | the CP balance is only checked, and the bet scales the displayed result.
-    | strong_bots: how many of the three bots arrange with the full
-    | AutoArranger; the rest arrange casually (a random non-fouled hand).
+    | bets: the bet options offered before every round (Gold points).
+    | Settlement follows the 'banker' section below. Gold (CP) only moves when
+    | features.cp_wagering is on; otherwise rounds settle as practice Gold.
+    | strong_bots (0-3): how many of the 3 bots arrange with BotArranger (best
+    | balanced valid arrangement); the others arrange casually (non-fouled).
     */
     'practice' => [
+        'rounds' => (int) env('SINGLE_PLAYER_ROUNDS', 12),
+        // Banker advantage: an identical lane goes to the banker (no ties).
+        'banker_wins_ties' => true,
         'tiers' => [
             'beginner' => ['name' => 'Beginner', 'stars' => 1, 'crown' => false, 'min_gold' => 1_000, 'bets' => [50, 100, 500], 'strong_bots' => 0],
             'intermediate' => ['name' => 'Intermediate', 'stars' => 2, 'crown' => false, 'min_gold' => 10_000, 'bets' => [500, 1_000, 5_000], 'strong_bots' => 1],

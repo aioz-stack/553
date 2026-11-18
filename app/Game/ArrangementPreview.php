@@ -3,15 +3,16 @@
 namespace App\Game;
 
 /**
- * Evaluates a partial or full arrangement for UI hints (hand names and a
- * foul warning). Cards not in the dealt hand are ignored. Pure; stores nothing.
+ * Evaluates a partial or full arrangement for UI hints (hand names, a foul
+ * warning and, per lane, whether it is in valid order with its neighbours).
+ * Cards not in the dealt hand are ignored. Pure; stores nothing.
  */
 final class ArrangementPreview
 {
     /**
      * @param  list<string>  $dealt
      * @param  array{front?: list<string>, middle?: list<string>, back?: list<string>}  $rows
-     * @return array{labels: array{front: ?string, middle: ?string, back: ?string}, complete: bool, is_foul: bool}
+     * @return array{labels: array{front: ?string, middle: ?string, back: ?string}, complete: bool, is_foul: bool, order: array{front: ?bool, middle: ?bool, back: ?bool}}
      */
     public static function evaluate(array $dealt, array $rows): array
     {
@@ -25,8 +26,20 @@ final class ArrangementPreview
         }
 
         $complete = ! in_array(null, $values, true);
-        $foul = $complete && ($values['back']->compare($values['middle']) < 0 || $values['middle']->compare($values['front']) < 0);
+        $midOverFront = $values['middle'] && $values['front'] ? $values['middle']->compare($values['front']) >= 0 : null;
+        $backOverMid = $values['back'] && $values['middle'] ? $values['back']->compare($values['middle']) >= 0 : null;
+        $foul = $complete && (! $backOverMid || ! $midOverFront);
 
-        return ['labels' => $labels, 'complete' => $complete, 'is_foul' => $foul];
+        return [
+            'labels' => $labels,
+            'complete' => $complete,
+            'is_foul' => $foul,
+            // true = in order with its neighbours, false = out of order, null = not enough cards yet.
+            'order' => [
+                'front' => $midOverFront,
+                'middle' => $midOverFront === null || $backOverMid === null ? null : ($midOverFront && $backOverMid),
+                'back' => $backOverMid,
+            ],
+        ];
     }
 }

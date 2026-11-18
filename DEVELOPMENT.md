@@ -1,6 +1,6 @@
 # Pusoy 13 Platform — Development Guide
 
-Last updated: 2026-11-18 (Single Player difficulty picker: tiers, bets, backend validation)
+Last updated: 2026-11-19 (Single Player: Round Bank with you + 3 bots, rotating banker, banker advantage)
 
 This repository contains the **Laravel web application + shared backend** (repo root) and the
 **Next.js + Capacitor mobile application** (`mobile/`). Laravel is the single source of truth for
@@ -362,42 +362,77 @@ Single Player, Multiplayer, Sound ON/OFF, Settings, Logout.
 start the `mobile-local` entry in `.claude/launch.json` (it overrides `NEXT_PUBLIC_*` with the
 local API/Reverb values), or set those variables yourself before `npm run dev`.
 
-### Single Player (practice vs bots)
+### Single Player — Round Bank Pusoy: you + 3 bots
 
-The home's **Single Player** tile opens the **difficulty picker**
-(`mobile/src/components/SinglePlayerPicker.tsx`, an overlay on the landscape home): four tiers —
-Beginner, Intermediate, Advance, Mastery — each with a minimum gold and three bet options, from
-`config('pusoy.practice.tiers')` via `GET practice/tiers` (which also returns `eligible` per tier).
+The home's **Single Player** tile opens the difficulty picker (`mobile/src/components/SinglePlayerPicker.tsx`):
+Beginner, Intermediate, Advance, Mastery from `config('pusoy.practice.tiers')` via `GET practice/tiers`
+(min gold, bet options, `eligible`). Tapping an affordable card goes to `/practice/?tier=…`; a tier the
+player cannot afford shows a "Not enough gold" notification. Bets are information only on the picker.
 
-- Each **difficulty card is the control**: tapping one checks the player's gold (`eligible` from
-  the server); if it is enough the card glows ("LET'S GO!") and the game starts automatically after
-  ~0.45 s, ignoring further taps. If not, the card shakes and a notification says how much gold is
-  needed; nothing starts. There are no Back / Continue buttons; Close (✕) and Escape return home.
-  **Bet amounts are information only** (not selectable). The chosen tier is kept in
-  `sessionStorage` (`pusoy.singlePlayer`).
-- Tap → `/practice/?tier=…` (`mobile/src/app/practice/page.tsx`), which calls
-  `POST practice {tier, request_id}` (`bet` optional; the server uses the tier's lowest bet).
-  Without a tier it sends you to `/home/?single=1` (picker open). "Change level" does the same.
-- The **backend validates** the tier, that the bet belongs to it, and that the player's **CP balance
-  ≥ min gold** (`invalid_tier` / `invalid_bet` / `insufficient_gold`, 422). Starts are serialised per
-  player (user row lock) and a repeated `request_id` returns the same deal (unique
-  `practice_games.user_id + request_id`), so double taps and retries never create duplicate sessions.
-- Tier and bet are stored on `practice_games` (`tier`, `bet`). Difficulty sets how many of the
-  three bots use the full `AutoArranger` (`strong_bots`: 0/1/2/3); the others play a random
-  non-fouled arrangement (`PracticeService::casualArrange`).
+**Rules** (`App\Services\Game\PracticeService`, `PracticeController`):
 
-Service `App\Services\Game\PracticeService`, table `practice_games`, API `GET practice/tiers`,
-`POST practice`, `GET practice/{id}`, `POST practice/{id}/preview|submit`.
+- **Four seats:** seat 1 = you, seats 2-4 = **LuckyBot, CardBot, AceBot**, added automatically to every
+  match. A **match** (`practice_matches`) is **12 rounds** (`pusoy.practice.rounds`).
+- **Banker rotation:** seat by seat — round 1 you, 2 LuckyBot, 3 CardBot, 4 AceBot, 5 you, … (each seat
+  banks 3 times; `PracticeMatch::bankerFor`). Shown as "Round N / 12 · X banks" and a BANKER badge.
+- **Betting:** the **banker places no bet** — it is the counterparty and covers every other seat's bet.
+  Each non-banker bets its own amount (`practice_games.bets`, seat => bet): **you** with a chip from the
+  tier's options (when you bank there are no chips, just **Deal**, and any `bet` sent is ignored), **each
+  bot** with its own pick (mostly the lower options). With Gold wagering on and you banking, the bots step
+  their bets down so 2 × their total fits your balance. The round shows each seat's bet and, when you bank,
+  `covered` (the total you cover). `POST practice/matches/{id}/deal {bet?, request_id}`; a repeated
+  `request_id` returns the same round, a second deal while one is open is 409 `round_in_progress`, after
+  round 12 409 `match_over`.
+- **Deal:** all 52 cards, 13 per seat (rounds are `practice_games` rows: `round_number`, `banker` = seat).
+- **Bots:** arranged by the server at deal time; the first `strong_bots` bots of the tier (0 Beginner …
+  3 Mastery) use **`App\Game\BotArranger`**, which searches many valid arrangements (top Backs × every Middle
+  of the rest) and keeps the best-balanced one by an estimated lane-win score — never fouls and is never
+  worse than the greedy `AutoArranger`; the others play a random non-fouled hand. Bots declare their own
+  Lucky Hands. Their cards stay hidden until settlement.
+- **You** arrange Front 3 / Middle 5 / Back 5. **A misplaced (fouled) hand is accepted** and penalised in
+  settlement: it loses every lane, so as a player you pay **2 × bet** to the banker, and as banker you pay
+  **2 × bet to every opponent** (both misplaced → the banker still wins, per the banker advantage). The
+  result carries `misplaced: true`; one settlement per round, so no double penalty.
+- **Settlement** — `App\Game\Banker\BankerRound` with **banker advantage** (`pusoy.practice.banker_wins_ties`):
+  each non-banker's Front / Middle / Back is compared with the banker's; **an identical lane goes to the
+  banker** (no ties). Win 3 = +2 × bet, win 2 = +1 ×, lose 2 = −1 ×, lose 3 = −2 × (`pusoy.banker.settlement`).
+  A Lucky Hand (Six Pairs / Three Flushes / Three Straights) replaces the comparison and pays 2 × bet
+  (both lucky = 0). Bot-vs-bank results between bots are computed too (standings), every round is
+  zero-sum, and each round settles once (row lock + status).
+- **Gold (CP):** only when `FEATURE_CP_WAGERING=true` at match start (`practice_matches.wagering`). The bots
+  are house players; only your result moves Gold. Each deal reserves your worst case — 2 × your bet, or
+  2 × the bots' total when you bank — from your CP wallet **and** the same from the house
+  (platform CP wallet) into escrow (`GAME_ENTRY`, keys `sp:{round}:reserve:*`); settlement pays both out
+  of escrow (`GAME_REWARD` / `GAME_REFUND`, keys `sp:{round}:payout:*`) — always covered, zero-sum,
+  idempotent. Abandoning a match releases open reserves; `WalletService::reconcile()` counts held reserves.
+  The house wallet must be funded (422 `house_insufficient`). **With the flag off (default)** no wallet is
+  touched; rounds settle as practice Gold ("Practice Gold — not credited").
+- API: `GET practice/tiers`, `POST practice/matches {tier}` (abandons any active match),
+  `GET practice/matches/current`, `GET practice/matches/{id}` (history, standings per seat, running gold),
+  `POST practice/matches/{id}/deal`, `GET practice/{round}`, `POST practice/{round}/preview|suggest|lucky|submit`.
+  Owner-only (404 for others). Migration `2026_11_19_110000` closed free-play matches from the brief
+  one-bot format.
 
-- Same deck, shuffle commitment (seed revealed after submit), arrangement validation, foul rule
-  and pairwise ±1 zero-sum scoring as a classic table. Bots arrange at deal time; their cards are
-  never sent before you submit.
-- **No currency moves:** the CP balance is only *read* for the tier minimum. Nothing writes wallets,
-  the ledger, XP, leaderboards or commissions. The bet only scales the displayed result
-  (`stake_result` = score × bet, labelled "no coins are charged"). Settling bets against bots
-  would be house-banked play and stays out until the cash/CP wagering flags and approvals allow it.
-- No timer; starting a new practice marks an unfinished one `abandoned`. Owner-only (404 for others).
-- **Multiplayer** tile → `/lobby/`: Round Bank and Banker Mode cards on top, classic tables below.
+#### Single Player table (`mobile/src/app/practice/page.tsx`)
+
+Landscape table on the 1600×900 `LandscapeStage` (rotates itself on portrait browsers; the native app
+locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/table/TableArt.tsx`.
+
+- Seats: LuckyBot left, CardBot top, AceBot right, you at the bottom; the banker's tile is blue with a
+  BANKER badge. Top right: Bet pill, round / banker, tier, match Gold and CP balance.
+- Betting: tap a chip to bet and deal; after each round the chips return for the next round's bet.
+  Resuming: an open round of the active match at the same tier continues.
+- Arranging: the **arrangement popup** (`components/table/LuckPopup.tsx`, also Declared Luck) opens after
+  each deal — swap cards, ⇅ Middle/Back, ✓/✗ order marks. **READY** confirms and **locks** the lanes on
+  the table (no card can move; "Cards locked" banner). **Reset** unlocks and reopens the popup with the
+  current lanes, so you can rearrange and press READY again. Closing the popup with ✕ leaves the table
+  editable (tap or drag). **Submit is never disabled**: an incomplete hand gets a "place all 13 cards"
+  hint; a misplaced hand shows a red "2× bet penalty" warning but is submitted. **Autoplay Arrange** and
+  **Sort** bottom-right (Autoplay does not override locked lanes).
+- Reveal: every bot's hand at its seat with WIN / LOSS per lane against the banker, its Gold for the
+  round (and Lucky Hand), your hand and your result ("You banked · beat 2 of 3", "2-1 vs CardBot · 1× bet").
+  After round 12 a **Match results** panel shows the standings of all four players and the 12-round history.
+- Back (asks during a round; the match is kept), Settings (sound, autoplay), ? (rules).
 
 ### Local testing with bots
 
@@ -453,7 +488,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
-| Practice | `GET practice/tiers`, `POST practice` (`tier`, `bet`, `request_id`; new deal vs 3 bots), `GET practice/{id}`, `POST practice/{id}/preview`, `practice/{id}/submit` — no currency |
+| Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}` — Round Bank, you + 3 bots; CP only with `FEATURE_CP_WAGERING` |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
@@ -470,7 +505,7 @@ Spec tables and where they live: `users`, `player_profiles`, `user_devices`, `ro
 `game_results`, `game_hand_results`, `wallets`, `wallet_transactions`, `wallet_holds`,
 `wallet_allocations`, `wallet_adjustments`, `game_settlements`, `game_payouts`, `platform_fees`,
 `notifications`, `game_invitations`, `audit_logs`, `system_settings`, `personal_access_tokens`,
-`practice_games` (Single Player, no currency).
+`practice_matches`, `practice_games` (Single Player Round Bank: matches and rounds).
 `agent_wallets` / `agent_wallet_transactions` are intentionally **not** separate tables (see §5).
 All timestamps are stored in UTC and shown in the viewer's local time zone.
 

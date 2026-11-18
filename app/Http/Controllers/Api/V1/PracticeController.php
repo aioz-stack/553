@@ -3,36 +3,69 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Game\ArrangementPreview;
+use App\Game\AutoArranger;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitArrangementRequest;
 use App\Models\PracticeGame;
+use App\Models\PracticeMatch;
 use App\Services\Game\PracticeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * Single Player practice vs three server bots. No currency moves: the CP
- * balance is only read to check a tier's minimum gold.
- * Only the owner can see or play a practice game (others get 404).
+ * Single Player — Round Bank Pusoy vs one bot (12 rounds, alternating
+ * banker). Matches and rounds are private to their owner (others get 404).
  */
 class PracticeController extends Controller
 {
-    /** Difficulty levels (tier, minimum gold, bet options) and whether the player qualifies. */
+    /** Difficulty levels (minimum gold, bet options) and whether the player qualifies. */
     public function tiers(Request $request, PracticeService $practice): JsonResponse
     {
-        return response()->json(['data' => $practice->tiers($request->user())]);
+        return response()->json([
+            'data' => $practice->tiers($request->user()),
+            'meta' => ['rounds' => (int) config('pusoy.practice.rounds', 12), 'wagering' => (bool) config('pusoy.features.cp_wagering', false)],
+        ]);
     }
 
-    public function store(Request $request, PracticeService $practice): JsonResponse
+    /** Start a new 12-round match at a difficulty level. */
+    public function startMatch(Request $request, PracticeService $practice): JsonResponse
     {
         $data = $request->validate([
             'tier' => ['required', 'string', Rule::in(array_keys((array) config('pusoy.practice.tiers', [])))],
+        ]);
+
+        $match = $practice->startMatch($request->user(), $data['tier']);
+
+        return response()->json(['data' => $practice->presentMatch($match)], 201);
+    }
+
+    /** The player's active match (to resume), or null. */
+    public function currentMatch(Request $request, PracticeService $practice): JsonResponse
+    {
+        $match = $practice->activeMatch($request->user());
+
+        return response()->json(['data' => $match ? $practice->presentMatch($match) : null]);
+    }
+
+    public function showMatch(Request $request, PracticeMatch $practiceMatch, PracticeService $practice): JsonResponse
+    {
+        abort_unless($practiceMatch->user_id === $request->user()->id, 404);
+
+        return response()->json(['data' => $practice->presentMatch($practiceMatch)]);
+    }
+
+    /** Place the round's bet and deal the next round. */
+    public function deal(Request $request, PracticeMatch $practiceMatch, PracticeService $practice): JsonResponse
+    {
+        abort_unless($practiceMatch->user_id === $request->user()->id, 404);
+
+        $data = $request->validate([
             'bet' => ['nullable', 'integer', 'min:1'],
             'request_id' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9-]+$/'],
         ]);
 
-        $game = $practice->start($request->user(), $data['tier'], isset($data['bet']) ? (int) $data['bet'] : null, $data['request_id'] ?? null);
+        $game = $practice->deal($request->user(), $practiceMatch, isset($data['bet']) ? (int) $data['bet'] : null, $data['request_id'] ?? null);
 
         return response()->json(['data' => $practice->present($game)], $game->wasRecentlyCreated ? 201 : 200);
     }
@@ -57,13 +90,34 @@ class PracticeController extends Controller
         return response()->json(['data' => ArrangementPreview::evaluate($practiceGame->hands[PracticeService::PLAYER_SEAT], $data)]);
     }
 
+    /** "Autoplay Arrange": the server's non-fouling arrangement of the player's 13 cards. Nothing is submitted. */
+    public function suggest(Request $request, PracticeGame $practiceGame): JsonResponse
+    {
+        $this->owned($request, $practiceGame);
+        abort_unless($practiceGame->status === PracticeGame::ARRANGING, 409, 'This round is already finished.');
+
+        $a = AutoArranger::arrange($practiceGame->hands[PracticeService::PLAYER_SEAT]);
+
+        return response()->json(['data' => ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back, 'labels' => $a->labels()]]);
+    }
+
     public function submit(SubmitArrangementRequest $request, PracticeGame $practiceGame, PracticeService $practice): JsonResponse
     {
         $this->owned($request, $practiceGame);
 
         $game = $practice->submit($request->user(), $practiceGame, $request->input('front'), $request->input('middle'), $request->input('back'));
 
-        return response()->json(['message' => 'Arrangement submitted.', 'data' => $practice->present($game)], 201);
+        return response()->json(['message' => 'Round settled.', 'data' => $practice->present($game)], 201);
+    }
+
+    /** Declared Luck: the server checks the dealt cards; success settles the round. */
+    public function lucky(Request $request, PracticeGame $practiceGame, PracticeService $practice): JsonResponse
+    {
+        $this->owned($request, $practiceGame);
+
+        $game = $practice->declareLucky($request->user(), $practiceGame);
+
+        return response()->json(['message' => 'Declared Luck: '.($game->lucky_type ? \App\Game\LuckyHand::LABELS[$game->lucky_type] : '').'!', 'data' => $practice->present($game)], 201);
     }
 
     private function owned(Request $request, PracticeGame $game): void

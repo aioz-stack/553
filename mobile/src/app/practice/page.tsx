@@ -1,247 +1,1052 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import ArrangeHands from '@/components/ArrangeHands';
-import { Avatar, Confetti, GameButton, GlassCard, Ribbon } from '@/components/game';
-import PlayingCard from '@/components/PlayingCard';
-import { Notice, Screen, Spinner } from '@/components/ui';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { CandyText, GoldCoins } from '@/components/HomeArt';
+import LandscapeStage from '@/components/LandscapeStage';
+import PlayingCard, { sortCards } from '@/components/PlayingCard';
+import LuckPopup from '@/components/table/LuckPopup';
+import { Chip, Clover, Face, LanternRoom, MiniCrest, PokerTable, type FaceKind } from '@/components/table/TableArt';
+import { Screen } from '@/components/ui';
 import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { PICKER_URL, saveSelection, selectionFromUrl, type SinglePlayerSelection } from '@/lib/singlePlayer';
-import { play } from '@/lib/sound';
+import { PICKER_URL, saveSelection, selectionFromUrl, type PracticeTier } from '@/lib/singlePlayer';
+import { play, useSound } from '@/lib/sound';
+import { useBalance } from '@/lib/useBalance';
+import { useLandscapeLock } from '@/lib/useLandscapeLock';
 
 type Lane = 'front' | 'middle' | 'back';
+type Zone = Lane | 'hand';
+type Rows = Record<Lane, string[]>;
 
-export interface PracticePlayer {
+export interface RoundPlayer {
   seat: number;
   name: string;
   is_you: boolean;
+  is_banker: boolean;
+  /** This seat's bet (0 for the banker). */
+  bet: number;
   front?: string[];
   middle?: string[];
   back?: string[];
   labels?: Record<Lane, string>;
   is_foul?: boolean;
-  score?: number;
-  placement?: number;
-  vs_you?: Record<Lane, number> | null;
-  stake_result?: number;
+  lucky?: { type: string; label: string } | null;
+  /** This seat's lanes vs the banker (1 win / -1 loss); null for the banker or when a Lucky Hand decided. */
+  lanes?: Record<Lane, number> | null;
+  multiple?: number | null;
+  gold?: number;
 }
 
-export interface PracticeState {
+export interface RoundState {
   id: number;
   status: 'arranging' | 'completed' | 'abandoned';
+  round: number;
+  rounds_total: number;
+  /** Banker seat: 1 = you, 2-4 = bots. */
+  banker: number;
+  banker_name: string;
   tier: { key: string; name: string };
   bet: number;
+  wagering: boolean;
+  reserved: number;
+  /** When you bank: the total of the other players' bets you cover. */
+  covered?: number;
   cards: string[];
-  players: PracticePlayer[];
+  players: RoundPlayer[];
+  /** Your result: lanes vs the banker (null when you bank or a Lucky Hand decided), the bet multiple, Gold won/lost. */
+  result: { lanes: Record<Lane, number> | null; multiple: number | null; gold: number; misplaced?: boolean } | null;
+  lucky?: { type: string; label: string; multiplier: number } | null;
   deck_commitment: string;
   server_seed: string | null;
   allow_foul: boolean;
 }
 
+export interface MatchState {
+  id: number;
+  status: 'active' | 'completed' | 'abandoned';
+  tier: { key: string; name: string };
+  rounds_total: number;
+  rounds_played: number;
+  next_round: number | null;
+  next_banker: number | null;
+  next_banker_name: string | null;
+  wagering: boolean;
+  gold: number;
+  standings: Array<{ seat: number; name: string; gold: number }>;
+  history: Array<{ round: number; banker: number; banker_name: string; bet: number; covered?: number; multiple: number | null; gold: number; lucky: string | null }>;
+  current: RoundState | null;
+}
+
 const LANES: Lane[] = ['front', 'middle', 'back'];
+const SIZE: Record<Lane, number> = { front: 3, middle: 5, back: 5 };
+const EMPTY: Rows = { front: [], middle: [], back: [] };
+const CHIP_COLORS = ['#1f6fe0', '#14a046', '#e0262f'];
+const AUTOPLAY_KEY = 'pusoy.autoplayArrange';
+const BOTS: Record<number, string> = { 2: 'LuckyBot', 3: 'CardBot', 4: 'AceBot' };
+
+/** Where each bot sits on the 1600×900 stage, its look, where its face-down cards and revealed hand go. */
+const SEATS: Record<number, { x: number; y: number; face: FaceKind; stack: { x: number; y: number }; reveal: { x: number; y: number }; horizontal?: boolean }> = {
+  2: { x: 36, y: 380, face: 'shades', stack: { x: 66, y: 288 }, reveal: { x: 196, y: 318 } },
+  3: { x: 738, y: 94, face: 'spiky', stack: { x: 890, y: 130 }, reveal: { x: 560, y: 262 }, horizontal: true },
+  4: { x: 1440, y: 380, face: 'beard', stack: { x: 1470, y: 288 }, reveal: { x: 1196, y: 318 } },
+};
+
+const fmt = (n: number) => n.toLocaleString('en-US');
+const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(n))}`;
+const tone = (n: number) => (n > 0 ? 'text-[#7dffa0]' : n < 0 ? 'text-[#ff9aa8]' : 'text-white');
+const bankerFor = (round: number) => ((round - 1) % 4) + 1;
+const banksText = (seat: number) => (seat === 1 ? 'You bank' : `${BOTS[seat]} banks`);
+
+/** The dealt hand laid out 3 / 5 / 5 by rank (highest at the Back), for the Declared Luck popup. */
+function defaultSplit(cards: string[]): Rows {
+  const s = sortCards(cards, 'rank');
+  return { back: s.slice(0, 5), middle: s.slice(5, 10), front: s.slice(10, 13) };
+}
+
+function readAutoplay(): boolean {
+  try {
+    return localStorage.getItem(AUTOPLAY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function RoundButton({ label, onClick, children, x }: { label: string; onClick: () => void; children: ReactNode; x: number }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      style={{ left: x }}
+      className="lx-tile absolute top-[18px] z-20 flex h-[76px] w-[76px] items-center justify-center rounded-full border-[5px] border-[#ffc531] bg-gradient-to-b from-[#b3141b] to-[#5a0609] text-[#ffd34d] shadow-[0_6px_0_#3a0204,inset_0_3px_0_rgb(255_255_255/0.25)]"
+    >
+      {children}
+    </button>
+  );
+}
+
+function BankerBadge() {
+  return <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border-[3px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-3 font-display text-[16px] font-black text-[#4a1d00] shadow-[0_3px_0_#7a3e00]">BANKER</span>;
+}
+
+function SeatTile({ face, name, status, banker, glow, x, y }: { face: FaceKind; name: string; status?: ReactNode; banker?: boolean; glow?: boolean; x: number; y: number }) {
+  return (
+    <div className="absolute z-10 flex w-[124px] flex-col items-center" style={{ left: x, top: y }} aria-label={`${name}${banker ? ' (banker)' : ''}`}>
+      <div className={`relative rounded-[18px] p-[6px] ${banker ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_24px_rgb(80_180_255/0.9),0_6px_0_#0c3a8a]' : 'lx-gold shadow-[0_6px_0_#7a3e00]'} ${glow ? 'tb-winner' : ''}`}>
+        {banker && <BankerBadge />}
+        <div className="overflow-hidden rounded-[12px] border-2 border-white/60">
+          <Face kind={face} size={108} />
+        </div>
+      </div>
+      <span className="mt-1 rounded-full bg-black/60 px-3 py-0.5 font-display text-[18px] font-black text-white">{name}</span>
+      {status && <span className="mt-0.5 whitespace-nowrap font-display text-[17px] font-black">{status}</span>}
+    </div>
+  );
+}
 
 function Outcome({ v }: { v: number }) {
-  const [txt, cls] = v > 0 ? ['WIN', 'bg-mint-500 text-white'] : v < 0 ? ['LOSS', 'bg-candy-500 text-white'] : ['TIE', 'bg-white/25 text-white'];
-  return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${cls}`}>{txt}</span>;
+  const [txt, cls] = v > 0 ? ['WIN', 'bg-[#13a344]'] : v < 0 ? ['LOSS', 'bg-[#d81e3c]'] : ['TIE', 'bg-white/30'];
+  return <span className={`rounded-full px-2 py-[1px] font-display text-[14px] font-black text-white ${cls}`}>{txt}</span>;
+}
+
+/** A revealed hand, laid out in rows or side by side, with this seat's lane results vs the banker. */
+function RevealedHand({ p, card, step, gap, horizontal }: { p: RoundPlayer; card: { w: number; h: number; f: number }; step: number; gap: number; horizontal?: boolean }) {
+  return (
+    <div className={`flex ${horizontal ? 'flex-row items-start' : 'flex-col'}`} style={{ gap }} aria-label={`${p.is_you ? 'Your' : `${p.name}'s`} hand`}>
+      {LANES.map((lane) => (
+        <div key={lane} className={`flex gap-2 ${horizontal ? 'flex-col items-center' : 'items-center'}`}>
+          <div className="relative shrink-0" style={{ width: card.w + step * (SIZE[lane] - 1), height: card.h }}>
+            {(p[lane] ?? []).map((c, i) => (
+              // The wrapper carries the position: PlayingCard is itself `relative`.
+              <span key={c} className="tb-flip absolute top-0" style={{ left: i * step, animationDelay: `${i * 0.05}s` }}>
+                <PlayingCard code={c} style={{ width: card.w, height: card.h, fontSize: card.f }} />
+              </span>
+            ))}
+          </div>
+          <span className={`flex gap-1 ${horizontal ? 'flex-row' : 'flex-col items-start'}`}>
+            {p.labels && <span className="whitespace-nowrap rounded-full bg-black/55 px-2 font-display text-[15px] font-black text-[#ffe14d]">{p.labels[lane]}</span>}
+            {p.lanes && <Outcome v={p.lanes[lane]} />}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
- * Single Player: you against three server bots. Free play — no coins or
- * diamonds move. The server deals, arranges the bots, validates your hand
- * and scores the round; this screen only displays what it returns.
+ * Single Player — Round Bank Pusoy (Chinese Poker): you and three bots
+ * (LuckyBot, CardBot, AceBot) on the landscape table (1600×900 stage).
+ * A match is 12 rounds; the banker rotates You → LuckyBot → CardBot → AceBot.
+ * Before every round you pick the table bet from your difficulty's chips;
+ * the server deals 13 cards to each seat, the bots arrange themselves, you
+ * arrange Front / Middle / Back (fouls are refused), and every non-banker's
+ * lanes are compared with the banker's: an identical lane goes to the banker,
+ * 3-0 = 2× bet, 2-1 = 1× bet (and the negatives); Lucky Hands pay 2×.
+ * Gold only moves when Gold wagering is enabled on the server; otherwise
+ * rounds settle as practice Gold.
  */
 export default function Practice() {
   const { user } = useAuth();
   const router = useRouter();
-  const [game, setGame] = useState<PracticeState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | undefined>();
-  const [busy, setBusy] = useState(false);
-  const [sel, setSel] = useState<SinglePlayerSelection | null>(null);
-  const inFlight = useRef(false);
-  // One id per deal: a retry after a network failure reuses it, so the server
-  // returns the deal it may already have made instead of starting another.
-  const requestId = useRef<string | null>(null);
+  const { cp } = useBalance(user?.id);
+  const [soundOn, toggleSound] = useSound();
+  useLandscapeLock();
 
-  const deal = useCallback(async (selection: SinglePlayerSelection, fresh: boolean) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    if (fresh || !requestId.current) requestId.current = idempotencyKey();
-    setBusy(true);
-    setError(null);
-    setErrorCode(undefined);
-    try {
-      const r = await api<{ data: PracticeState }>('/practice', { method: 'POST', body: { tier: selection.tier, ...(selection.bet ? { bet: selection.bet } : {}), request_id: requestId.current } });
-      play('deal');
-      setGame(r.data);
-    } catch (e) {
-      setError(errorText(e));
-      setErrorCode(e instanceof ApiError ? e.code ?? (e.status === 422 ? 'invalid_selection' : undefined) : undefined);
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
-    }
+  const [tier, setTier] = useState<PracticeTier | null>(null);
+  const [match, setMatch] = useState<MatchState | null>(null);
+  const [round, setRound] = useState<RoundState | null>(null);
+  const [phase, setPhase] = useState<'loading' | 'betting' | 'arranging' | 'revealed'>('loading');
+  const [bet, setBet] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [panel, setPanel] = useState<'settings' | 'help' | 'leave' | 'summary' | null>(null);
+  const [luck, setLuck] = useState<Rows | null>(null);
+  const [declaring, setDeclaring] = useState(false);
+  const [notice, setNotice] = useState<'lucky' | 'noluck' | null>(null);
+  // READY locks the arrangement until RESET reopens the popup.
+  const [locked, setLocked] = useState(false);
+
+  // arrangement
+  const [rows, setRows] = useState<Rows>(EMPTY);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'rank' | 'suit'>('rank');
+  const [autoplay, setAutoplay] = useState(false);
+  const [preview, setPreview] = useState<{ labels: Record<Lane, string | null>; is_foul: boolean } | null>(null);
+
+  const inFlight = useRef(false);
+  const requestId = useRef<string | null>(null);
+  const started = useRef(false);
+
+  const say = useCallback((ok: boolean, text: string) => setToast({ ok, text }), []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    setAutoplay(readAutoplay());
   }, []);
 
-  const started = useRef(false);
+  const suggest = useCallback(
+    async (g: RoundState): Promise<Rows | null> => {
+      try {
+        const r = await api<{ data: Rows }>(`/practice/${g.id}/suggest`, { method: 'POST' });
+        const next = { front: r.data.front, middle: r.data.middle, back: r.data.back };
+        setRows(next);
+        setPicked([]);
+        play('deal');
+        return next;
+      } catch (e) {
+        say(false, errorText(e));
+        return null;
+      }
+    },
+    [say],
+  );
+
+  const newMatch = useCallback(async (t: PracticeTier) => {
+    const r = await api<{ data: MatchState }>('/practice/matches', { method: 'POST', body: { tier: t.key } });
+    setMatch(r.data);
+    setRound(null);
+    setRows(EMPTY);
+    setPhase('betting');
+    return r.data;
+  }, []);
+
+  // ---- load: tier → resume the active match at this tier, or start a new one ----
   useEffect(() => {
     if (!user || started.current) return;
     started.current = true;
     const s = selectionFromUrl(window.location.search);
     if (!s) {
-      // No level chosen yet: open the picker instead of dealing.
       router.replace(PICKER_URL);
       return;
     }
     saveSelection(s);
-    setSel(s);
-    deal(s, true);
-  }, [user, deal, router]);
 
-  const changeLevel = () => router.replace(PICKER_URL);
-  const selectionProblem = errorCode === 'insufficient_gold' || errorCode === 'invalid_tier' || errorCode === 'invalid_bet' || errorCode === 'invalid_selection';
+    (async () => {
+      try {
+        const [tiers, current] = await Promise.all([api<{ data: PracticeTier[] }>('/practice/tiers'), api<{ data: MatchState | null }>('/practice/matches/current')]);
+        const t = tiers.data.find((x) => x.key === s.tier);
+        if (!t) {
+          router.replace(PICKER_URL);
+          return;
+        }
+        setTier(t);
+        setBet(s.bet && t.bets.includes(s.bet) ? s.bet : t.bets[0]);
 
-  const done = game?.status === 'completed';
-  const me = game?.players.find((p) => p.is_you);
-  const bots = game?.players.filter((p) => !p.is_you) ?? [];
-  const ranked = done ? [...(game?.players ?? [])].sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0) || a.seat - b.seat) : [];
+        if (current.data && current.data.tier.key === t.key) {
+          setMatch(current.data);
+          if (current.data.current) {
+            setRound(current.data.current);
+            setBet(current.data.current.bet);
+            setPhase('arranging');
+            setLocked(false);
+            if (readAutoplay()) await suggest(current.data.current);
+          } else {
+            setPhase('betting');
+          }
+          return;
+        }
+
+        if (!t.eligible) {
+          setPhase('betting');
+          return;
+        }
+        await newMatch(t);
+      } catch (e) {
+        say(false, errorText(e));
+        setPhase('betting');
+      }
+    })();
+  }, [user, router, say, suggest, newMatch]);
+
+  // ---- bet + deal a round ----
+  /** Place your bet (null when you are the banker: no bet, you cover the others) and deal. */
+  const placeBet = async (amount: number | null) => {
+    if (!tier || inFlight.current) return;
+    if (!tier.eligible) {
+      say(false, `Not enough gold for ${tier.name}. You need at least ${fmt(tier.min_gold)} gold.`);
+      return;
+    }
+    inFlight.current = true;
+    requestId.current = idempotencyKey();
+    if (amount !== null) setBet(amount);
+    setBusy(true);
+    play('chip');
+    try {
+      const m = match && match.status === 'active' ? match : await newMatch(tier);
+      const r = await api<{ data: RoundState }>(`/practice/matches/${m.id}/deal`, { method: 'POST', body: { ...(amount !== null ? { bet: amount } : {}), request_id: requestId.current } });
+      saveSelection({ tier: tier.key, bet: amount ?? bet ?? undefined });
+      setRound(r.data);
+      setMatch((x) => (x ? { ...x, current: r.data, next_round: null, next_banker: null, next_banker_name: null } : x));
+      setRows(EMPTY);
+      setPicked([]);
+      setPreview(null);
+      setPhase('arranging');
+      setLocked(false);
+      play('deal');
+      if (r.data.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
+      const suggested = autoplay ? await suggest(r.data) : null;
+      // All 13 cards are in: show the Declared Luck popup.
+      setLuck(suggested ?? defaultSplit(r.data.cards));
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : undefined;
+      say(false, code === 'insufficient_gold' ? `Not enough gold for ${tier.name}. You need at least ${fmt(tier.min_gold)} gold.` : errorText(e));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  /** After a round settles: refresh the match (running Gold, standings, next banker, match end). */
+  const settled = async (r: RoundState) => {
+    setRound(r);
+    setPhase('revealed');
+    const g = r.result?.gold ?? 0;
+    play(g > 0 ? 'win' : g < 0 ? 'lose' : 'start');
+    if (r.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
+    if (!match) return;
+    try {
+      const m = await api<{ data: MatchState }>(`/practice/matches/${match.id}`);
+      setMatch(m.data);
+      if (m.data.status === 'completed') setTimeout(() => setPanel('summary'), 1600);
+    } catch {
+      // the round result is already on screen
+    }
+  };
+
+  // ---- Declared Luck ----
+  const declareLuck = async () => {
+    if (!round || declaring || round.status !== 'arranging') return;
+    setDeclaring(true);
+    try {
+      const r = await api<{ data: RoundState }>(`/practice/${round.id}/lucky`, { method: 'POST' });
+      setLuck(null);
+      setNotice('lucky');
+      play('lucky');
+      await settled(r.data);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'not_lucky') {
+        setNotice('noluck');
+        play('lose');
+      } else {
+        say(false, errorText(e));
+      }
+    } finally {
+      setDeclaring(false);
+    }
+  };
+
+  // ---- arranging ----
+  const placed = useMemo(() => new Set([...rows.front, ...rows.middle, ...rows.back]), [rows]);
+  const hand = useMemo(() => sortCards((round?.cards ?? []).filter((c) => !placed.has(c)), sortBy), [round, placed, sortBy]);
+  const complete = rows.front.length === 3 && rows.middle.length === 5 && rows.back.length === 5;
+  const foul = complete && !!preview?.is_foul;
+
+  useEffect(() => {
+    if (phase !== 'arranging' || !round) return undefined;
+    const t = setTimeout(() => {
+      api<{ data: { labels: Record<Lane, string | null>; is_foul: boolean } }>(`/practice/${round.id}/preview`, { method: 'POST', body: rows })
+        .then((r) => setPreview(r.data))
+        .catch(() => undefined);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [rows, round, phase]);
+
+  const moveTo = (cards: string[], zone: Zone) => {
+    // After READY the arrangement is locked; Reset reopens the arrangement popup.
+    if (locked) return;
+    setRows((r) => {
+      const next: Rows = { front: r.front.filter((c) => !cards.includes(c)), middle: r.middle.filter((c) => !cards.includes(c)), back: r.back.filter((c) => !cards.includes(c)) };
+      if (zone !== 'hand') next[zone] = [...next[zone], ...cards.slice(0, SIZE[zone] - next[zone].length)];
+      return next;
+    });
+    setPicked([]);
+    play('deal');
+  };
+
+  const toggleAutoplay = () => {
+    const next = !autoplay;
+    setAutoplay(next);
+    try {
+      localStorage.setItem(AUTOPLAY_KEY, next ? '1' : '0');
+    } catch {
+      // storage blocked: the switch still works for this visit
+    }
+    play('tap');
+    if (next && phase === 'arranging' && round) {
+      if (locked) say(true, 'Cards are locked — tap Reset to rearrange.');
+      else suggest(round);
+    }
+  };
+
+  /** RESET: unlock and reopen the arrangement popup with the current lanes (or a fresh split). */
+  const reopen = () => {
+    if (!round) return;
+    play('tap');
+    setLocked(false);
+    setPicked([]);
+    setLuck(complete ? rows : defaultSplit(round.cards));
+  };
+
+  /**
+   * SUBMIT is always available. A misplaced (fouled) arrangement is accepted
+   * and the server applies the 2 × bet penalty; only an incomplete hand is
+   * held back, with a hint.
+   */
+  const submit = async () => {
+    if (!round || busy) return;
+    if (!complete) {
+      say(false, 'Place all 13 cards first — or tap Reset to arrange them.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api<{ data: RoundState }>(`/practice/${round.id}/submit`, { method: 'POST', body: rows });
+      await settled(r.data);
+    } catch (e) {
+      say(false, errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const playNewMatch = async () => {
+    if (!tier) return;
+    setPanel(null);
+    try {
+      await newMatch(tier);
+      play('tap');
+    } catch (e) {
+      say(false, errorText(e));
+    }
+  };
+
+  const leave = () => {
+    if (phase === 'arranging') {
+      setPanel('leave');
+      return;
+    }
+    play('tap');
+    router.replace(PICKER_URL);
+  };
+
+  // ---- drag and drop on the stage (DOM hit-testing follows the stage's scale/rotation) ----
+  const [drag, setDrag] = useState<{ card: string; from: Zone; sx: number; sy: number; x: number; y: number; moving: boolean } | null>(null);
+  const dragRef = useRef(drag);
+  const suppressClick = useRef(false);
+  const startDrag = (card: string, from: Zone) => (e: ReactPointerEvent) => {
+    if (e.button !== 0 || locked) return;
+    const v = { card, from, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, moving: false };
+    dragRef.current = v;
+    setDrag(v);
+  };
+  useEffect(() => {
+    if (!drag) return undefined;
+    const onMove = (e: PointerEvent) => {
+      const v = dragRef.current;
+      if (!v) return;
+      const next = { ...v, x: e.clientX, y: e.clientY, moving: v.moving || Math.hypot(e.clientX - v.sx, e.clientY - v.sy) > 8 };
+      dragRef.current = next;
+      setDrag(next);
+    };
+    const onUp = (e: PointerEvent) => {
+      const v = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!v?.moving) return;
+      const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-zone]') as HTMLElement | null;
+      const zone = el?.dataset.zone as Zone | undefined;
+      const group = v.from === 'hand' && picked.includes(v.card) ? picked : [v.card];
+      if (zone && zone !== v.from) moveTo(group, zone);
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag?.card, drag?.from, picked]);
+
+  // ---- derived ----
+  const players = round?.players ?? [];
+  const me = players.find((p) => p.is_you);
+  const revealed = phase === 'revealed';
+  const name = user ? (user.display_name ?? user.name) : 'You';
+  const shownBet = bet ?? tier?.bets[0] ?? 0;
+  const bigCard = { w: 76, h: 106, f: 24 };
+  const matchOver = match?.status === 'completed';
+  const inRound = phase === 'arranging' || revealed;
+  // The round on the table (or the next one while choosing a bet).
+  const roundNo = inRound ? (round?.round ?? 1) : (match?.next_round ?? (match ? match.rounds_played + 1 : 1));
+  const total = match?.rounds_total ?? 12;
+  const banker = inRound ? (round?.banker ?? 1) : (match?.next_banker ?? bankerFor(roundNo));
+  const canBet = !!tier && tier.eligible && (phase === 'betting' || (revealed && !matchOver));
+  // Who banks the round the chips (or Deal) are for.
+  const nextBanker = revealed ? bankerFor(roundNo + 1) : banker;
+  const gold = cp !== undefined ? Math.floor(Number(cp)) : undefined;
+  const result = round?.result;
+  const outcomeText = (() => {
+    if (!result || !round) return '';
+    if (round.lucky) return `Declared Luck — ${round.lucky.label}`;
+    if (result.misplaced) return round.banker === 1 ? 'Misplaced cards — 2× penalty to each player' : 'Misplaced cards — 2× penalty';
+    if (round.banker === 1) {
+      const bots = players.filter((p) => !p.is_you);
+      const won = bots.filter((p) => (p.gold ?? 0) < 0).length;
+      return `You banked · beat ${won} of 3`;
+    }
+    const bankerSeat = players.find((p) => p.is_banker);
+    if (bankerSeat?.lucky) return `${bankerSeat.name} declared ${bankerSeat.lucky.label}`;
+    if (!result.lanes) return '';
+    const w = Object.values(result.lanes).filter((v) => v > 0).length;
+    return `${w}-${3 - w} vs ${round.banker_name} · ${Math.abs(result.multiple ?? 0)}× bet`;
+  })();
+
+  const botStatus = (seat: number): ReactNode => {
+    const p = players.find((x) => x.seat === seat);
+    if (revealed && p) {
+      return (
+        <span className={tone(p.gold ?? 0)}>
+          {signed(p.gold ?? 0)}
+          {p.lucky ? ` · ${p.lucky.label}` : ''}
+        </span>
+      );
+    }
+    if (phase === 'arranging') return <span className="text-[#7dffa0]">Ready ✓{p && !p.is_banker ? ` · Bet ${fmt(p.bet)}` : ''}</span>;
+    const s = match?.standings.find((x) => x.seat === seat);
+    return s && match && match.rounds_played > 0 ? <span className={tone(s.gold)}>{signed(s.gold)}</span> : <span className="text-white/70">Waiting</span>;
+  };
 
   return (
-    <Screen title="Single Player" back>
-      {error && (
-        <>
-          <Notice>{error}</Notice>
-          <div className="grid grid-cols-2 gap-2">
-            <GameButton tone="glass" size="lg" onClick={changeLevel}>
-              CHANGE LEVEL
-            </GameButton>
-            {!selectionProblem && sel && (
-              <GameButton tone="gold" size="lg" onClick={() => deal(sel, false)} disabled={busy}>
-                TRY AGAIN
-              </GameButton>
-            )}
-          </div>
-        </>
-      )}
-      {!game && !error && <Spinner />}
+    <Screen title="Single Player" immersive>
+      <LandscapeStage background={<LanternRoom className="h-full w-full" />}>
+        <PokerTable />
 
-      {game && (
-        <>
-          <div className="mb-2 flex items-center justify-between rounded-2xl bg-white/8 px-3 py-2" aria-label="Selected level">
-            <span className="font-display text-sm font-extrabold text-gold-300">{game.tier.name}</span>
-            <span className="text-xs font-bold text-white/80">Bet {game.bet.toLocaleString('en-US')}</span>
-            {!done && (
-              <button type="button" onClick={changeLevel} className="text-xs font-bold text-white/60 underline">
-                Change level
-              </button>
-            )}
+        {/* Top-left controls + crest */}
+        <RoundButton label="Back" x={20} onClick={leave}>
+          <svg viewBox="0 0 40 40" className="h-10 w-10" aria-hidden="true">
+            <path d="M24 9 L12 20 L24 31 M12 20 H32" stroke="currentColor" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </RoundButton>
+        <RoundButton label="Settings" x={108} onClick={() => setPanel('settings')}>
+          <svg viewBox="0 0 40 40" className="h-10 w-10" aria-hidden="true">
+            <g fill="currentColor">
+              {Array.from({ length: 8 }, (_, i) => (
+                <rect key={i} x="17" y="3" width="6" height="9" rx="2" transform={`rotate(${i * 45} 20 20)`} />
+              ))}
+              <circle cx="20" cy="20" r="11" />
+            </g>
+            <circle cx="20" cy="20" r="5" fill="#7a0a0e" />
+          </svg>
+        </RoundButton>
+        <RoundButton label="How to play" x={196} onClick={() => setPanel('help')}>
+          <span className="font-display text-[44px] font-black leading-none">?</span>
+        </RoundButton>
+        <div className="pointer-events-none absolute left-[290px] top-[4px] z-20">
+          <MiniCrest />
+        </div>
+
+        {/* Bet pill + round / banker + match gold */}
+        <div className="lx-gold absolute right-[20px] top-[18px] z-20 h-[76px] w-[330px] rounded-[24px] p-[5px] shadow-[0_6px_0_#7a3e00]">
+          <div className="flex h-full items-center gap-2 rounded-[19px] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-3">
+            <GoldCoins size={56} />
+            <span className="flex-1 truncate text-center font-display text-[28px] font-black text-white drop-shadow-[0_2px_0_#3a0204]" aria-label="Current bet">
+              {banker === 1 ? (inRound ? `Covering ${fmt(round?.covered ?? 0)}` : 'Banker · no bet') : `Bet: ${fmt(shownBet)} Gold`}
+            </span>
           </div>
-          <div className="mb-3 grid grid-cols-3 gap-2" aria-label="Opponents">
-            {bots.map((b) => (
-              <div key={b.seat} className="glass flex flex-col items-center rounded-2xl px-2 py-2">
-                <Avatar name={b.name} size={40} />
-                <span className="mt-1 font-display text-xs font-extrabold">{b.name}</span>
-                <span className="text-[10px] font-bold text-mint-400">{done ? `${(b.score ?? 0) > 0 ? '+' : ''}${b.score} pts` : 'Ready ✓'}</span>
+        </div>
+        <div className="absolute right-[22px] top-[100px] z-20 flex flex-col items-end gap-1 font-display font-black">
+          <span className="rounded-full bg-black/55 px-4 py-1 text-[22px] text-white" aria-label="Round">
+            Round {Math.min(roundNo, total)} / {total} · <span className="text-[#ffe14d]">{banksText(banker)}</span>
+          </span>
+          {match && (
+            <span className="rounded-full bg-black/45 px-4 py-0.5 text-[18px] text-white/90" aria-label="Match gold">
+              {tier?.name} · Match <span className={tone(match.gold)}>{signed(match.gold)}</span> · Gold {gold !== undefined ? fmt(gold) : '…'}
+            </span>
+          )}
+        </div>
+
+        {/* The three bots */}
+        {[2, 3, 4].map((seat) => {
+          const s = SEATS[seat];
+          const p = players.find((x) => x.seat === seat);
+          return <SeatTile key={seat} face={s.face} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
+        })}
+        {phase === 'arranging' &&
+          [2, 3, 4].map((seat) => (
+            <div key={seat} className="pointer-events-none absolute" style={{ left: SEATS[seat].stack.x, top: SEATS[seat].stack.y }}>
+              {[0, 1, 2].map((i) => (
+                <PlayingCard key={i} faceDown className="absolute" style={{ left: i * 14, top: 0, width: 50, height: 70, transform: `rotate(${(i - 1) * 8}deg)` }} />
+              ))}
+            </div>
+          ))}
+        {revealed &&
+          players
+            .filter((p) => !p.is_you)
+            .map((p) => (
+              <div key={p.seat} className="absolute z-[5]" style={{ left: SEATS[p.seat].reveal.x, top: SEATS[p.seat].reveal.y }}>
+                <RevealedHand p={p} card={{ w: 44, h: 62, f: 15 }} step={26} gap={SEATS[p.seat].horizontal ? 18 : 4} horizontal={SEATS[p.seat].horizontal} />
               </div>
             ))}
+
+        {/* Felt centre */}
+        {(phase === 'loading' || phase === 'betting') && (
+          <div className="absolute left-[400px] top-[262px] z-[5] flex w-[800px] flex-col items-center text-center">
+            {phase === 'loading' ? (
+              <span className="mt-24 font-display text-[36px] font-black text-white/90" role="status">
+                Setting up the table…
+              </span>
+            ) : (
+              tier && (
+                <>
+                  <CandyText text={tier.name} width={640} height={100} size={80} sweepDelay={0.2} />
+                  <p className="font-display text-[36px] font-black text-white drop-shadow-[0_3px_0_rgb(0_0_0/0.5)]">
+                    Round {roundNo} of {total} · {banker === 1 ? 'You are the banker' : `${BOTS[banker]} is the banker`}
+                  </p>
+                  <p className="mt-1 font-display text-[28px] font-black text-[#ffe14d]">{tier.eligible ? (banker === 1 ? 'No bet needed — you cover the other players. Tap Deal.' : 'Tap a chip to place your bet and deal') : `You need at least ${fmt(tier.min_gold)} gold to play ${tier.name}`}</p>
+                  <p className="mt-2 font-display text-[20px] font-bold text-white/70">4 players · every lane vs the banker · 3-0 pays 2× · 2-1 pays 1× · identical lane = banker wins</p>
+                </>
+              )
+            )}
+          </div>
+        )}
+
+        {phase === 'arranging' && round && (
+          <>
+            <div className="absolute left-[430px] top-[268px] z-[6] flex flex-col gap-[14px]">
+              {LANES.map((lane) => {
+                const size = SIZE[lane];
+                const open = picked.length > 0 && rows[lane].length < size;
+                return (
+                  <div key={lane} className="flex items-center gap-3">
+                    <span className="flex w-[118px] flex-col items-center">
+                      <span className="rounded-full bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-3 py-0.5 font-display text-[19px] font-black uppercase text-[#4a1d00] shadow-[0_3px_0_#7a3e00]">{lane}</span>
+                      <span className="mt-1 font-display text-[16px] font-black text-white/80">
+                        {rows[lane].length}/{size}
+                      </span>
+                    </span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${lane[0].toUpperCase()}${lane.slice(1)} row`}
+                      data-zone={lane}
+                      onClick={() => !suppressClick.current && picked.length > 0 && moveTo(picked, lane)}
+                      onKeyDown={(e) => e.key === 'Enter' && picked.length > 0 && moveTo(picked, lane)}
+                      className={`flex h-[122px] w-[436px] items-center gap-[8px] rounded-[18px] border-[3px] px-[8px] transition ${open ? 'border-[#ffe14d] bg-[#ffe14d]/15 shadow-[0_0_22px_rgb(255_225_77/0.55)]' : foul ? 'border-[#ff6b6b] bg-[#d81e3c]/15' : 'border-white/25 bg-black/20'}`}
+                    >
+                      {rows[lane].map((c) => (
+                        <span key={c} onPointerDown={startDrag(c, lane)} className={`touch-none ${drag?.moving && drag.card === c ? 'opacity-30' : ''}`}>
+                          <PlayingCard code={c} style={{ width: bigCard.w, height: bigCard.h, fontSize: bigCard.f }} onClick={() => !suppressClick.current && moveTo([c], 'hand')} />
+                        </span>
+                      ))}
+                      {Array.from({ length: size - rows[lane].length }, (_, i) => (
+                        <span key={i} className="shrink-0 rounded-[8px] border-[3px] border-dashed border-white/25" style={{ width: bigCard.w, height: bigCard.h }} />
+                      ))}
+                    </div>
+                    <span className="w-[180px]">
+                      {preview?.labels[lane] && <span className="whitespace-nowrap rounded-full bg-black/55 px-3 py-1 font-display text-[19px] font-black text-[#ffe14d]">{preview.labels[lane]}</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {(foul || locked) && (
+              <div role="status" className={`absolute left-[480px] top-[690px] z-[6] rounded-full px-4 py-1 font-display text-[20px] font-black text-white ${foul ? 'bg-[#d81e3c]' : 'bg-black/55'}`}>
+                {foul ? 'Misplaced cards — submitting now pays a 2× bet penalty. Tap Reset to fix.' : '🔒 Cards locked — tap Reset to rearrange'}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={reopen}
+              className="lx-tile absolute left-[1250px] top-[262px] z-[6] h-[60px] w-[150px] rounded-full border-[4px] border-white/60 bg-black/35 font-display text-[24px] font-black text-white"
+            >
+              Reset
+            </button>
+            {!luck && (
+              <button
+                type="button"
+                onClick={declareLuck}
+                disabled={declaring}
+                className="lx-tile absolute left-[1222px] top-[400px] z-[6] flex h-[96px] w-[200px] items-center gap-1 rounded-full border-[4px] border-[#ffc531] bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] pl-2 pr-3 shadow-[0_6px_0_#2a0660]"
+              >
+                <Clover size={62} />
+                <span className="flex flex-col items-center font-display font-black leading-none">
+                  <span className="text-[24px] text-white">{declaring ? 'Checking…' : 'Declared'}</span>
+                  {!declaring && <span className="text-[26px] text-[#ffe14d]">Luck</span>}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={submit}
+              disabled={busy}
+              className={`lx-tile absolute left-[1230px] top-[540px] z-[6] h-[88px] w-[190px] rounded-full border-[5px] font-display text-[32px] font-black text-white ${foul ? 'border-[#ffc2c2] bg-gradient-to-b from-[#ff6b6b] to-[#b3121a] shadow-[0_7px_0_#6b0606]' : 'border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] shadow-[0_7px_0_#0b6b2a]'} ${complete ? '' : 'opacity-80'}`}
+            >
+              {busy ? '…' : 'Submit'}
+            </button>
+          </>
+        )}
+
+        {revealed && me && (
+          <>
+            <div className="absolute left-[520px] top-[392px] z-[6]">
+              <RevealedHand p={me} card={{ w: 58, h: 80, f: 19 }} step={40} gap={6} />
+            </div>
+            {result && (
+              <div className="absolute left-[880px] top-[430px] z-[6] flex w-[300px] flex-col items-center text-center" aria-label="Round result">
+                <span className="font-display text-[22px] font-black text-white/85">Round {round?.round} · you</span>
+                <span className={`font-display text-[56px] font-black leading-tight drop-shadow-[0_3px_0_rgb(0_0_0/0.5)] ${tone(result.gold)}`}>{signed(result.gold)}</span>
+                <span className="font-display text-[22px] font-black text-[#ffe14d]">Gold</span>
+                <span className="mt-1 font-display text-[20px] font-bold text-white/85">{outcomeText}</span>
+                {!round?.wagering && <span className="mt-1 text-[15px] text-white/55">Practice Gold — not credited</span>}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* My seat: avatar + chips (betting / after a round) or the 13-card hand (arranging) */}
+        <div className="absolute left-[300px] top-[752px] z-10 flex h-[140px] w-[1000px] items-center gap-4 rounded-[28px] border-[4px] border-[#ffc531] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-4 shadow-[0_8px_0_#3a0204]">
+          <div className={`relative shrink-0 rounded-[16px] p-[5px] ${banker === 1 ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_20px_rgb(80_180_255/0.9)]' : 'lx-gold'}`} title={name} aria-label={`You${banker === 1 ? ' (banker)' : ''}`}>
+            {banker === 1 && <BankerBadge />}
+            <div className="overflow-hidden rounded-[11px] border-2 border-white/60">
+              <Face kind="cap" size={104} />
+            </div>
           </div>
 
-          {!done && (
-            <>
-              <p className="mb-2 text-center text-xs text-white/60">Practice round · no coins or diamonds are used. Beat the bots lane by lane.</p>
-              <ArrangeHands
-                key={game.id}
-                sessionId={game.id}
-                basePath={`/practice/${game.id}`}
-                cards={game.cards}
-                allowFoul={game.allow_foul}
-                onSubmitted={(res) => {
-                  const next = (res as { data?: PracticeState } | undefined)?.data;
-                  if (next) {
-                    if (next.players.find((p) => p.is_you)?.placement === 1) play('win');
-                    setGame(next);
-                  }
-                }}
-              />
-            </>
-          )}
-
-          {done && me && (
-            <div role="dialog" aria-label="Practice results">
-              {me.placement === 1 && <Confetti />}
-              <div className="mb-3 text-center">
-                <span className="inline-block -rotate-3 rounded-2xl bg-gradient-to-b from-gold-200 via-gold-400 to-gold-600 px-6 py-2 font-display text-3xl font-black text-night-900 shadow-[0_6px_0_#9a5b03,0_12px_24px_rgb(0_0_0/0.5)]">
-                  {me.placement === 1 ? 'YOU WIN!' : `#${me.placement} PLACE`}
-                </span>
-                <p className="mt-2 text-sm font-bold text-white/85">
-                  Bet result{' '}
-                  <span className={(me.stake_result ?? 0) >= 0 ? 'text-mint-400' : 'text-candy-400'}>
-                    {(me.stake_result ?? 0) > 0 ? '+' : ''}
-                    {(me.stake_result ?? 0).toLocaleString('en-US')}
-                  </span>{' '}
-                  <span className="text-xs text-white/55">(practice — no coins are charged)</span>
-                </p>
-              </div>
-
-              <GlassCard title={<Ribbon tone="gold">Scoreboard</Ribbon>}>
-                <ul className="space-y-1.5">
-                  {ranked.map((p) => (
-                    <li key={p.seat} className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${p.is_you ? 'bg-gold-400/20 ring-2 ring-gold-400/60' : 'bg-white/8'}`}>
-                      <span className="w-6 text-center font-display text-lg font-black text-gold-300">{p.placement === 1 ? '👑' : p.placement}</span>
-                      <Avatar name={p.is_you ? (user?.display_name ?? user?.name ?? 'You') : p.name} size={32} />
-                      <span className="flex-1 truncate font-bold">
-                        {p.name} {p.is_foul && <span className="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] font-black">FOUL</span>}
-                      </span>
-                      <span className={`font-display text-sm font-black ${(p.score ?? 0) >= 0 ? 'text-mint-400' : 'text-candy-400'}`}>
-                        {(p.score ?? 0) > 0 ? '+' : ''}
-                        {p.score} pts
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </GlassCard>
-
-              <div className="space-y-2">
-                {[me, ...bots].map((p) => (
-                  <div key={p.seat} className={`glass rounded-2xl p-3 ${p.is_you ? 'ring-2 ring-gold-400/60' : ''}`}>
-                    <p className="mb-1 font-display text-sm font-extrabold">{p.is_you ? 'Your hand' : p.name}</p>
-                    {LANES.map((lane) => (
-                      <div key={lane} className="mb-1 flex items-center gap-2">
-                        <span className="w-12 text-[10px] font-bold uppercase text-white/60">{lane}</span>
-                        <span className="flex gap-0.5">
-                          {p[lane]?.map((c) => (
-                            <PlayingCard key={c} code={c} size="xs" />
-                          ))}
-                        </span>
-                        <span className="ml-auto flex items-center gap-1 text-right text-[10px] text-white/75">
-                          {p.labels?.[lane]}
-                          {!p.is_you && p.vs_you && <Outcome v={p.vs_you[lane]} />}
-                        </span>
-                      </div>
-                    ))}
-                    {!p.is_you && p.vs_you && <p className="text-right text-[10px] text-white/50">WIN/LOSS = your lane against {p.name}</p>}
-                  </div>
-                ))}
-              </div>
-
-              <GlassCard className="mt-3" title="Verify the shuffle">
-                <p className="break-all text-[11px] text-white/60">Commitment {game.deck_commitment}</p>
-                <p className="mt-1 break-all text-[11px] text-white/60">Seed {game.server_seed}</p>
-              </GlassCard>
-
-              <div className="safe-bottom mt-3 grid grid-cols-2 gap-2 pb-2">
-                <GameButton tone="glass" size="lg" onClick={() => router.replace('/home/')}>
-                  HOME
-                </GameButton>
-                <GameButton tone="gold" size="lg" onClick={() => sel && deal(sel, true)} disabled={busy || !sel}>
-                  {busy ? 'DEALING…' : 'PLAY AGAIN'}
-                </GameButton>
-              </div>
+          {canBet && tier && nextBanker === 1 && (
+            // You bank the next round: no bet — you cover the other players' bets.
+            <div className="flex items-center gap-5">
+              <button type="button" onClick={() => placeBet(null)} disabled={busy} className="lx-tile h-[96px] rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-10 font-display text-[40px] font-black text-[#4a1d00] shadow-[0_7px_0_#8a4a00]">
+                {busy ? 'Dealing…' : 'Deal'}
+              </button>
+              <span className="max-w-[460px] font-display text-[21px] font-black leading-tight text-white/85">
+                {revealed ? `Round ${roundNo + 1}: you bank. ` : ''}You're the banker — no bet needed. You cover the other players' bets.
+              </span>
             </div>
           )}
-        </>
+
+          {canBet && tier && nextBanker !== 1 && (
+            <div className="flex items-center gap-5" role="group" aria-label="Bet chips">
+              {tier.bets.map((b, i) => (
+                <button
+                  key={b}
+                  type="button"
+                  aria-label={`Bet ${fmt(b)}`}
+                  aria-pressed={bet === b}
+                  disabled={busy}
+                  onClick={() => placeBet(b)}
+                  className={`tb-chip rounded-full transition ${bet === b ? 'tb-chip-on' : ''}`}
+                >
+                  <Chip value={b >= 10000 ? `${b / 1000}K` : String(b)} color={CHIP_COLORS[i % 3]} size={108} />
+                </button>
+              ))}
+              <span className="ml-1 max-w-[300px] font-display text-[21px] font-black leading-tight text-white/85">
+                {busy ? 'Dealing…' : revealed ? `Round ${roundNo + 1}: ${bankerFor(roundNo + 1) === 1 ? 'you bank' : `${BOTS[bankerFor(roundNo + 1)]} banks`} — pick a bet` : 'Tap a chip to deal'}
+              </span>
+            </div>
+          )}
+
+          {(phase === 'betting' || phase === 'loading') && tier && !tier.eligible && <span className="font-display text-[26px] font-black text-white/80">Not enough gold for {tier.name}</span>}
+
+          {phase === 'arranging' && (
+            <div data-zone="hand" className="relative h-[120px] flex-1" aria-label="Your hand">
+              {hand.map((c, i) => {
+                const on = picked.includes(c);
+                return (
+                  <span key={c} onPointerDown={startDrag(c, 'hand')} className={`absolute touch-none transition-[left] ${drag?.moving && drag.card === c ? 'opacity-30' : ''}`} style={{ left: i * Math.min(62, 760 / Math.max(hand.length, 1)), top: 8 }}>
+                    <PlayingCard
+                      code={c}
+                      selected={on}
+                      style={{ width: bigCard.w, height: bigCard.h, fontSize: bigCard.f }}
+                      onClick={() => {
+                        if (suppressClick.current || locked) return;
+                        play('tap');
+                        setPicked((s) => (s.includes(c) ? s.filter((x) => x !== c) : [...s, c]));
+                      }}
+                    />
+                  </span>
+                );
+              })}
+              {hand.length === 0 && <span className="absolute inset-0 flex items-center font-display text-[26px] font-black text-[#7dffa0]">All cards placed — tap Submit!</span>}
+            </div>
+          )}
+
+          {revealed && matchOver && match && (
+            <div className="flex flex-1 items-center justify-between">
+              <span className="font-display text-[28px] font-black text-white">
+                Match over · <span className={tone(match.gold)}>{signed(match.gold)} Gold</span>
+              </span>
+              <button type="button" onClick={() => setPanel('summary')} className="lx-tile h-[78px] rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[30px] font-black text-[#4a1d00] shadow-[0_6px_0_#8a4a00]">
+                Results
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Autoplay Arrange + Sort */}
+        <div className="absolute right-[24px] top-[748px] z-10 flex flex-col items-end gap-3">
+          <button type="button" role="switch" aria-checked={autoplay} aria-label="Autoplay Arrange" onClick={toggleAutoplay} className="flex items-center gap-3 rounded-full bg-black/35 py-1 pl-4 pr-1">
+            <span className="font-display text-[22px] font-black text-white">Autoplay Arrange</span>
+            <span className={`relative h-[38px] w-[70px] rounded-full transition ${autoplay ? 'bg-[#2fd14f]' : 'bg-white/30'}`}>
+              <span className={`absolute top-[3px] h-[32px] w-[32px] rounded-full bg-white shadow transition-all ${autoplay ? 'left-[35px]' : 'left-[3px]'}`} />
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Sort by ${sortBy === 'rank' ? 'suit' : 'rank'}`}
+            onClick={() => {
+              setSortBy(sortBy === 'rank' ? 'suit' : 'rank');
+              play('tap');
+            }}
+            disabled={phase !== 'arranging'}
+            className="lx-tile flex h-[76px] w-[250px] items-center justify-center gap-3 rounded-[22px] border-[5px] border-[#ffc531] bg-gradient-to-b from-[#ff4a4a] to-[#b3141b] font-display text-[36px] font-black text-white shadow-[0_6px_0_#5a0609] disabled:opacity-50"
+          >
+            <svg viewBox="0 0 30 40" className="h-9 w-7" aria-hidden="true">
+              <path d="M8 4 L2 12 H6 V24 H10 V12 H14Z M22 36 L28 28 H24 V16 H20 V28 H16Z" fill="currentColor" />
+            </svg>
+            Sort
+            <span className="font-display text-[16px] font-bold text-white/80">{sortBy}</span>
+          </button>
+        </div>
+
+        {/* Declared Luck popup (right after the deal) */}
+        {luck && round && phase === 'arranging' && (
+          <LuckPopup
+            key={round.id}
+            gameId={round.id}
+            initial={luck}
+            tierName={`${round.tier.name} · R${round.round} · ${banksText(round.banker)}`}
+            bet={round.bet}
+            betLabel={round.banker === 1 ? `Covering ${fmt(round.covered ?? 0)}` : undefined}
+            gold={gold}
+            seats={{
+              left: { name: BOTS[2], face: SEATS[2].face, sub: '13 cards', banker: round.banker === 2 },
+              right: { name: BOTS[4], face: SEATS[4].face, sub: '13 cards', banker: round.banker === 4 },
+            }}
+            declaring={declaring}
+            onDeclare={declareLuck}
+            onReady={(r) => {
+              setRows(r);
+              setPicked([]);
+              setLuck(null);
+              // READY confirms and locks the arrangement; RESET reopens this popup.
+              setLocked(true);
+            }}
+            onClose={() => {
+              play('tap');
+              setLuck(null);
+            }}
+          />
+        )}
+
+        {notice && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/55">
+            <div role="alertdialog" aria-label={notice === 'lucky' ? 'Declared Luck' : 'No luck'} className={`sp-pop lx-gold relative w-[640px] rounded-[44px] p-[10px] shadow-[0_12px_0_#7a3e00] ${notice === 'lucky' ? 'tb-winner' : ''}`}>
+              <div className={`flex flex-col items-center rounded-[36px] px-8 pb-8 pt-6 text-center ${notice === 'lucky' ? 'bg-[radial-gradient(circle_at_50%_25%,#b06bff,#4a0f9a_70%)]' : 'bg-[radial-gradient(circle_at_50%_25%,#8f1015,#3a0204_70%)]'}`}>
+                <span className={notice === 'lucky' ? 'tb-clover-burst' : 'tb-sad'}>
+                  <Clover size={150} sad={notice === 'noluck'} />
+                </span>
+                <CandyText text={notice === 'lucky' ? 'DECLARED LUCK!' : 'NO LUCK!'} width={580} height={110} size={notice === 'lucky' ? 72 : 92} stroke={notice === 'lucky' ? '#2a0660' : '#5a0606'} fill={notice === 'lucky' ? ['#fffbe0', '#ffe14d', '#ffa514'] : ['#ffffff', '#ffd0d0', '#ff8a8a']} />
+                {notice === 'lucky' && round?.lucky ? (
+                  <>
+                    <p className="font-display text-[40px] font-black text-white">{round.lucky.label}</p>
+                    <p className="mt-1 font-display text-[26px] font-bold text-white/85">A Lucky Hand beats the lane comparison · {round.lucky.multiplier}× bet{round.banker === 1 ? ' from each bot' : ''}</p>
+                    <p className={`mt-2 font-display text-[44px] font-black ${tone(result?.gold ?? 0)}`}>{signed(result?.gold ?? 0)} Gold</p>
+                    {!round.wagering && <p className="text-[18px] text-white/60">Practice Gold — not credited</p>}
+                  </>
+                ) : (
+                  <p className="font-display text-[28px] font-bold text-white/90">Your cards do not qualify for Declared Luck. Keep arranging and play the hand normally.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    play('tap');
+                    setNotice(null);
+                  }}
+                  className="lx-tile mt-6 h-[80px] w-[240px] rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] font-display text-[40px] font-black text-[#4a1d00] shadow-[0_6px_0_#8a4a00]"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div role="alert" className={`absolute left-1/2 top-[120px] z-50 -translate-x-1/2 whitespace-nowrap rounded-full border-4 px-8 py-3 font-display text-[26px] font-black shadow-lg ${toast.ok ? 'border-[#4ee36b] bg-[#0f2a1c] text-[#b9ffcb]' : 'border-[#ff8a8a] bg-[#3a0d14] text-[#ffe4e4]'}`}>
+            {toast.text}
+          </div>
+        )}
+
+        {/* Panels */}
+        {panel && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55" onClick={() => setPanel(null)}>
+            <div role="dialog" aria-label={{ settings: 'Settings', help: 'How to play', leave: 'Leave table', summary: 'Match results' }[panel]} onClick={(e) => e.stopPropagation()} className="lx-gold relative w-[900px] rounded-[40px] p-[10px] shadow-[0_12px_0_#7a3e00]">
+              <div className="max-h-[840px] overflow-y-auto rounded-[32px] bg-gradient-to-b from-[#8f1015] to-[#3a0204] p-8 text-white">
+                <button type="button" aria-label="Close" onClick={() => setPanel(null)} className="absolute right-6 top-6 flex h-[60px] w-[60px] items-center justify-center rounded-full border-4 border-[#ffc531] bg-gradient-to-b from-[#ff6b6b] to-[#c0101a] font-display text-[30px] font-black">
+                  ✕
+                </button>
+
+                {panel === 'settings' && (
+                  <div className="space-y-5">
+                    <h2 className="font-display text-[40px] font-black">Settings</h2>
+                    <button type="button" role="switch" aria-checked={soundOn} onClick={toggleSound} className="flex w-full items-center justify-between rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
+                      Sound <span className={soundOn ? 'text-[#7dffa0]' : 'text-white/50'}>{soundOn ? 'ON' : 'OFF'}</span>
+                    </button>
+                    <button type="button" role="switch" aria-checked={autoplay} onClick={toggleAutoplay} className="flex w-full items-center justify-between rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
+                      Autoplay Arrange <span className={autoplay ? 'text-[#7dffa0]' : 'text-white/50'}>{autoplay ? 'ON' : 'OFF'}</span>
+                    </button>
+                    <Link href="/settings/" className="block rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
+                      More settings ›
+                    </Link>
+                  </div>
+                )}
+
+                {panel === 'help' && (
+                  <div className="space-y-3 text-[22px] leading-snug">
+                    <h2 className="font-display text-[40px] font-black">Round Bank Pusoy</h2>
+                    <p>Four players — you, LuckyBot, CardBot and AceBot — for 12 rounds. The banker rotates: round 1 you, then LuckyBot, CardBot, AceBot, and around again.</p>
+                    <p>The banker places no bet — it covers everyone else's bets. When you are not the banker, tap a chip to place your bet (each bot places its own); when you are, just tap Deal. Everyone gets 13 cards; arrange yours into <b className="text-[#ffe14d]">Front</b> (3), <b className="text-[#ffe14d]">Middle</b> (5) and <b className="text-[#ffe14d]">Back</b> (5). Back must be at least as strong as Middle, and Middle at least as strong as Front. Tap <b className="text-[#ffe14d]">READY</b> to lock your cards, <b className="text-[#ffe14d]">Reset</b> to rearrange, then <b className="text-[#ffe14d]">Submit</b>. A misplaced hand can still be submitted but pays a 2× bet penalty — to the banker, or as banker to every player.</p>
+                    <p>Every player is compared with the banker lane by lane (Front vs Front, Middle vs Middle, Back vs Back). Win all 3 = 2× bet, win 2 = 1× bet; lose 2 = −1×, lose all 3 = −2×. <b className="text-[#ffe14d]">An identical lane goes to the banker.</b></p>
+                    <p>Declared Luck (Six Pairs, Three Flushes or Three Straights) beats the lane comparison and pays 2× bet. The bots declare their own Lucky Hands.</p>
+                    <p className="text-white/70">Tap cards then a lane (or drag them). Autoplay Arrange fills the lanes for you; Sort switches rank / suit order.</p>
+                  </div>
+                )}
+
+                {panel === 'leave' && (
+                  <div className="space-y-6 text-center">
+                    <h2 className="font-display text-[40px] font-black">Leave the table?</h2>
+                    <p className="text-[24px] text-white/85">Your round and match are kept. Choose {tier?.name ?? 'this level'} again to continue.</p>
+                    <div className="flex justify-center gap-4">
+                      <button type="button" onClick={() => setPanel(null)} className="h-[72px] rounded-full border-4 border-white/60 bg-black/30 px-8 font-display text-[28px] font-black">
+                        Stay
+                      </button>
+                      <button type="button" onClick={() => router.replace(PICKER_URL)} className="h-[72px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[28px] font-black text-[#4a1d00]">
+                        Leave
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {panel === 'summary' && match && (
+                  <div className="text-center">
+                    {(() => {
+                      const ranked = [...match.standings].sort((a, b) => b.gold - a.gold || a.seat - b.seat);
+                      const place = ranked.findIndex((s) => s.seat === 1) + 1;
+                      return (
+                        <>
+                          <span className="inline-block -rotate-2 rounded-2xl bg-gradient-to-b from-[#fff3a0] via-[#ffd13a] to-[#e08a00] px-8 py-2 font-display text-[44px] font-black text-[#4a1d00] shadow-[0_6px_0_#8a4a00]">{place === 1 ? 'YOU WIN THE MATCH!' : `#${place} PLACE`}</span>
+                          <p className={`mt-3 font-display text-[40px] font-black ${tone(match.gold)}`}>{signed(match.gold)} Gold</p>
+                          <p className="text-[18px] text-white/60">
+                            {match.tier.name} · {match.rounds_total} rounds{match.wagering ? '' : ' · practice Gold — not credited'}
+                          </p>
+                          <ul className="mx-auto mt-3 max-w-[560px] space-y-1 text-left" aria-label="Standings">
+                            {ranked.map((s, i) => (
+                              <li key={s.seat} className={`flex items-center gap-4 rounded-2xl px-4 py-1.5 font-display text-[24px] font-black ${s.seat === 1 ? 'bg-[#ffd13a]/25 ring-2 ring-[#ffd13a]' : 'bg-black/30'}`}>
+                                <span className="w-8 text-[#ffe14d]">{i === 0 ? '👑' : i + 1}</span>
+                                <span className="flex-1">{s.seat === 1 ? name : s.name}</span>
+                                <span className={tone(s.gold)}>{signed(s.gold)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      );
+                    })()}
+                    <table className="mt-4 w-full text-left font-display text-[19px] font-black">
+                      <thead className="text-white/60">
+                        <tr>
+                          <th className="px-2">Round</th>
+                          <th className="px-2">Banker</th>
+                          <th className="px-2 text-right">Bet</th>
+                          <th className="px-2 text-right">You</th>
+                          <th className="px-2 text-right">Gold</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {match.history.map((h) => (
+                          <tr key={h.round} className="odd:bg-black/20">
+                            <td className="px-2">{h.round}</td>
+                            <td className="px-2">{h.banker === 1 ? 'You' : h.banker_name}</td>
+                            <td className="px-2 text-right">{h.banker === 1 ? `covered ${fmt(h.covered ?? 0)}` : fmt(h.bet)}</td>
+                            <td className="px-2 text-right text-white/80">{h.lucky ? 'Lucky!' : h.banker === 1 ? 'Banked' : `${(h.multiple ?? 0) > 0 ? '+' : '−'}${Math.abs(h.multiple ?? 0)}×`}</td>
+                            <td className={`px-2 text-right ${tone(h.gold)}`}>{signed(h.gold)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-5 flex justify-center gap-4">
+                      <button type="button" onClick={() => router.replace(PICKER_URL)} className="h-[72px] rounded-full border-4 border-white/60 bg-black/30 px-7 font-display text-[26px] font-black">
+                        Change level
+                      </button>
+                      <button type="button" onClick={playNewMatch} className="lx-tile h-[72px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[28px] font-black text-[#4a1d00] shadow-[0_6px_0_#8a4a00]">
+                        New match
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </LandscapeStage>
+
+      {drag?.moving && (
+        <div className="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2 rotate-6 drop-shadow-[0_10px_16px_rgb(0_0_0/0.5)]" style={{ left: drag.x, top: drag.y }}>
+          <PlayingCard code={drag.card} />
+        </div>
       )}
     </Screen>
   );

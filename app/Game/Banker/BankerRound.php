@@ -15,6 +15,9 @@ use App\Game\Scorer;
  *   3 wins = +2, 3 losses = -2, 2 wins 1 loss = +1, 1 win 2 losses = -1,
  *   anything containing a tie = 0 (default; see config('pusoy.banker.settlement')).
  *
+ * Banker advantage (optional, $bankerWinsTies): an identical lane is won by
+ * the banker instead of tying, so every lane has a winner.
+ *
  * Fouls: a fouled hand loses every lane against a valid hand; two fouled
  * hands tie every lane.
  *
@@ -44,6 +47,8 @@ final class BankerRound
         private readonly int $luckyMultiplier = 2,
         private readonly int $reserveMultiplier = 2,
         private readonly int $feeBps = 0,
+        // Banker advantage: an identical (equal-strength) lane, or two fouled hands, goes to the banker instead of a tie.
+        private readonly bool $bankerWinsTies = false,
     ) {}
 
     /**
@@ -81,10 +86,10 @@ final class BankerRound
 
                 foreach (Scorer::POSITIONS as $position) {
                     $lanes[$position] = match (true) {
-                        $myFoul && $bankerFoul => 0,
+                        $myFoul && $bankerFoul => $this->bankerWinsTies ? -1 : 0,
                         $myFoul => -1,
                         $bankerFoul => 1,
-                        default => $mine->value($position)->compare($banker->value($position)) <=> 0,
+                        default => $this->laneOutcome($mine->value($position)->compare($banker->value($position))),
                     };
                 }
 
@@ -131,6 +136,16 @@ final class BankerRound
                 'lucky_bonus' => max(0, $bankerLuckyBonus),
             ],
         ];
+    }
+
+    /** Player-vs-banker lane result from a strength comparison (ties go to the banker when enabled). */
+    private function laneOutcome(int $cmp): int
+    {
+        if ($cmp === 0) {
+            return $this->bankerWinsTies ? -1 : 0;
+        }
+
+        return $cmp > 0 ? 1 : -1;
     }
 
     /**

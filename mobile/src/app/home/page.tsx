@@ -20,6 +20,7 @@ import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
 import { practiceUrl } from '@/lib/singlePlayer';
+import { useLandscapeLock } from '@/lib/useLandscapeLock';
 
 /**
  * Landscape main menu (laid out on a 1600×900 stage that scales to the
@@ -188,40 +189,6 @@ function useCountUp(target: number | undefined): number | undefined {
   }, [target]);
 
   return shown;
-}
-
-/** Lock the native app to landscape on this screen; other screens are portrait. */
-function useLandscapeLock() {
-  useEffect(() => {
-    let native = false;
-    (async () => {
-      try {
-        const { Capacitor } = await import('@capacitor/core');
-        native = Capacitor.isNativePlatform();
-        if (!native) return;
-        const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-        await ScreenOrientation.lock({ orientation: 'landscape' });
-        const { StatusBar } = await import('@capacitor/status-bar');
-        await StatusBar.hide();
-      } catch {
-        // web / plugin unavailable: the stage rotates itself instead
-      }
-    })();
-
-    return () => {
-      if (!native) return;
-      (async () => {
-        try {
-          const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-          await ScreenOrientation.lock({ orientation: 'portrait' });
-          const { StatusBar } = await import('@capacitor/status-bar');
-          await StatusBar.show();
-        } catch {
-          // ignore
-        }
-      })();
-    };
-  }, []);
 }
 
 export default function Home() {
