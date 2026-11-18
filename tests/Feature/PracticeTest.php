@@ -443,3 +443,24 @@ test('with CP wagering on, bots never bet more than the player-banker can cover'
         expect(balance($me, Currency::CP))->toBe((1_000 - 2 * $deal->json('data.covered')) * 100);
     }
 });
+
+test('Single Player has no timer at any level: a round waits indefinitely and is never auto-submitted', function () {
+    $rich = practicePlayer(1_000_000);
+
+    foreach (['beginner', 'intermediate', 'advanced', 'mastery'] as $tier) {
+        $match = spStartMatch($this, $rich, $tier);
+        $deal = spDealRound($this, $rich, $match)->assertCreated();
+        $id = $deal->json('data.id');
+        expect($deal->json('data'))->not->toHaveKeys(['deadline', 'expires_at', 'seconds_left', 'arrangement_seconds']);
+
+        // Days pass and the background sweeper runs: the round is still open and untouched.
+        $this->travel(3)->days();
+        $this->artisan('pusoy:sweep')->assertSuccessful();
+        expect(PracticeGame::query()->find($id)->status)->toBe('arranging');
+        $this->actingAs($rich, 'sanctum')->getJson('/api/v1/practice/matches/current')->assertJsonPath('data.current.id', $id);
+
+        // The player can still rearrange (preview) and submit whenever ready.
+        $this->actingAs($rich, 'sanctum')->postJson("/api/v1/practice/{$id}/preview", ['front' => [], 'middle' => [], 'back' => []])->assertOk();
+        spSubmitAuto($this, $rich, $id)->assertCreated()->assertJsonPath('data.status', 'completed');
+    }
+});

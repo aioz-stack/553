@@ -292,6 +292,26 @@ describe('Single Player — Round Bank table', () => {
     expect(replace).toHaveBeenCalledWith('/home/?single=1');
   });
 
+  it('has no timer: no countdown is shown and nothing is submitted while you take your time', async () => {
+    await dealAndClose();
+    vi.useFakeTimers();
+    try {
+      // Ten minutes pass with the cards still in hand.
+      await act(async () => {
+        vi.advanceTimersByTime(10 * 60 * 1000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(apiMock).not.toHaveBeenCalledWith('/practice/9/submit', expect.anything());
+    expect(screen.queryByText(/\d+\s*s\b|countdown|time left|seconds/i)).toBeNull();
+    expect(screen.queryByRole('timer')).toBeNull();
+    // Still free to arrange: a card can be picked and placed.
+    fireEvent.click(screen.getByRole('button', { name: cardName('2C') }));
+    fireEvent.click(screen.getByRole('button', { name: 'Front row' }));
+    expect(within(screen.getByRole('button', { name: 'Front row' })).getAllByRole('button')).toHaveLength(1);
+  });
+
   it('opens the difficulty picker when no level was chosen', async () => {
     window.history.replaceState(null, '', '/practice/');
     render(<Practice />);

@@ -389,6 +389,9 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   of the rest) and keeps the best-balanced one by an estimated lane-win score — never fouls and is never
   worse than the greedy `AutoArranger`; the others play a random non-fouled hand. Bots declare their own
   Lucky Hands. Their cards stay hidden until settlement.
+- **No timer, at every level:** Single Player rounds have no countdown, deadline or timeout. A dealt round
+  stays open until you Submit (or declare luck); `pusoy:sweep` never touches `practice_games`, and the
+  table never auto-submits. (Arrangement timers apply to multiplayer tables only.)
 - **You** arrange Front 3 / Middle 5 / Back 5. **A misplaced (fouled) hand is accepted** and penalised in
   settlement: it loses every lane, so as a player you pay **2 × bet** to the banker, and as banker you pay
   **2 × bet to every opponent** (both misplaced → the banker still wins, per the banker advantage). The
