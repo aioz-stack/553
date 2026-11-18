@@ -185,8 +185,8 @@ function CoinStack({ x, y, s = 1, d = 0 }: { x: number; y: number; s?: number; d
   );
 }
 
-/** Small stack of three gold coins (the CP balance icon on the home HUD). */
-export function GoldCoins({ size = 78 }: { size?: number }) {
+/** Small stack of three gold coins (the Single Player Gold icon on the home HUD; `mark` is stamped on the top coin). */
+export function GoldCoins({ size = 78, mark = 'G' }: { size?: number; mark?: string }) {
   const id = useId().replace(/:/g, '');
   const coin = (cx: number, cy: number) => (
     <g key={`${cx}-${cy}`}>
@@ -209,7 +209,7 @@ export function GoldCoins({ size = 78 }: { size?: number }) {
       {coin(40, 44)}
       {coin(40, 30)}
       <text x="40" y="35" textAnchor="middle" fontSize="15" fontWeight="900" fill="#9a5b00" fontFamily="system-ui">
-        ₱
+        {mark}
       </text>
     </svg>
   );

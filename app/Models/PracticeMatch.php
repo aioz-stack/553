@@ -18,6 +18,9 @@ class PracticeMatch extends Model
 
     public const ABANDONED = 'abandoned';
 
+    /** Ended early: a settled round left the player unable to cover the next one (Single Player Gold). */
+    public const OUT_OF_GOLD = 'out_of_gold';
+
     protected $guarded = ['id'];
 
     protected function casts(): array

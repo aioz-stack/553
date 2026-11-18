@@ -30,7 +30,7 @@ test('a player registers, logs in with a bearer token and reads their wallet', f
 
     $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('data.role', 'player');
     $this->withToken($token)->getJson('/api/v1/wallet')->assertOk()
-        ->assertJsonCount(2, 'data')
+        ->assertJsonCount(4, 'data')
         ->assertJsonPath('meta.cash_withdrawals_enabled', false);
 
     $this->withToken($token)->postJson('/api/v1/auth/logout')->assertOk();

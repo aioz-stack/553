@@ -1,5 +1,6 @@
 /** Shapes returned by the Laravel API (mirrors the web app's types). */
-export type Currency = 'CP' | 'VC';
+/** CP (cash, disabled), VC (diamonds, Multiplayer), GD (Single Player Gold, free-play), GP (Gold Points, free reward → Gold 1:1). */
+export type Currency = 'CP' | 'VC' | 'GD' | 'GP';
 
 export interface User {
   id: number;

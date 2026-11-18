@@ -54,15 +54,17 @@ return [
     /*
     | Single Player — Round Bank, you + 3 bots (App\Services\Game\PracticeService).
     | rounds: rounds per match; the banker rotates seat by seat (you first).
-    | min_gold: CP balance (in points) the player must hold to pick the tier.
+    | min_gold: Gold balance (in points) the player must hold to pick the tier.
     | bets: the bet options offered before every round (Gold points).
-    | Settlement follows the 'banker' section below. Gold (CP) only moves when
-    | features.cp_wagering is on; otherwise rounds settle as practice Gold.
+    | Settlement follows the 'banker' section below. Every round moves Gold (GD,
+    | free-play, never cash) automatically: App\Services\Game\GoldService.
+    | out_of_gold_reward: free Gold Points claimed when the player is Out of Gold.
     | strong_bots (0-3): how many of the 3 bots arrange with BotArranger (best
     | balanced valid arrangement); the others arrange casually (non-fouled).
     */
     'practice' => [
         'rounds' => (int) env('SINGLE_PLAYER_ROUNDS', 12),
+        'out_of_gold_reward' => (int) env('SINGLE_PLAYER_GOLD_REWARD', 1_000),
         // Banker advantage: an identical lane goes to the banker (no ties).
         'banker_wins_ties' => true,
         'tiers' => [

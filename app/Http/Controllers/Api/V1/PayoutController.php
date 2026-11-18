@@ -39,7 +39,7 @@ class PayoutController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'currency' => ['required', Rule::enum(Currency::class)],
+            'currency' => ['required', Rule::enum(Currency::class)->only(Currency::multiplayer())],
             'amount' => ['required', 'regex:/^\d{1,13}(\.\d{1,2})?$/'],
         ]);
 

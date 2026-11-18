@@ -64,7 +64,7 @@ class CommissionController extends Controller
 
         $data = $request->validate([
             'agent_id' => ['nullable', 'integer', 'exists:agents,id'],
-            'currency' => ['nullable', Rule::enum(Currency::class)],
+            'currency' => ['nullable', Rule::enum(Currency::class)->only(Currency::multiplayer())],
             'rate_bps' => ['required', 'integer', 'min:0', 'max:10000'],
         ]);
 

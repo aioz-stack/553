@@ -25,7 +25,7 @@ class AllocatePointsRequest extends FormRequest
     {
         return [
             'recipient_id' => ['required', 'integer', 'exists:users,id'],
-            'currency' => ['required', Rule::enum(Currency::class)],
+            'currency' => ['required', Rule::enum(Currency::class)->only(Currency::multiplayer())],
             'amount' => $this->amountRule(),
             'reason' => ['nullable', 'string', 'max:255'],
             'idempotency_key' => ['nullable', 'string', 'max:100'],

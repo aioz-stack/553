@@ -21,11 +21,11 @@ uses(RefreshDatabase::class);
 
 beforeEach(fn () => $this->seed(RolesAndPermissionsSeeder::class));
 
-/** A player holding $gold CP (default: exactly the Beginner minimum). */
-function practicePlayer(int $gold = 1_000): User
+/** A player holding $gold Gold (Single Player, free-play). Every round moves Gold, so flow tests start well funded. */
+function practicePlayer(int $gold = 100_000): User
 {
     $u = User::factory()->player()->create();
-    fund($u, $gold * 100, Currency::CP);
+    fund($u, $gold * 100, Currency::GD);
 
     return $u;
 }
@@ -67,10 +67,21 @@ function spRigRound(int $gameId, array $hands): PracticeGame
     return $game;
 }
 
-/** Pin each non-banker seat's bet (free-play rounds only: no reserves are adjusted). */
+/** Pin each non-banker seat's bet, topping up both escrow reserves to the new worst case (2 × the bets you cover / your bet). */
 function spSetBets(int $gameId, array $bets): void
 {
-    PracticeGame::query()->findOrFail($gameId)->forceFill(['bets' => $bets])->save();
+    $game = PracticeGame::query()->findOrFail($gameId);
+    $game->forceFill(['bets' => $bets])->save();
+    $covered = (int) $game->banker === 1 ? array_sum($bets) : (int) ($bets[1] ?? $game->bet);
+    $delta = $covered * 2 * 100 - (int) $game->player_reserve;
+
+    if ($delta > 0) {
+        $wallets = app(WalletService::class);
+        $ledger = app(LedgerService::class);
+        $ledger->transfer(new TransferRequest(TransactionType::GameEntry, Currency::GD, $wallets->for($game->user, Currency::GD), $wallets->escrow(Currency::GD), $delta, 'test: raise reserve'));
+        $ledger->transfer(new TransferRequest(TransactionType::GameEntry, Currency::GD, null, $wallets->escrow(Currency::GD), $delta, 'test: raise house reserve'));
+        $game->forceFill(['player_reserve' => $game->player_reserve + $delta, 'house_reserve' => $game->house_reserve + $delta])->save();
+    }
 }
 
 function spSubmitAuto($test, User $u, int $gameId)
@@ -104,10 +115,10 @@ function spAssertSettlement(array $round): void
 }
 
 test('difficulty tiers list minimum gold, bet options and eligibility', function () {
-    $me = practicePlayer();
+    $me = practicePlayer(1_000);
 
     $res = $this->actingAs($me, 'sanctum')->getJson('/api/v1/practice/tiers')->assertOk()
-        ->assertJsonPath('meta.rounds', 12)->assertJsonPath('meta.wagering', false);
+        ->assertJsonPath('meta.rounds', 12)->assertJsonPath('meta.wagering', true);
     $tiers = collect($res->json('data'));
 
     expect($tiers->pluck('key')->all())->toBe(['beginner', 'intermediate', 'advanced', 'mastery']);
@@ -116,12 +127,13 @@ test('difficulty tiers list minimum gold, bet options and eligibility', function
 });
 
 test('a match needs a valid tier and enough gold', function () {
-    $me = practicePlayer();
+    $me = practicePlayer(1_000);
     $this->actingAs($me, 'sanctum')->postJson('/api/v1/practice/matches', [])->assertStatus(422)->assertJsonValidationErrors('tier');
     $this->actingAs($me, 'sanctum')->postJson('/api/v1/practice/matches', ['tier' => 'intermediate'])->assertStatus(422)->assertJsonPath('error', 'insufficient_gold');
 
     $broke = User::factory()->player()->create();
-    $this->actingAs($broke, 'sanctum')->postJson('/api/v1/practice/matches', ['tier' => 'beginner'])->assertStatus(422)->assertJsonPath('error', 'insufficient_gold');
+    // Below the Beginner minimum = Out of Gold: no match can start (the free Gold Points claim is offered instead).
+    $this->actingAs($broke, 'sanctum')->postJson('/api/v1/practice/matches', ['tier' => 'beginner'])->assertStatus(409)->assertJsonPath('error', 'out_of_gold');
     expect(PracticeMatch::query()->count())->toBe(0);
 });
 
@@ -196,8 +208,10 @@ test('every round settles each non-banker against the banker by the 2× / 1× ta
     $this->actingAs($me, 'sanctum')->getJson('/api/v1/practice/matches/current')->assertOk()
         ->assertJsonPath('data.rounds_played', 1)->assertJsonPath('data.gold', $res->json('data.result.gold'))
         ->assertJsonPath('data.next_round', 2)->assertJsonPath('data.next_banker', 2)->assertJsonPath('data.next_banker_name', 'LuckyBot');
-    // Gold wagering is off by default: no ledger rows for Single Player.
-    expect(WalletTransaction::query()->where('reason', 'like', 'Single Player%')->count())->toBe(0);
+    // Gold moves automatically: the round's result is in your Gold wallet, via the ledger.
+    expect(balance($me, Currency::GD))->toBe((100_000 + $res->json('data.result.gold')) * 100)
+        ->and(WalletTransaction::query()->where('reason', 'like', 'Single Player%')->count())->toBeGreaterThanOrEqual(3)
+        ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
 
 test('a match is 12 rounds; the banker rotates You → LuckyBot → CardBot → AceBot; standings add up', function () {
@@ -296,13 +310,11 @@ test('rounds and matches are private to their owner; a new match abandons the ol
     expect(PracticeMatch::query()->find($match)->status)->toBe('abandoned')->and(PracticeGame::query()->find($id)->status)->toBe('abandoned');
 });
 
-test('with CP wagering on, your worst case is reserved per round and Gold settles exactly once', function () {
-    config(['pusoy.features.cp_wagering' => true]);
+test('Gold Wallet: your worst case is reserved per round, results credit or deduct Gold automatically, exactly once', function () {
     $wallets = app(WalletService::class);
-    app(LedgerService::class)->transfer(new TransferRequest(TransactionType::ManualAdjustment, Currency::CP, null, $wallets->platform(Currency::CP), 1_000_000, 'test house bank'));
     $me = practicePlayer(5_000);
-    $house = fn () => $wallets->platform(Currency::CP)->fresh()->balance;
-    $escrow = fn () => $wallets->escrow(Currency::CP)->fresh()->balance;
+    $house = fn () => $wallets->platform(Currency::GD)->fresh()->balance;
+    $escrow = fn () => $wallets->escrow(Currency::GD)->fresh()->balance;
 
     $match = spStartMatch($this, $me);
 
@@ -312,39 +324,39 @@ test('with CP wagering on, your worst case is reserved per round and Gold settle
     $covered = $deal->json('data.covered');
     expect($covered)->toBe(collect($deal->json('data.players'))->where('is_you', false)->sum('bet'))->toBeGreaterThanOrEqual(150);
     $deal->assertJsonPath('data.reserved', 2 * $covered);
-    expect(balance($me, Currency::CP))->toBe((5_000 - 2 * $covered) * 100)->and($house())->toBe(1_000_000 - 2 * $covered * 100)->and($escrow())->toBe(4 * $covered * 100);
+    // Gold is free-play: the house reserve is issued, not drawn from a cash bank.
+    expect(balance($me, Currency::GD))->toBe((5_000 - 2 * $covered) * 100)->and($escrow())->toBe(4 * $covered * 100);
     expect($wallets->reconcile()['ok'])->toBeTrue();
 
     $gold = spSubmitAuto($this, $me, $id)->assertCreated()->json('data.result.gold');
-    expect(balance($me, Currency::CP))->toBe((5_000 + $gold) * 100)->and($house())->toBe(1_000_000 - $gold * 100)->and($escrow())->toBe(0);
+    expect(balance($me, Currency::GD))->toBe((5_000 + $gold) * 100)->and($house())->toBe((2 * $covered - $gold) * 100)->and($escrow())->toBe(0);
     expect($wallets->reconcile()['ok'])->toBeTrue();
+    // CP and VC are never touched by Single Player.
+    expect(balance($me, Currency::CP))->toBe(0)->and(balance($me, Currency::VC))->toBe(0);
 
+    // Processing the same result again changes nothing.
     $count = WalletTransaction::query()->count();
     spSubmitAuto($this, $me, $id)->assertStatus(409);
     expect(WalletTransaction::query()->count())->toBe($count);
 
     // Round 2 (LuckyBot banks): you hold its ranks → lose 2 × 500 exactly.
-    $before = balance($me, Currency::CP);
+    $before = balance($me, Currency::GD);
     $id2 = spDealRound($this, $me, $match, 500)->assertJsonPath('data.reserved', 1000)->json('data.id');
     spRigRound($id2, [2 => PAIRS, 1 => PAIRS_COPY]);
     spSubmitAuto($this, $me, $id2)->assertJsonPath('data.result.gold', -1000);
-    expect(balance($me, Currency::CP))->toBe($before - 1_000_00)->and($escrow())->toBe(0);
+    expect(balance($me, Currency::GD))->toBe($before - 1_000_00)->and($escrow())->toBe(0);
+    // The match reports the live Gold wallet.
+    $this->actingAs($me, 'sanctum')->getJson("/api/v1/practice/matches/{$match}")
+        ->assertJsonPath('data.currency', 'GD')->assertJsonPath('data.gold_wallet.gold', \App\Support\Points::decimal($before - 1_000_00));
 
     // Abandoning a match with an open round returns both reserves.
-    $before = balance($me, Currency::CP);
+    $before = balance($me, Currency::GD);
     $houseBefore = $house();
     spDealRound($this, $me, $match, 500);
-    expect(balance($me, Currency::CP))->toBe($before - 1_000_00);
+    expect(balance($me, Currency::GD))->toBe($before - 1_000_00);
     spStartMatch($this, $me);
-    expect(balance($me, Currency::CP))->toBe($before)->and($house())->toBe($houseBefore)->and($escrow())->toBe(0);
+    expect(balance($me, Currency::GD))->toBe($before)->and($house())->toBe($houseBefore + 1_000_00)->and($escrow())->toBe(0);
     expect($wallets->reconcile()['ok'])->toBeTrue();
-
-    // The house must be able to cover the round.
-    $poor = practicePlayer(1_000);
-    app(LedgerService::class)->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::CP, $wallets->platform(Currency::CP), null, $house(), 'drain'));
-    $m2 = spStartMatch($this, $poor);
-    spDealRound($this, $poor, $m2, 50)->assertStatus(422)->assertJsonPath('error', 'house_insufficient');
-    expect(balance($poor, Currency::CP))->toBe(1_000_00)->and(PracticeGame::query()->where('practice_match_id', $m2)->count())->toBe(0);
 });
 
 test('the fixed test hands are not Lucky Hands', function () {
@@ -400,10 +412,8 @@ test('a misplaced hand can be submitted and pays 2 × bet: as a player to the ba
         ->assertStatus(422)->assertJsonPath('error', 'invalid_arrangement');
 });
 
-test('with CP wagering on, a misplaced hand as banker pays 2 × every bot bet from the reserve, exactly once', function () {
-    config(['pusoy.features.cp_wagering' => true]);
+test('a misplaced hand as banker pays 2 × every bot bet from the Gold reserve, exactly once', function () {
     $wallets = app(WalletService::class);
-    app(LedgerService::class)->transfer(new TransferRequest(TransactionType::ManualAdjustment, Currency::CP, null, $wallets->platform(Currency::CP), 1_000_000, 'test house bank'));
     $me = practicePlayer(5_000);
 
     $match = spStartMatch($this, $me);
@@ -413,9 +423,9 @@ test('with CP wagering on, a misplaced hand as banker pays 2 × every bot bet fr
     spRigRound($id, [1 => PAIRS]);
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id}/submit", MISPLACED)->assertCreated()->assertJsonPath('data.result.gold', -2 * $covered);
 
-    expect(balance($me, Currency::CP))->toBe((5_000 - 2 * $covered) * 100)
-        ->and($wallets->platform(Currency::CP)->fresh()->balance)->toBe(1_000_000 + 2 * $covered * 100)
-        ->and($wallets->escrow(Currency::CP)->fresh()->balance)->toBe(0);
+    expect(balance($me, Currency::GD))->toBe((5_000 - 2 * $covered) * 100)
+        ->and($wallets->platform(Currency::GD)->fresh()->balance)->toBe(4 * $covered * 100)
+        ->and($wallets->escrow(Currency::GD)->fresh()->balance)->toBe(0);
     $count = WalletTransaction::query()->count();
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id}/submit", MISPLACED)->assertStatus(409);
     expect(WalletTransaction::query()->count())->toBe($count)->and($wallets->reconcile()['ok'])->toBeTrue();
@@ -450,22 +460,19 @@ test('the banker places no bet; every other seat places its own from the tier op
         ->assertJsonPath('data.history.1.bet', 100);
 });
 
-test('with CP wagering on, bots never bet more than the player-banker can cover', function () {
-    config(['pusoy.features.cp_wagering' => true]);
-    $wallets = app(WalletService::class);
-    app(LedgerService::class)->transfer(new TransferRequest(TransactionType::ManualAdjustment, Currency::CP, null, $wallets->platform(Currency::CP), 10_000_000, 'test house bank'));
+test('bots never bet more than the player-banker\'s Gold can cover', function () {
 
     foreach (range(1, 8) as $_) {
         $me = practicePlayer(1_000);
         $match = spStartMatch($this, $me);
         $deal = spDealRound($this, $me, $match)->assertCreated();
         expect(2 * $deal->json('data.covered'))->toBeLessThanOrEqual(1_000);
-        expect(balance($me, Currency::CP))->toBe((1_000 - 2 * $deal->json('data.covered')) * 100);
+        expect(balance($me, Currency::GD))->toBe((1_000 - 2 * $deal->json('data.covered')) * 100);
     }
 });
 
 test('Single Player has no timer at any level: a round waits indefinitely and is never auto-submitted', function () {
-    $rich = practicePlayer(1_000_000);
+    $rich = practicePlayer(10_000_000);
 
     foreach (['beginner', 'intermediate', 'advanced', 'mastery'] as $tier) {
         $match = spStartMatch($this, $rich, $tier);

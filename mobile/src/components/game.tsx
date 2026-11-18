@@ -18,7 +18,7 @@ const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean)
 export function Coin({ currency = 'VC', size = 22, className }: { currency?: 'VC' | 'CP' | string; size?: number; className?: string }) {
   const id = `coin-${currency}`;
   const springId = useId();
-  const [a, b, c] = currency === 'CP' ? ['#e8f1ff', '#8fb3e8', '#3f6aa8'] : ['#fff3b0', '#ffc83a', '#c27a04'];
+  const [a, b, c] = currency === 'CP' ? ['#e8f1ff', '#8fb3e8', '#3f6aa8'] : currency === 'GP' ? ['#fff0ff', '#f08cff', '#8a2bb8'] : ['#fff3b0', '#ffc83a', '#c27a04'];
 
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" className={cx('lx-spring-icon', className)} style={springStyle(springId, 2.6, 1.6)} aria-hidden="true">
@@ -33,7 +33,7 @@ export function Coin({ currency = 'VC', size = 22, className }: { currency?: 'VC
       <circle cx="16" cy="15" r="14" fill={`url(#${id})`} />
       <circle cx="16" cy="15" r="10" fill="none" stroke={c} strokeOpacity="0.5" strokeWidth="1.5" />
       <text x="16" y="19.5" textAnchor="middle" fontSize="11" fontWeight="900" fill={c} fontFamily="system-ui">
-        {currency === 'CP' ? '₱' : 'V'}
+        {{ CP: '₱', GD: 'G', GP: 'GP' }[currency] ?? 'V'}
       </text>
     </svg>
   );

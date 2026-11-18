@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import AvatarPicker from '@/components/AvatarPicker';
+import OutOfGoldPopup from '@/components/OutOfGoldPopup';
 import SettingsPanel from '@/components/SettingsPanel';
 import SinglePlayerPicker from '@/components/SinglePlayerPicker';
 import { useRouter } from 'next/navigation';
@@ -22,6 +23,7 @@ import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
+import { fetchGold, type GoldWallet } from '@/lib/gold';
 import { practiceUrl } from '@/lib/singlePlayer';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
 
@@ -197,7 +199,7 @@ function useCountUp(target: number | undefined): number | undefined {
 export default function Home() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const { vc, cp } = useBalance(user?.id);
+  const { vc, gd } = useBalance(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
   const wallet = useFetch<{ meta: { daily_reward_enabled: boolean; daily_reward_claimed: boolean } }>(user ? '/wallet' : null);
   const unread = useFetch<{ meta: { unread: number } }>(user ? '/notifications' : null).data?.meta.unread ?? 0;
@@ -208,14 +210,35 @@ export default function Home() {
   const [settings, setSettings] = useState(false);
   const [avatarPicker, setAvatarPicker] = useState(false);
   const diamonds = useCountUp(vc !== undefined ? Math.floor(Number(vc)) : undefined);
-  const coins = useCountUp(cp !== undefined ? Math.floor(Number(cp)) : undefined);
+  const coins = useCountUp(gd !== undefined ? Math.floor(Number(gd)) : undefined);
+  // Single Player Out of Gold: the free Gold Points popup (never shown for Multiplayer).
+  const [outOfGold, setOutOfGold] = useState<GoldWallet | null>(null);
 
   useLandscapeLock();
 
-  const openPicker = () => {
+  /** Single Player: Out of Gold opens the free Gold Points popup instead of the level picker. */
+  const openPicker = async () => {
     play('tap');
+    try {
+      const g = await fetchGold();
+      if (g.out_of_gold) {
+        setOutOfGold(g);
+        return;
+      }
+    } catch {
+      // the picker and the server still check the Gold before any round
+    }
     setPicker(true);
   };
+
+  // Single Player sends you here with ?gold=out when you run out of Gold.
+  useEffect(() => {
+    if (!user || new URLSearchParams(window.location.search).get('gold') !== 'out') return;
+    window.history.replaceState(null, '', '/home/');
+    fetchGold()
+      .then((g) => (g.out_of_gold ? setOutOfGold(g) : undefined))
+      .catch(() => undefined);
+  }, [user]);
 
   // "Change level" from the practice screen comes back here with ?single=1.
   useEffect(() => {
@@ -288,8 +311,8 @@ export default function Home() {
           <LogoCrest title="Pusoy 553" />
         </div>
 
-        {/* Balances: gold coins = CP, diamonds = VC (never combined). "+" opens the wallet; no deposits. */}
-        <BalancePill x={1046} w={260} label="Coin (CP) balance" value={coins} icon={<GoldCoins size={78} />} seed={7} delay={0.6} />
+        {/* Balances: gold coins = Single Player Gold, diamonds = VC (never combined). "+" opens the wallet; no deposits. */}
+        <BalancePill x={1046} w={260} label="Gold balance" value={coins} icon={<GoldCoins size={78} />} seed={7} delay={0.6} />
         <BalancePill x={1320} w={260} label="Diamond (VC) balance" value={diamonds} icon={<Diamond size={78} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} delay={1.5} />
 
         {/* Quick icons under the balance */}
@@ -365,6 +388,16 @@ export default function Home() {
         >
           ✎
         </button>
+        {outOfGold && (
+          <OutOfGoldPopup
+            initial={outOfGold}
+            onClose={() => setOutOfGold(null)}
+            onPlay={() => {
+              setOutOfGold(null);
+              setPicker(true);
+            }}
+          />
+        )}
         {picker && <SinglePlayerPicker onClose={() => setPicker(false)} onContinue={(sel) => router.push(practiceUrl(sel))} />}
 
         {toast && (

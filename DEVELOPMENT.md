@@ -203,9 +203,11 @@ Enforcement: Gates (one per ability + `staff`, `super-admin`, `agent`, `play`), 
 - Amounts are **BIGINT minor units** (1 point = 100). API sends/receives decimal strings
   (`"2000.50"`), converted by `App\Support\Points`. No floats touch balances.
 - One `wallets` table: `(user, currency, type)` where type ∈ `player`, `allocation`,
-  `commission`, plus system wallets `escrow:{CP|VC}` and `platform:{CP|VC}`. The spec's
+  `commission`, plus system wallets `escrow:{CP|VC|GD|GP}` and `platform:{CP|VC|GD|GP}`. The spec's
   `agent_wallets` / `agent_wallet_transactions` are these allocation/commission wallets — there is
-  deliberately no second wallet system. CP and VC never mix (enforced in `LedgerService`).
+  deliberately no second wallet system. Currencies never mix (enforced in `LedgerService`): **CP** (cash,
+  disabled), **VC** (diamonds, Multiplayer), and the Single Player free-play pair **GD** (Gold) and **GP**
+  (Gold Points, convertible 1:1 into Gold only) — see Single Player below. Only CP is cash (`Currency::isCash`).
 - `wallet_transactions` is immutable (model blocks update/delete): reference, idempotency key,
   type, currency, source/destination wallet, amount, **balance before/after for both sides**,
   status, reason, created_by, approved_by, related player/agent, game session, reversal link.
@@ -213,7 +215,8 @@ Enforcement: Gates (one per ability + `staff`, `super-admin`, `agent`, `play`), 
 - `LedgerService::transfer()` runs in a DB transaction, locks wallets with `SELECT … FOR UPDATE`
   in id order, refuses negative balances and frozen sources, and is idempotent (same key → same
   transaction; same key with different parameters → 409).
-- Issuance: only Super Admin allocations (and the optional daily VC reward) have a null source.
+- Issuance: only Super Admin allocations, the optional daily VC reward, and Single Player free-play Gold
+  (house reserves, the Out of Gold Gold Points claim and Gold Points → Gold conversions) have a null source.
 - `php artisan pusoy:reconcile` (daily) checks every balance against the ledger and that escrow
   equals active holds + room carry-over banks.
 - Cash: deposits, withdrawals/redemption, CP wagering and CP commission payouts are behind
@@ -488,17 +491,42 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   Bots only declare with a qualifying hand, so they never fail. (Multiplayer Banker Mode still answers a
   non-qualifying declaration with 422 `not_lucky` and no penalty.) Bot-vs-bank results between bots are computed too (standings), every round is
   zero-sum, and each round settles once (row lock + status).
-- **Gold (CP):** only when `FEATURE_CP_WAGERING=true` at match start (`practice_matches.wagering`). The bots
-  are house players; only your result moves Gold. Each deal reserves your worst case — 2 × your bet, or
-  2 × the bots' total when you bank — from your CP wallet **and** the same from the house
-  (platform CP wallet) into escrow (`GAME_ENTRY`, keys `sp:{round}:reserve:*`); settlement pays both out
-  of escrow (`GAME_REWARD` / `GAME_REFUND`, keys `sp:{round}:payout:*`) — always covered, zero-sum,
-  idempotent. Abandoning a match releases open reserves; `WalletService::reconcile()` counts held reserves.
-  The house wallet must be funded (422 `house_insufficient`). **With the flag off (default)** no wallet is
-  touched; rounds settle as practice Gold ("Practice Gold — not credited").
+- **Gold Wallet (automatic, `App\Services\Game\GoldService`):** Single Player always plays for **Gold (`GD`)**,
+  a free-play currency of its own: it can never be withdrawn, redeemed, or converted into CP or VC, and no
+  room, lobby, allocation, commission or payout accepts it (`Currency::multiplayer()` = CP, VC in their
+  validators; Gold/Gold Points wallets are player wallets only). Every deal reserves your worst case (2 × your bet, or 2 × the
+  bots' total when you bank) from your Gold wallet, and the house's matching reserve is issued (free-play, no
+  cash bank) into Gold escrow (`GAME_ENTRY`, keys `sp:{round}:reserve:*`); settlement pays both out of escrow
+  (`GAME_REWARD` / `GAME_REFUND`, keys `sp:{round}:payout:*`; the house share lands in `platform:GD`). So
+  winnings are credited and losses deducted automatically, the balance can never go negative, a round settles
+  exactly once (row lock + status + ledger idempotency keys), and the new balance is pushed on `user.{id}`
+  (`wallet.updated`). Abandoning a match releases open reserves; `WalletService::reconcile()` counts held reserves
+  per match currency (`practice_matches.currency`; matches from before this change are `CP`).
+- **Out of Gold (Single Player only):** you can no longer keep playing when **mid-match** your Gold can't cover
+  the next round's smallest reserve (2 × the tier's lowest bet, or 2 × three lowest bets when you bank) or
+  **between matches** it is below the lowest tier minimum (Beginner, 1,000). Zero and negative always count; a
+  held reserve never does. When a settled round leaves you Out of Gold the server ends the match at once
+  (`practice_matches.status = out_of_gold`, audit `practice.out_of_gold`); deal and new match answer 409
+  `out_of_gold`. The tier minimum applies when a match **starts**; mid-match a deal only needs its reserve.
+- **Free 1,000 Gold Points:** a separate **Gold Points (`GP`)** wallet. `POST practice/gold/claim` credits
+  `pusoy.practice.out_of_gold_reward` (1,000, env `SINGLE_PLAYER_GOLD_REWARD`) only while you are Out of Gold
+  and have no unconverted claim (`GOLD_POINTS_REWARD`, key `gold-points-claim:{user}:{n}`, serialised on
+  the user row, audit `gold_points.claimed`). Repeated clicks, refreshes and duplicate requests return the same
+  claim (200, same reference); a player with Gold left gets 409 `not_eligible`. `POST practice/gold/convert
+  {request_id, amount?}` converts Gold Points into Gold one way, 1:1 (two `GOLD_CONVERSION` rows: burn GP,
+  issue GD; keys `gold-convert:{user}:{request_id}:out|in`), so a retried request converts once.
+  `GET practice/gold` → `{gold, gold_points, out_of_gold, can_claim, claim_amount, minimum_to_start}`; the
+  same object is in `GET practice/tiers` (`meta.gold_wallet`) and every match (`gold_wallet`, `out_of_gold`).
+- **Mobile:** Home's coin pill is your Gold. When a round leaves you Out of Gold the table shows the result,
+  then an "Out of Gold!" banner, and once the reveal is over (or skipped) returns you to `/home/?gold=out`.
+  Home then opens `OutOfGoldPopup` (title, message, CLAIM 1,000 GOLD POINTS → "Convert to Gold & Play").
+  Tapping Single Player while Out of Gold opens the same popup instead of the level picker. Multiplayer
+  never checks Gold or shows the popup. The Wallet screen lists Gold, Gold Points, VC and CP separately and
+  can convert Gold Points.
 - API: `GET practice/tiers`, `POST practice/matches {tier}` (abandons any active match),
   `GET practice/matches/current`, `GET practice/matches/{id}` (history, standings per seat, running gold),
-  `POST practice/matches/{id}/deal`, `GET practice/{round}`, `POST practice/{round}/preview|suggest|lucky|submit`.
+  `POST practice/matches/{id}/deal`, `GET practice/{round}`, `POST practice/{round}/preview|suggest|lucky|submit`,
+  `GET practice/gold`, `POST practice/gold/claim`, `POST practice/gold/convert`.
   Owner-only (404 for others). Migration `2026_11_19_110000` closed free-play matches from the brief
   one-bot format.
 
@@ -648,7 +676,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
 | Multiplayer lobbies | `GET lobbies` (`tab` all/public/private, `search`, `page`; 5 per page + counts), `POST lobbies` (`name`, `password?`, `game_mode` banker/round_bank, `min_entry` 100/250/500/1000/2000, `preparation_seconds` 30/45/60/75), `POST lobbies/quick-join`, `GET lobbies/{id}` (also the heartbeat), `PATCH lobbies/{id}` (owner: name/password/time), `POST lobbies/{id}/join` (`password?`), `POST lobbies/{id}/seat` (`seat` 1–4), `POST lobbies/{id}/start` (`ready?`; every player), `POST lobbies/{id}/kick` (owner, `user_id`); leave uses `tables/{id}/leave` |
-| Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}` — Round Bank, you + 3 bots; CP only with `FEATURE_CP_WAGERING` |
+| Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}`, `GET practice/gold`, `POST practice/gold/claim`, `POST practice/gold/convert` (`request_id`, `amount?`) — Round Bank, you + 3 bots; plays for Gold (free-play) |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |

@@ -72,6 +72,11 @@ class WalletService
         foreach (Currency::cases() as $currency) {
             $this->for($user, $currency, WalletType::Player);
 
+            // Gold / Gold Points are Single Player wallets only: never allocated or paid as commission.
+            if ($currency->isSinglePlayer()) {
+                continue;
+            }
+
             if (! $user->isPlayer()) {
                 $this->for($user, $currency, WalletType::Allocation);
             }
@@ -137,10 +142,11 @@ class WalletService
         foreach (Currency::cases() as $currency) {
             $held = (int) WalletHold::query()->where('currency', $currency->value)->where('status', HoldStatus::Held->value)->sum('amount');
             $banks = (int) GameRoom::query()->where('currency', $currency->value)->sum('carry_over_amount');
-            // Single Player Round Bank reserves (player + house) are CP only.
-            $practice = $currency === Currency::CP
-                ? (int) DB::table('practice_games')->where('reserve_status', 'held')->sum(DB::raw('player_reserve + house_reserve'))
-                : 0;
+            // Single Player Round Bank reserves (player + house), in their match's currency (Gold; CP for legacy matches).
+            $practice = (int) DB::table('practice_games')
+                ->join('practice_matches', 'practice_matches.id', '=', 'practice_games.practice_match_id')
+                ->where('practice_games.reserve_status', 'held')->where('practice_matches.currency', $currency->value)
+                ->sum(DB::raw('practice_games.player_reserve + practice_games.house_reserve'));
             $expected = $held + $banks + $practice;
             $balance = (int) Wallet::query()->where('system_key', WalletType::Escrow->value.':'.$currency->value)->value('balance');
             $escrow[$currency->value] = ['balance' => $balance, 'expected' => $expected];

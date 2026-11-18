@@ -339,6 +339,24 @@ describe('Single Player — Round Bank table', () => {
     expect(apiMock).not.toHaveBeenCalledWith('/practice/matches', expect.anything());
   });
 
+  it('Out of Gold: when a round leaves you unable to continue, the match ends and you are taken Home to claim free Gold Points', async () => {
+    routes({ '/practice/matches/3': { data: { ...AFTER_1, status: 'out_of_gold', out_of_gold: true } } });
+    const popup = await dealToPopup();
+    fireEvent.click(within(popup).getByRole('button', { name: 'SUBMIT' }));
+    expect(await screen.findByRole('alert', { name: 'Out of Gold' })).toHaveTextContent('Single Player has ended');
+    // No further round: no chips or Deal, and no new deal is requested.
+    expect(screen.queryByRole('button', { name: 'Deal' })).toBeNull();
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home/?gold=out'), { timeout: 4000 });
+    expect(apiMock.mock.calls.filter(([p]) => p === '/practice/matches/3/deal')).toHaveLength(1);
+  });
+
+  it('Out of Gold before playing: Single Player sends you straight Home (no match is started)', async () => {
+    routes({ '/practice/tiers': { data: TIERS, meta: { gold_wallet: { gold: '0.00', gold_points: '0.00', out_of_gold: true, can_claim: true, claim_amount: 1000, minimum_to_start: 1000 } } } });
+    render(<Practice />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home/?gold=out'));
+    expect(apiMock).not.toHaveBeenCalledWith('/practice/matches', expect.anything());
+  });
+
   it('shows the match summary after round 12', async () => {
     routes({ '/practice/matches/3': { data: { ...AFTER_1, status: 'completed', rounds_played: 12, next_round: null, next_banker: null, gold: 650 } } });
     const popup = await dealToPopup();

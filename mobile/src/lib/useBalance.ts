@@ -56,5 +56,6 @@ export function useBalance(userId: number | undefined) {
 
   const find = (c: string) => wallets?.find((w) => w.type === 'player' && w.currency === c)?.balance;
 
-  return { vc: find('VC'), cp: find('CP'), reload };
+  // gd = Single Player Gold, gp = Gold Points (free-play; never combined with CP or VC).
+  return { vc: find('VC'), cp: find('CP'), gd: find('GD'), gp: find('GP'), reload };
 }

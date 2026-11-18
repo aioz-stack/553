@@ -17,5 +17,9 @@ enum TransactionType: string
     case ManualAdjustment = 'MANUAL_ADJUSTMENT';
     case DailyReward = 'DAILY_REWARD';
     case LuckyBonus = 'LUCKY_BONUS';
+    /** Out of Gold: the free 1,000 Gold Points claim (Single Player). */
+    case GoldPointsReward = 'GOLD_POINTS_REWARD';
+    /** Gold Points converted 1:1 into Gold (one way). */
+    case GoldConversion = 'GOLD_CONVERSION';
     case Reversal = 'REVERSAL';
 }

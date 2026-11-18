@@ -580,3 +580,14 @@ body {
 .cs-ring { animation: cs-ring .95s ease-out both; }
 @keyframes cs-ring { from { opacity: .9; transform: scale(.4); } to { opacity: 0; transform: scale(1.8); } }
 :root[data-motion='reduce'] [class*='cs-'] { animation: none !important; transition: none !important; }
+
+/* Out of Gold popup (Single Player): glowing rays, floating coins, twinkles, a pulsing claim button. */
+.og-rays { background: repeating-conic-gradient(from 0deg, rgb(255 225 90 / .38) 0deg 10deg, transparent 10deg 24deg); mask-image: radial-gradient(circle, #000 25%, transparent 68%); -webkit-mask-image: radial-gradient(circle, #000 25%, transparent 68%); animation: og-spin 18s linear infinite; }
+.og-float { animation: og-float 2.6s ease-in-out infinite; filter: drop-shadow(0 0 16px rgb(255 210 80 / .85)); }
+.og-twinkle { animation: og-twinkle 1.8s ease-in-out infinite; text-shadow: 0 0 12px #ffe14d; }
+.og-claim { animation: og-pulse 1.6s ease-in-out infinite; }
+@keyframes og-spin { to { transform: translateX(-50%) rotate(360deg); } }
+@keyframes og-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes og-twinkle { 0%, 100% { opacity: .2; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes og-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+[data-quality="low"] .og-rays, [data-motion="reduce"] .og-rays, [data-motion="reduce"] .og-float, [data-motion="reduce"] .og-twinkle, [data-motion="reduce"] .og-claim { animation: none; }

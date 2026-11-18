@@ -47,14 +47,17 @@ use Illuminate\Support\Facades\DB;
  * lucky_multiplier (2) × bet; declaring without one loses 2 × bet. The player
  * declares theirs, bots declare automatically (only ever with a qualifying hand).
  *
- * Gold (CP): when the match was started with the cp_wagering feature flag on,
- * each round reserves the player's worst case (2 × bet, or 6 × bet when the
- * player banks against three bots) from the player's CP wallet and the same
- * from the house (platform CP wallet) into escrow, and pays both out from
- * escrow on settlement — always covered, zero-sum, idempotent (one settlement
- * per round, ledger idempotency keys). The bots are house players: only the
- * player's own result moves Gold. With the flag off (the default until legal
- * approval) nothing touches wallets: rounds settle as practice Gold.
+ * Gold Wallet (GD — free-play, never cash; App\Services\Game\GoldService):
+ * every round reserves the player's worst case (2 × bet, or 2 × every bot's
+ * bet when the player banks) from their Gold wallet, and the house's matching
+ * reserve (issued, free-play) into escrow, then pays both out once on
+ * settlement — winnings credited and losses deducted automatically, always
+ * covered, never negative, idempotent (one settlement per round, ledger
+ * idempotency keys). The bots are house players: only the player's result
+ * moves Gold. When a settled round leaves the player Out of Gold (cannot
+ * cover the next round) the match ends at once (status out_of_gold) and no
+ * further round can be dealt. Legacy matches (currency CP) still settle and
+ * release in CP.
  */
 class PracticeService
 {
@@ -68,6 +71,7 @@ class PracticeService
     public function __construct(
         private readonly LedgerService $ledger,
         private readonly WalletService $wallets,
+        private readonly GoldService $gold,
     ) {}
 
     // ------------------------------------------------------------------ tiers
@@ -104,6 +108,11 @@ class PracticeService
 
         return DB::transaction(function () use ($user, $tierKey, $tier) {
             User::query()->whereKey($user->id)->lockForUpdate()->first();
+
+            if ($this->goldMinor($user) < Points::toMinor(GoldService::minimumToStart())) {
+                throw new BusinessRuleException('You are out of Gold. Claim your free Gold Points to keep playing.', 409, 'out_of_gold');
+            }
+
             $this->assertGold($user, $tier);
 
             foreach (PracticeMatch::query()->where('user_id', $user->id)->where('status', PracticeMatch::ACTIVE)->lockForUpdate()->get() as $old) {
@@ -119,7 +128,9 @@ class PracticeService
                 'tier' => $tierKey,
                 'status' => PracticeMatch::ACTIVE,
                 'rounds_total' => (int) config('pusoy.practice.rounds', 12),
-                'wagering' => (bool) config('pusoy.features.cp_wagering', false),
+                // Every round moves Gold (free-play) automatically.
+                'wagering' => true,
+                'currency' => Currency::GD->value,
             ])->refresh();
         });
     }
@@ -144,6 +155,10 @@ class PracticeService
                 /** @var PracticeMatch $match */
                 $match = PracticeMatch::query()->whereKey($match->id)->lockForUpdate()->firstOrFail();
                 $this->ownMatch($user, $match);
+
+                if ($match->status === PracticeMatch::OUT_OF_GOLD) {
+                    throw new BusinessRuleException('You are out of Gold. Claim your free Gold Points to keep playing.', 409, 'out_of_gold');
+                }
 
                 if ($match->status !== PracticeMatch::ACTIVE) {
                     throw new BusinessRuleException('This match is over. Start a new one.', 409, 'match_over');
@@ -181,10 +196,13 @@ class PracticeService
                 // When you bank with Gold on the line, the bots only bet what you can cover
                 // (2 × their total must fit your balance): they step down their largest bets.
                 if ($match->wagering && $bankerSeat === self::PLAYER_SEAT) {
-                    $bets = self::fitBets($bets, $options, intdiv($this->goldMinor($user), Points::SCALE));
+                    $bets = self::fitBets($bets, $options, intdiv($this->goldMinor($user, $match), Points::SCALE));
                 }
 
-                $this->assertGold($user, $tier);
+                // The tier minimum applies when a match starts; mid-match a round only needs its reserve covered.
+                if (! $match->wagering) {
+                    $this->assertGold($user, $tier);
+                }
 
                 // Every round (round 1 included) starts from the complete 52-card deck and a fresh
                 // CSPRNG seed, reshuffled before anything is dealt; nothing from earlier rounds carries over.
@@ -365,6 +383,14 @@ class PracticeService
 
         if ($match->rounds_played >= $match->rounds_total) {
             $match->forceFill(['status' => PracticeMatch::COMPLETED, 'completed_at' => now()])->save();
+        } elseif ($match->wagering && $match->currency === Currency::GD->value && $this->gold->isOutOfGold($user, $match)) {
+            // Out of Gold: the session ends now, no further round can be dealt.
+            $match->forceFill(['status' => PracticeMatch::OUT_OF_GOLD, 'completed_at' => now()])->save();
+            AuditLogger::log($user, 'practice.out_of_gold', $match, null, ['round' => $game->round_number, 'gold' => Points::decimal($this->goldMinor($user))]);
+        }
+
+        if ($match->wagering && $match->currency === Currency::GD->value) {
+            $this->gold->pushBalances($user);
         }
 
         return $game;
@@ -379,17 +405,19 @@ class PracticeService
         // Your worst case: as banker, 2 × every bot's bet; otherwise 2 × your own bet.
         $covered = (int) $game->banker === self::PLAYER_SEAT ? array_sum(self::seatBets($game)) : (int) $game->bet;
         $amount = Points::toMinor($covered) * (int) config('pusoy.banker.reserve_multiplier', 2);
-        $escrow = $this->wallets->escrow(Currency::CP);
+        $currency = self::currencyOf($game);
+        $escrow = $this->wallets->escrow($currency);
         $label = "Single Player round {$game->round_number} (match #{$game->practice_match_id})";
 
         try {
-            $this->transfer(TransactionType::GameEntry, $this->wallets->for($user, Currency::CP), $escrow, $amount, "{$label}: bet reserve", $user, "sp:{$game->id}:reserve:player");
+            $this->transfer($currency, TransactionType::GameEntry, $this->wallets->for($user, $currency), $escrow, $amount, "{$label}: bet reserve", $user, "sp:{$game->id}:reserve:player");
         } catch (InsufficientBalanceException) {
             throw new BusinessRuleException('Not enough gold to cover this round (your worst case is reserved: 2 × bet, or 6 × bet as banker).', 422, 'insufficient_gold');
         }
 
         try {
-            $this->transfer(TransactionType::GameEntry, $this->wallets->platform(Currency::CP), $escrow, $amount, "{$label}: house reserve", $user, "sp:{$game->id}:reserve:house");
+            // Gold is free-play: the house reserve is issued; legacy CP rounds draw on the platform wallet.
+            $this->transfer($currency, TransactionType::GameEntry, $currency === Currency::GD ? null : $this->wallets->platform($currency), $escrow, $amount, "{$label}: house reserve", $user, "sp:{$game->id}:reserve:house");
         } catch (InsufficientBalanceException) {
             throw new BusinessRuleException('The house bank cannot cover this bet right now.', 422, 'house_insufficient');
         }
@@ -400,17 +428,18 @@ class PracticeService
     /** Pay both reserves out of escrow after settlement (|net| ≤ reserve, so it always balances). */
     private function payout(User $user, PracticeGame $game, int $playerNet): void
     {
-        $escrow = $this->wallets->escrow(Currency::CP);
+        $currency = self::currencyOf($game);
+        $escrow = $this->wallets->escrow($currency);
         $toPlayer = $game->player_reserve + $playerNet;
         $toHouse = $game->house_reserve - $playerNet;
         $label = "Single Player round {$game->round_number} (match #{$game->practice_match_id})";
 
         if ($toPlayer > 0) {
-            $this->transfer($playerNet > 0 ? TransactionType::GameReward : TransactionType::GameRefund, $escrow, $this->wallets->for($user, Currency::CP), $toPlayer, "{$label}: payout (net ".Points::decimal($playerNet).')', $user, "sp:{$game->id}:payout:player");
+            $this->transfer($currency, $playerNet > 0 ? TransactionType::GameReward : TransactionType::GameRefund, $escrow, $this->wallets->for($user, $currency), $toPlayer, "{$label}: payout (net ".Points::decimal($playerNet).')', $user, "sp:{$game->id}:payout:player");
         }
 
         if ($toHouse > 0) {
-            $this->transfer(TransactionType::GameRefund, $escrow, $this->wallets->platform(Currency::CP), $toHouse, "{$label}: house settlement", $user, "sp:{$game->id}:payout:house");
+            $this->transfer($currency, TransactionType::GameRefund, $escrow, $this->wallets->platform($currency), $toHouse, "{$label}: house settlement", $user, "sp:{$game->id}:payout:house");
         }
 
         $game->forceFill(['reserve_status' => 'settled'])->save();
@@ -419,19 +448,20 @@ class PracticeService
     /** Return held reserves (abandoned round). */
     private function release(User $user, PracticeGame $game): void
     {
-        $escrow = $this->wallets->escrow(Currency::CP);
+        $currency = self::currencyOf($game);
+        $escrow = $this->wallets->escrow($currency);
         $label = "Single Player round {$game->round_number} (match #{$game->practice_match_id}) abandoned";
 
-        $this->transfer(TransactionType::GameRefund, $escrow, $this->wallets->for($user, Currency::CP), $game->player_reserve, "{$label}: reserve returned", $user, "sp:{$game->id}:release:player");
-        $this->transfer(TransactionType::GameRefund, $escrow, $this->wallets->platform(Currency::CP), $game->house_reserve, "{$label}: house reserve returned", $user, "sp:{$game->id}:release:house");
+        $this->transfer($currency, TransactionType::GameRefund, $escrow, $this->wallets->for($user, $currency), $game->player_reserve, "{$label}: reserve returned", $user, "sp:{$game->id}:release:player");
+        $this->transfer($currency, TransactionType::GameRefund, $escrow, $this->wallets->platform($currency), $game->house_reserve, "{$label}: house reserve returned", $user, "sp:{$game->id}:release:house");
         $game->forceFill(['reserve_status' => 'released'])->save();
     }
 
-    private function transfer(TransactionType $type, $source, $destination, int $amount, string $reason, User $user, string $key): void
+    private function transfer(Currency $currency, TransactionType $type, $source, $destination, int $amount, string $reason, User $user, string $key): void
     {
         $this->ledger->transfer(new TransferRequest(
             type: $type,
-            currency: Currency::CP,
+            currency: $currency,
             source: $source,
             destination: $destination,
             amount: $amount,
@@ -477,9 +507,17 @@ class PracticeService
         }
     }
 
-    private function goldMinor(User $user): int
+    /** The player's Gold (or a legacy match's CP) balance in minor units. */
+    private function goldMinor(User $user, ?PracticeMatch $match = null): int
     {
-        return (int) ($user->wallet(Currency::CP)?->balance ?? 0);
+        $currency = $match ? Currency::from($match->currency ?? Currency::GD->value) : Currency::GD;
+
+        return (int) ($user->wallet($currency)?->balance ?? 0);
+    }
+
+    private static function currencyOf(PracticeGame $game): Currency
+    {
+        return Currency::from($game->match->currency ?? Currency::GD->value);
     }
 
     private function byRequest(User $user, string $requestId): ?PracticeGame
@@ -776,6 +814,10 @@ class PracticeService
             'next_banker' => $nextBanker,
             'next_banker_name' => $nextBanker ? self::seatName($nextBanker) : null,
             'wagering' => $match->wagering,
+            'currency' => $match->currency ?? Currency::GD->value,
+            // Ended early because you ran out of Gold: leave Single Player (Home shows the free Gold Points claim).
+            'out_of_gold' => $match->status === PracticeMatch::OUT_OF_GOLD,
+            'gold_wallet' => $this->gold->state($match->user),
             'gold' => self::gold($match->player_net),
             // Running Gold per seat (you and the three bots).
             'standings' => array_map(fn (int $seat) => ['seat' => $seat, 'name' => self::seatName($seat), 'gold' => self::gold($totals[$seat])], self::SEATS),

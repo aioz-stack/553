@@ -128,7 +128,7 @@ class UserController extends Controller
         abort_unless($request->user()->isSuperAdmin() && $user->isAdministrator(), 403);
 
         $data = $request->validate([
-            'currency' => ['required', Rule::enum(Currency::class)],
+            'currency' => ['required', Rule::enum(Currency::class)->only(Currency::multiplayer())],
             'max_per_transaction' => ['nullable', 'regex:/^\d{1,13}(\.\d{1,2})?$/'],
             'daily_limit' => ['nullable', 'regex:/^\d{1,13}(\.\d{1,2})?$/'],
         ]);

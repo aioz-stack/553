@@ -32,7 +32,7 @@ class RoomRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'currency' => ['required', Rule::enum(Currency::class)],
+            'currency' => ['required', Rule::enum(Currency::class)->only(Currency::multiplayer())],
             'entry_amount' => $this->amountRule(),
             'payout_mode' => ['required', Rule::enum(PayoutMode::class)],
             'platform_fee_bps' => ['required', 'integer', 'min:0', 'max:3000'],

@@ -16,6 +16,7 @@ import { BOT_AVATARS } from '@/lib/avatars';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { OUT_OF_GOLD_URL, type GoldWallet } from '@/lib/gold';
 import { PICKER_URL, saveSelection, selectionFromUrl, type PracticeTier } from '@/lib/singlePlayer';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
@@ -74,7 +75,9 @@ export interface RoundState {
 
 export interface MatchState {
   id: number;
-  status: 'active' | 'completed' | 'abandoned';
+  status: 'active' | 'completed' | 'abandoned' | 'out_of_gold';
+  /** The match ended early: you ran out of Gold (Single Player leaves for Home and the free Gold Points). */
+  out_of_gold?: boolean;
   tier: { key: string; name: string };
   rounds_total: number;
   rounds_played: number;
@@ -223,13 +226,15 @@ function RevealedHand({ p, card, step, gap, horizontal, plan = null, now = Numbe
  * arrange Front / Middle / Back (fouls are refused), and every non-banker's
  * lanes are compared with the banker's: an identical lane goes to the banker,
  * 3-0 = 2× bet, 2-1 = 1× bet (and the negatives); Lucky Hands pay 2×.
- * Gold only moves when Gold wagering is enabled on the server; otherwise
- * rounds settle as practice Gold.
+ * Gold Wallet: every settled round credits or deducts your Gold on the
+ * server (the screen only shows it). When a round leaves you Out of Gold the
+ * server ends the match; after the reveal this screen returns you to Home,
+ * which offers the free Gold Points (Single Player only).
  */
 export default function Practice() {
   const { user } = useAuth();
   const router = useRouter();
-  const { cp } = useBalance(user?.id);
+  const { gd } = useBalance(user?.id);
   const [soundOn] = useSound();
   useLandscapeLock();
 
@@ -265,6 +270,11 @@ export default function Practice() {
   const started = useRef(false);
 
   const say = useCallback((ok: boolean, text: string) => setToast({ ok, text }), []);
+
+  // Out of Gold: the server has ended the match. Once the reveal show is over (played or skipped) the
+  // result stays up for `leaving` ms, then you go Home (free Gold Points popup). null = not leaving.
+  const [leaving, setLeaving] = useState<number | null>(null);
+  const leaveOutOfGold = useCallback((delay: number) => setLeaving(delay), []);
 
   // The round whose cards are on the table right now. Async answers (e.g. the preview) for any other
   // round are dropped, so nothing from a previous round can be written into the current one.
@@ -311,7 +321,12 @@ export default function Practice() {
 
     (async () => {
       try {
-        const [tiers, current] = await Promise.all([api<{ data: PracticeTier[] }>('/practice/tiers'), api<{ data: MatchState | null }>('/practice/matches/current')]);
+        const [tiers, current] = await Promise.all([api<{ data: PracticeTier[]; meta?: { gold_wallet?: GoldWallet } }>('/practice/tiers'), api<{ data: MatchState | null }>('/practice/matches/current')]);
+        // Out of Gold (and no round of yours still open): Single Player cannot continue.
+        if (tiers.meta?.gold_wallet?.out_of_gold && !current.data?.current) {
+          leaveOutOfGold(0);
+          return;
+        }
         const t = tiers.data.find((x) => x.key === s.tier);
         if (!t) {
           router.replace(PICKER_URL);
@@ -347,7 +362,7 @@ export default function Practice() {
         setPhase('betting');
       }
     })();
-  }, [user, router, say, newMatch, clearCards]);
+  }, [user, router, say, newMatch, clearCards, leaveOutOfGold]);
 
   // ---- bet + deal a round ----
   /** Place your bet (null when you are the banker: no bet, you cover the others) and deal. */
@@ -380,6 +395,10 @@ export default function Practice() {
       else setLuck(EMPTY);
     } catch (e) {
       const code = e instanceof ApiError ? e.code : undefined;
+      if (code === 'out_of_gold') {
+        leaveOutOfGold(0);
+        return;
+      }
       say(false, code === 'insufficient_gold' ? `Not enough gold for ${tier.name}. You need at least ${fmt(tier.min_gold)} gold.` : errorText(e));
     } finally {
       inFlight.current = false;
@@ -417,7 +436,8 @@ export default function Practice() {
     try {
       const m = await api<{ data: MatchState }>(`/practice/matches/${match.id}`);
       setMatch(m.data);
-      if (m.data.status === 'completed') setTimeout(() => setPanel('summary'), 1600 + (plan?.done ?? 0));
+      if (m.data.out_of_gold) leaveOutOfGold(2600);
+      else if (m.data.status === 'completed') setTimeout(() => setPanel('summary'), 1600 + (plan?.done ?? 0));
     } catch {
       // the round result is already on screen
     }
@@ -572,10 +592,17 @@ export default function Practice() {
   // The reveal show is playing for the round on the table.
   const revealing = !!reveal && revealed && round?.id === reveal.id;
   const fx = revealing ? fxAt(reveal.plan, now) : null;
+
+  useEffect(() => {
+    if (leaving === null || revealing) return undefined;
+    const t = setTimeout(() => router.replace(OUT_OF_GOLD_URL), leaving);
+    return () => clearTimeout(t);
+  }, [leaving, revealing, router]);
   const name = user ? (user.display_name ?? user.name) : 'You';
   const shownBet = bet ?? tier?.bets[0] ?? 0;
   const bigCard = { w: 76, h: 106, f: 24 };
-  const matchOver = match?.status === 'completed';
+  // A match that ended because you ran out of Gold is over too: no more chips or deals.
+  const matchOver = match?.status === 'completed' || match?.status === 'out_of_gold';
   const inRound = phase === 'arranging' || revealed;
   // The round on the table (or the next one while choosing a bet).
   const roundNo = inRound ? (round?.round ?? 1) : (match?.next_round ?? (match ? match.rounds_played + 1 : 1));
@@ -584,7 +611,7 @@ export default function Practice() {
   const canBet = !!tier && tier.eligible && !revealing && (phase === 'betting' || (revealed && !matchOver));
   // Who banks the round the chips (or Deal) are for.
   const nextBanker = revealed ? bankerFor(roundNo + 1) : banker;
-  const gold = cp !== undefined ? Math.floor(Number(cp)) : undefined;
+  const gold = gd !== undefined ? Math.floor(Number(gd)) : undefined;
   const result = round?.result;
   const outcomeText = (() => {
     if (!result || !round) return '';
@@ -984,6 +1011,14 @@ export default function Practice() {
         )}
 
         {/* Toast */}
+        {/* Out of Gold: the match has ended; after the reveal you are taken back to Home. */}
+        {leaving !== null && !revealing && (
+          <div role="alert" aria-label="Out of Gold" className="sp-pop absolute left-1/2 top-[300px] z-50 -translate-x-1/2 rounded-[36px] border-[6px] border-[#ffe14d] bg-gradient-to-b from-[#7a1fd1] to-[#2a0758] px-14 py-6 text-center shadow-[0_10px_0_#7a3e00,0_0_60px_rgb(255_210_80/0.6)]">
+            <p className="font-display text-[64px] font-black text-[#ffe14d] drop-shadow-[0_4px_0_rgb(0_0_0/0.5)]">Out of Gold!</p>
+            <p className="font-display text-[28px] font-bold text-white/85">Single Player has ended. Returning to Home…</p>
+          </div>
+        )}
+
         {toast && (
           <div role="alert" className={`absolute left-1/2 top-[120px] z-50 -translate-x-1/2 whitespace-nowrap rounded-full border-4 px-8 py-3 font-display text-[26px] font-black shadow-lg ${toast.ok ? 'border-[#4ee36b] bg-[#0f2a1c] text-[#b9ffcb]' : 'border-[#ff8a8a] bg-[#3a0d14] text-[#ffe4e4]'}`}>
             {toast.text}
