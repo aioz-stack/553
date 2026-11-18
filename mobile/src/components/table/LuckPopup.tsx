@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { GoldCoins } from '@/components/HomeArt';
 import PlayingCard from '@/components/PlayingCard';
 import { api } from '@/lib/api';
@@ -53,17 +53,52 @@ function Mark({ ok }: { ok: boolean | null | undefined }) {
   );
 }
 
+const SIZE: Record<Lane, number> = { front: 3, middle: 5, back: 5 };
+
+/** The 13 cards placed straight into the rows in the order they were dealt: 1-3 Front, 4-8 Middle, 9-13 Back. */
+export function dealtRows(cards: string[]): Rows {
+  return { front: cards.slice(0, 3), middle: cards.slice(3, 8), back: cards.slice(8, 13) };
+}
+
+const isFull = (r: Rows) => r.front.length === 3 && r.middle.length === 5 && r.back.length === 5;
+
+/** Exchange two cards' places (same row: reorder; different rows: move each into the other's slot). */
+function exchange(rows: Rows, a: string, b: string): Rows {
+  const next: Rows = { front: [...rows.front], middle: [...rows.middle], back: [...rows.back] };
+  const at = (c: string) => {
+    for (const lane of LANES) {
+      const i = next[lane].indexOf(c);
+      if (i >= 0) return { lane, i };
+    }
+    return null;
+  };
+  const pa = at(a);
+  const pb = at(b);
+  if (!pa || !pb) return rows;
+  next[pa.lane][pa.i] = b;
+  next[pb.lane][pb.i] = a;
+  return next;
+}
+
 /**
- * Card arrangement popup shown right after the 13 cards are dealt (1600×900
- * stage coordinates). Shows the hand in three lanes (tap two cards to swap
- * them; ⇅ swaps Middle and Back), hand names with ✓ / ✗ order marks from the
- * server preview, the Declared Luck button (the server checks the dealt cards
- * for Six Pairs / Three Flushes / Three Straights) and SUBMIT (sends these
- * lanes to the server; a misplaced hand pays the 2× penalty). There is no
- * close button and no player portraits — only the opponents' card fans.
+ * Manual card arrangement popup, shown right after the 13 cards are dealt
+ * (1600×900 stage coordinates). There is no separate hand panel: your 13
+ * cards sit directly in Front (3), Middle (5) and Back (5), placed in the
+ * order they were dealt — nothing is sorted or arranged by strength. Each row
+ * always holds exactly its 3 / 5 / 5, so moving a card means swapping it:
+ *
+ * - Tap a card to pick it up, then tap any other card to swap the two (across
+ *   rows to move them, within a row to reorder). Tap it again to put it down.
+ * - Or drag a card and drop it on another card.
+ * - ⇅ swaps Middle and Back.
+ *
+ * Hand names and ✓ / ✗ order marks come from the server preview (Pusoy
+ * rules). Nothing arranges your cards for you. SUBMIT sends your rows as
+ * they are (a misplaced hand pays the 2× penalty). No close button, no portraits.
  */
 export default function LuckPopup({
   gameId,
+  cards,
   initial,
   tierName,
   bet,
@@ -74,27 +109,32 @@ export default function LuckPopup({
   onDeclare,
   onSubmit,
   submitting = false,
-
 }: {
   gameId: number;
+  /** Your 13 cards in the order they were dealt. */
+  cards: string[];
+  /** Rows to start from (your own arrangement when reopened); otherwise the cards go in dealt order. */
   initial: Rows;
   tierName: string;
   bet: number;
   /** Replaces "Bet: N" (e.g. "Covering 450" when you are the banker). */
   betLabel?: string;
   gold?: number;
-  /** Opponents whose card fans sit left and right of your lanes. */
+  /** Opponents whose card fans sit left and right of your rows. */
   seats: { left: { name: string }; right: { name: string } };
   declaring: boolean;
   onDeclare: () => void;
-  /** SUBMIT: send these lanes to the server (settles the round). */
+  /** SUBMIT: send these rows to the server (settles the round). */
   onSubmit: (rows: Rows) => void;
   submitting?: boolean;
-
 }) {
-  const [rows, setRows] = useState<Rows>(initial);
-  const [picked, setPicked] = useState<{ lane: Lane; i: number } | null>(null);
+  const [rows, setRows] = useState<Rows>(() => (isFull(initial) ? initial : dealtRows(cards)));
+  const [sel, setSel] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [drag, setDrag] = useState<{ card: string; sx: number; sy: number; x: number; y: number; moving: boolean } | null>(null);
+  const dragRef = useRef(drag);
+  const suppressClick = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -106,31 +146,83 @@ export default function LuckPopup({
     };
   }, [rows, gameId]);
 
-  const tap = (lane: Lane, i: number) => {
-    play('tap');
-    if (!picked) {
-      setPicked({ lane, i });
-      return;
-    }
-    if (picked.lane === lane && picked.i === i) {
-      setPicked(null);
-      return;
-    }
-    setRows((r) => {
-      const next: Rows = { front: [...r.front], middle: [...r.middle], back: [...r.back] };
-      const a = next[picked.lane][picked.i];
-      next[picked.lane][picked.i] = next[lane][i];
-      next[lane][i] = a;
-      return next;
-    });
-    setPicked(null);
+  const apply = (next: Rows) => {
+    setRows(next);
+    setSel(null);
+    setHint(null);
+    play('deal');
   };
 
-  const swap = () => {
-    play('deal');
-    setPicked(null);
-    setRows((r) => ({ ...r, middle: r.back, back: r.middle }));
+  /** Tap a card: pick it up, put it down, or swap it with the card you are holding. */
+  const tapCard = (c: string) => {
+    if (suppressClick.current) return;
+    if (sel === null) {
+      play('tap');
+      setSel(c);
+      setHint('Now tap the card to swap it with (in any row).');
+      return;
+    }
+    if (sel === c) {
+      setSel(null);
+      setHint(null);
+      return;
+    }
+    apply(exchange(rows, sel, c));
   };
+
+  /** Tapping a row (not a card): rows are always full, so explain how to move into it. */
+  const tapRow = (lane: Lane) => {
+    if (suppressClick.current || sel === null) return;
+    setHint(`${lane[0].toUpperCase()}${lane.slice(1)} is full (${SIZE[lane]}/${SIZE[lane]}) — tap one of its cards to swap.`);
+  };
+
+  // ---- drag and drop (pointer events: mouse, touch, pen): drop on a card to swap ----
+  const startDrag = (card: string) => (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    const v = { card, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, moving: false };
+    dragRef.current = v;
+    setDrag(v);
+  };
+  useEffect(() => {
+    if (!drag) return undefined;
+    const onMove = (e: PointerEvent) => {
+      const v = dragRef.current;
+      if (!v) return;
+      const next = { ...v, x: e.clientX, y: e.clientY, moving: v.moving || Math.hypot(e.clientX - v.sx, e.clientY - v.sy) > 8 };
+      dragRef.current = next;
+      setDrag(next);
+    };
+    const onUp = (e: PointerEvent) => {
+      const v = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (!v?.moving) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const target = (el?.closest('[data-card]') as HTMLElement | null)?.dataset.card;
+      if (target && target !== v.card) apply(exchange(rows, v.card, target));
+      else if (el?.closest('[data-zone]')) setHint('Drop it on a card to swap the two.');
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag?.card, rows]);
+
+  const card = (c: string) => (
+    // stopPropagation: tapping a card must not also count as tapping the row behind it.
+    <span key={c} data-card={c} onPointerDown={startDrag(c)} onClick={(e) => e.stopPropagation()} className={`touch-none ${drag?.moving && drag.card === c ? 'opacity-30' : ''}`}>
+      <PlayingCard code={c} selected={sel === c} onClick={() => tapCard(c)} style={{ width: CARD.w, height: CARD.h, fontSize: CARD.f }} />
+    </span>
+  );
 
   return (
     <div className="absolute inset-0 z-40" role="dialog" aria-modal="true" aria-label="Declared Luck">
@@ -178,46 +270,59 @@ export default function LuckPopup({
         <BotSeat name={seats.left.name} x={80} />
         <BotSeat name={seats.right.name} x={1210} />
 
-        {/* lanes */}
-        <div className="absolute left-[330px] top-[96px] z-10 flex flex-col gap-[14px]">
+        {/* your 13 cards, directly in the three rows */}
+        <div className="absolute left-[300px] top-[92px] z-10 flex flex-col gap-[12px]">
           {LANES.map((lane) => (
             <div key={lane} className="flex items-center gap-4">
               <span className="flex w-[150px] flex-col items-center gap-1">
                 <Mark ok={preview?.order?.[lane]} />
                 <span className="lx-gold rounded-[14px] p-[3px]">
-                  <span className="block whitespace-nowrap rounded-[11px] bg-gradient-to-b from-[#5a0609] to-[#2a0204] px-3 py-1 font-display text-[20px] font-black text-white">{preview?.labels[lane] ?? lane.toUpperCase()}</span>
+                  <span className="flex flex-col items-center whitespace-nowrap rounded-[11px] bg-gradient-to-b from-[#5a0609] to-[#2a0204] px-3 py-1 font-display font-black leading-tight text-white">
+                    <span className="text-[18px]">
+                      {lane.toUpperCase()} <span aria-label={`${lane} count`}>{rows[lane].length}/{SIZE[lane]}</span>
+                    </span>
+                    {preview?.labels[lane] && <span className="text-[16px] text-[#ffe14d]">{preview.labels[lane]}</span>}
+                  </span>
                 </span>
               </span>
-              <div aria-label={`${lane} lane`} className="flex gap-[10px] rounded-[18px] border-[4px] border-[#5dff7a] bg-black/15 p-[8px] shadow-[0_0_24px_rgb(93_255_122/0.6)]">
-                {rows[lane].map((c, i) => (
-                  <PlayingCard key={c} code={c} selected={picked?.lane === lane && picked.i === i} onClick={() => tap(lane, i)} style={{ width: CARD.w, height: CARD.h, fontSize: CARD.f }} />
-                ))}
+              <div
+                role="group"
+                aria-label={`${lane} lane`}
+                data-zone={lane}
+                onClick={() => tapRow(lane)}
+                className={`flex h-[164px] items-center gap-[8px] rounded-[18px] border-[4px] p-[8px] ${sel && !rows[lane].includes(sel) ? 'border-[#ffe14d] bg-[#ffe14d]/12 shadow-[0_0_26px_rgb(255_225_77/0.6)]' : 'border-[#5dff7a] bg-black/15 shadow-[0_0_24px_rgb(93_255_122/0.6)]'}`}
+              >
+                {rows[lane].map((c) => card(c))}
               </div>
             </div>
           ))}
         </div>
 
-        <button type="button" aria-label="Swap Middle and Back" onClick={swap} className="lx-tile absolute left-[1100px] top-[352px] z-10 flex h-[88px] w-[88px] items-center justify-center rounded-full border-[5px] border-[#ffc531] bg-gradient-to-b from-[#ff5a4a] to-[#a10d0b] text-white shadow-[0_6px_0_#5a0609]">
+        <button type="button" aria-label="Swap Middle and Back" onClick={() => apply({ ...rows, middle: rows.back, back: rows.middle })} className="lx-tile absolute left-[1100px] top-[352px] z-10 flex h-[88px] w-[88px] items-center justify-center rounded-full border-[5px] border-[#ffc531] bg-gradient-to-b from-[#ff5a4a] to-[#a10d0b] text-white shadow-[0_6px_0_#5a0609]">
           <svg viewBox="0 0 30 40" className="h-10 w-8" aria-hidden="true">
             <path d="M8 4 L2 12 H6 V26 H10 V12 H14Z M22 36 L28 28 H24 V14 H20 V28 H16Z" fill="currentColor" />
           </svg>
         </button>
 
+        <p className="absolute left-[300px] top-[634px] z-10 w-[760px] text-center font-display text-[18px] font-bold text-white/80" role="status">
+          {hint ?? 'Tap a card, then tap another card to swap them — or drag one onto another.'}
+        </p>
+
         {/* actions */}
-        <div className="absolute left-[400px] top-[640px] z-10 flex items-center gap-6">
+        <div className="absolute left-[330px] top-[676px] z-10 flex items-center gap-6">
           <button
             type="button"
             onClick={onDeclare}
             disabled={declaring}
-            className="lx-tile lx-gold relative h-[112px] w-[330px] rounded-full p-[6px] shadow-[0_8px_0_#7a3e00] disabled:opacity-70"
+            className="lx-tile lx-gold relative h-[108px] w-[320px] rounded-full p-[6px] shadow-[0_8px_0_#7a3e00] disabled:opacity-70"
           >
             <span className="lx-gloss relative flex h-full w-full items-center gap-2 rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] pl-3 pr-5">
-              <span className="tb-clover flex h-[90px] w-[90px] shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle,#ff7ad9,#7a1fc9)] shadow-[0_0_20px_rgb(255_122_217/0.8)]">
-                <Clover size={74} />
+              <span className="tb-clover flex h-[84px] w-[84px] shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle,#ff7ad9,#7a1fc9)] shadow-[0_0_20px_rgb(255_122_217/0.8)]">
+                <Clover size={70} />
               </span>
               <span className="flex flex-col items-center leading-none">
-                <span className="font-display text-[34px] font-black text-white drop-shadow-[0_2px_0_#2a0660]">{declaring ? 'Checking…' : 'Declared'}</span>
-                {!declaring && <span className="font-display text-[38px] font-black text-[#ffe14d] drop-shadow-[0_2px_0_#2a0660]">Luck</span>}
+                <span className="font-display text-[32px] font-black text-white drop-shadow-[0_2px_0_#2a0660]">{declaring ? 'Checking…' : 'Declared'}</span>
+                {!declaring && <span className="font-display text-[36px] font-black text-[#ffe14d] drop-shadow-[0_2px_0_#2a0660]">Luck</span>}
               </span>
             </span>
           </button>
@@ -228,17 +333,17 @@ export default function LuckPopup({
               onSubmit(rows);
             }}
             disabled={declaring || submitting}
-            className="lx-tile lx-gold h-[112px] w-[400px] rounded-full p-[6px] shadow-[0_8px_0_#7a3e00]"
+            className="lx-tile lx-gold h-[108px] w-[380px] rounded-full p-[6px] shadow-[0_8px_0_#7a3e00]"
           >
-            <span className="lx-gloss relative flex h-full w-full items-center justify-center rounded-full bg-gradient-to-b from-[#fff3a0] via-[#ffd13a] to-[#e08a00] font-display text-[60px] font-black text-[#4a1d00]">{submitting ? '…' : 'SUBMIT'}</span>
+            <span className="lx-gloss relative flex h-full w-full items-center justify-center rounded-full bg-gradient-to-b from-[#fff3a0] via-[#ffd13a] to-[#e08a00] font-display text-[58px] font-black text-[#4a1d00]">{submitting ? '…' : 'SUBMIT'}</span>
           </button>
         </div>
 
         {/* gold balance */}
-        <div className="lx-gold absolute left-[580px] top-[774px] z-10 h-[60px] w-[320px] rounded-full p-[4px]">
+        <div className="lx-gold absolute left-[1090px] top-[700px] z-10 h-[60px] w-[300px] rounded-full p-[4px]">
           <div className="flex h-full items-center gap-3 rounded-full bg-gradient-to-b from-[#5a0609] to-[#2a0204] px-3">
             <GoldCoins size={50} />
-            <span className="flex-1 text-center font-display text-[32px] font-black text-white" aria-label="Gold balance">
+            <span className="flex-1 text-center font-display text-[30px] font-black text-white" aria-label="Gold balance">
               {gold !== undefined ? fmt(gold) : '…'}
             </span>
           </div>
@@ -264,6 +369,12 @@ export default function LuckPopup({
           ))}
         </svg>
       </div>
+
+      {drag?.moving && (
+        <div className="pointer-events-none fixed z-[70] -translate-x-1/2 -translate-y-1/2 rotate-6 drop-shadow-[0_10px_16px_rgb(0_0_0/0.5)]" style={{ left: drag.x, top: drag.y }}>
+          <PlayingCard code={drag.card} />
+        </div>
+      )}
     </div>
   );
 }

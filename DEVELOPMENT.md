@@ -436,13 +436,21 @@ locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/
   BANKER badge. Top right: Bet pill, round / banker, tier, match Gold and CP balance.
 - Betting: tap a chip to bet and deal; after each round the chips return for the next round's bet.
   Resuming: an open round of the active match at the same tier continues.
-- Arranging: the **arrangement popup** (`components/table/LuckPopup.tsx`, also Declared Luck) opens after
-  each deal — swap cards, ⇅ Middle/Back, ✓/✗ order marks, hand names, bet info, Declared Luck and
-  **SUBMIT**, which sends the popup's lanes to the server and settles the round (a misplaced hand pays
-  the 2× penalty). The popup has **no close button and no player portraits** — only the opponents' card
-  fans. On a resumed round (no popup) you arrange on the table (tap or drag); **Reset** reopens the popup.
-  **Submit is never disabled**: an incomplete hand gets a "place all 13 cards" hint; a misplaced hand
-  shows a red "2× bet penalty" warning but is submitted. **Autoplay Arrange** and **Sort** bottom-right.
+- **Manual arrangement, cards directly in the rows** (`components/table/LuckPopup.tsx`): there is no
+  separate card panel. After the deal (and when you come back to an open round) your 13 cards sit
+  directly in **Front 3 / Middle 5 / Back 5, in dealt order** (cards 1-3, 4-8, 9-13) — nothing is sorted
+  or arranged by strength. Each row always holds exactly its 3 / 5 / 5 (counts shown), so moving a card
+  is a swap:
+  - **Click-to-select / click-to-place:** tap a card to pick it up, then tap any other card to swap them
+    (across rows to move them, within a row to reorder); tap it again to put it down. Tapping a full row
+    while holding a card says to tap one of its cards.
+  - **Drag and drop:** drop a card on another card to swap the two.
+  - ⇅ swaps Middle and Back. There are no "Dealt order" or "Auto Arrange" buttons: only you move cards.
+  - Hand names and ✓ / ✗ order marks per row come from the server preview (Pusoy rules); **SUBMIT** sends
+    the rows exactly as you left them (a misplaced hand pays the 2× penalty).
+  - The old "Autoplay Arrange" switch is gone (an old saved setting is ignored). The table's own hand
+    strip is hidden while the popup is open.
+  - Declared Luck, the bet info and the opponents' card fans are in the popup; no close button, no portraits.
 - Reveal: every bot's hand at its seat with WIN / LOSS per lane against the banker, its Gold for the
   round (and Lucky Hand), your hand and your result ("You banked · beat 2 of 3", "2-1 vs CardBot · 1× bet").
   After round 12 a **Match results** panel shows the standings of all four players and the 12-round history.

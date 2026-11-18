@@ -83,7 +83,6 @@ const LANES: Lane[] = ['front', 'middle', 'back'];
 const SIZE: Record<Lane, number> = { front: 3, middle: 5, back: 5 };
 const EMPTY: Rows = { front: [], middle: [], back: [] };
 const CHIP_COLORS = ['#1f6fe0', '#14a046', '#e0262f'];
-const AUTOPLAY_KEY = 'pusoy.autoplayArrange';
 const BOTS: Record<number, string> = { 2: 'LuckyBot', 3: 'CardBot', 4: 'AceBot' };
 
 /** Where each bot sits on the 1600×900 stage, its look, where its face-down cards and revealed hand go. */
@@ -99,23 +98,9 @@ const tone = (n: number) => (n > 0 ? 'text-[#7dffa0]' : n < 0 ? 'text-[#ff9aa8]'
 const bankerFor = (round: number) => ((round - 1) % 4) + 1;
 const banksText = (seat: number) => (seat === 1 ? 'You bank' : `${BOTS[seat]} banks`);
 
-/** The dealt hand laid out 3 / 5 / 5 by rank (highest at the Back), for the Declared Luck popup. */
-function defaultSplit(cards: string[]): Rows {
-  const s = sortCards(cards, 'rank');
-  return { back: s.slice(0, 5), middle: s.slice(5, 10), front: s.slice(10, 13) };
-}
-
 /** True when every card in the lanes belongs to `hand` (no card from another round). */
 function rowsUse(rows: Rows, hand: Set<string>): boolean {
   return [...rows.front, ...rows.middle, ...rows.back].every((c) => hand.has(c));
-}
-
-function readAutoplay(): boolean {
-  try {
-    return localStorage.getItem(AUTOPLAY_KEY) === '1';
-  } catch {
-    return false;
-  }
 }
 
 function RoundButton({ label, onClick, children, x }: { label: string; onClick: () => void; children: ReactNode; x: number }) {
@@ -216,8 +201,8 @@ export default function Practice() {
   // arrangement
   const [rows, setRows] = useState<Rows>(EMPTY);
   const [picked, setPicked] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'rank' | 'suit'>('rank');
-  const [autoplay, setAutoplay] = useState(false);
+  // Your hand is shown in the order it was dealt until you choose to sort it.
+  const [sortBy, setSortBy] = useState<'dealt' | 'rank' | 'suit'>('dealt');
   const [preview, setPreview] = useState<{ labels: Record<Lane, string | null>; is_foul: boolean } | null>(null);
 
   const inFlight = useRef(false);
@@ -226,7 +211,7 @@ export default function Practice() {
 
   const say = useCallback((ok: boolean, text: string) => setToast({ ok, text }), []);
 
-  // The round whose cards are on the table right now. Async answers (suggest, preview) for any other
+  // The round whose cards are on the table right now. Async answers (e.g. the preview) for any other
   // round are dropped, so nothing from a previous round can be written into the current one.
   const roundIdRef = useRef<number | null>(null);
 
@@ -245,28 +230,6 @@ export default function Practice() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  useEffect(() => {
-    setAutoplay(readAutoplay());
-  }, []);
-
-  const suggest = useCallback(
-    async (g: RoundState): Promise<Rows | null> => {
-      try {
-        const r = await api<{ data: Rows }>(`/practice/${g.id}/suggest`, { method: 'POST' });
-        // A late answer for a round that is no longer on the table must not touch the new round.
-        if (roundIdRef.current !== g.id) return null;
-        const next = { front: r.data.front, middle: r.data.middle, back: r.data.back };
-        setRows(next);
-        setPicked([]);
-        play('deal');
-        return next;
-      } catch (e) {
-        say(false, errorText(e));
-        return null;
-      }
-    },
-    [say],
-  );
 
   const newMatch = useCallback(async (t: PracticeTier) => {
     const r = await api<{ data: MatchState }>('/practice/matches', { method: 'POST', body: { tier: t.key } });
@@ -309,7 +272,8 @@ export default function Practice() {
             setBet(current.data.current.bet);
             setPhase('arranging');
             setLocked(false);
-            if (readAutoplay()) await suggest(current.data.current);
+            // Back to an open round: your cards in dealt order, rows to fill yourself.
+            setLuck(EMPTY);
           } else {
             setPhase('betting');
           }
@@ -326,7 +290,7 @@ export default function Practice() {
         setPhase('betting');
       }
     })();
-  }, [user, router, say, suggest, newMatch, clearCards]);
+  }, [user, router, say, newMatch, clearCards]);
 
   // ---- bet + deal a round ----
   /** Place your bet (null when you are the banker: no bet, you cover the others) and deal. */
@@ -354,9 +318,9 @@ export default function Practice() {
       setPhase('arranging');
       play('deal');
       if (r.data.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
-      const suggested = autoplay ? await suggest(r.data) : null;
-      // All 13 cards are in: show the Declared Luck popup.
-      setLuck(suggested ?? defaultSplit(r.data.cards));
+      // All 13 cards are in: open the arrangement popup with empty rows and your cards in dealt
+      // order. Nothing is arranged for you — you place every card yourself.
+      setLuck(EMPTY);
     } catch (e) {
       const code = e instanceof ApiError ? e.code : undefined;
       say(false, code === 'insufficient_gold' ? `Not enough gold for ${tier.name}. You need at least ${fmt(tier.min_gold)} gold.` : errorText(e));
@@ -410,7 +374,10 @@ export default function Practice() {
 
   // ---- arranging ----
   const placed = useMemo(() => new Set([...rows.front, ...rows.middle, ...rows.back]), [rows]);
-  const hand = useMemo(() => sortCards((round?.cards ?? []).filter((c) => !placed.has(c)), sortBy), [round, placed, sortBy]);
+  const hand = useMemo(() => {
+    const left = (round?.cards ?? []).filter((c) => !placed.has(c));
+    return sortBy === 'dealt' ? left : sortCards(left, sortBy);
+  }, [round, placed, sortBy]);
   const complete = rows.front.length === 3 && rows.middle.length === 5 && rows.back.length === 5;
   const foul = complete && !!preview?.is_foul;
 
@@ -449,28 +416,13 @@ export default function Practice() {
     play('deal');
   };
 
-  const toggleAutoplay = () => {
-    const next = !autoplay;
-    setAutoplay(next);
-    try {
-      localStorage.setItem(AUTOPLAY_KEY, next ? '1' : '0');
-    } catch {
-      // storage blocked: the switch still works for this visit
-    }
-    play('tap');
-    if (next && phase === 'arranging' && round) {
-      if (locked) say(true, 'Cards are locked — tap Reset to rearrange.');
-      else suggest(round);
-    }
-  };
-
-  /** RESET: unlock and reopen the arrangement popup with the current lanes (or a fresh split). */
+  /** RESET: unlock and reopen the arrangement popup with your own current rows (nothing is rearranged). */
   const reopen = () => {
     if (!round) return;
     play('tap');
     setLocked(false);
     setPicked([]);
-    setLuck(complete && rowsUse(rows, new Set(round.cards)) ? rows : defaultSplit(round.cards));
+    setLuck(rowsUse(rows, new Set(round.cards)) ? rows : EMPTY);
   };
 
   /**
@@ -483,7 +435,7 @@ export default function Practice() {
     // Only this round's cards may be sent (never a card left over from an earlier round).
     if (!rowsUse(lanes, new Set(round.cards))) {
       clearCards();
-      setLuck(defaultSplit(round.cards));
+      setLuck(EMPTY);
       say(false, 'Your cards were refreshed for this round — please arrange and submit again.');
       return;
     }
@@ -847,7 +799,8 @@ export default function Practice() {
 
           {(phase === 'betting' || phase === 'loading') && tier && !tier.eligible && <span className="font-display text-[26px] font-black text-white/80">Not enough gold for {tier.name}</span>}
 
-          {phase === 'arranging' && (
+          {/* Your hand on the table only when the arrangement popup is closed (no second card panel). */}
+          {phase === 'arranging' && !luck && (
             <div data-zone="hand" className="relative h-[120px] flex-1" aria-label="Your hand">
               {hand.map((c, i) => {
                 const on = picked.includes(c);
@@ -881,20 +834,13 @@ export default function Practice() {
             </div>
           )}
         </div>
-
-        {/* Autoplay Arrange + Sort */}
+        {/* Sort */}
         <div className="absolute right-[24px] top-[748px] z-10 flex flex-col items-end gap-3">
-          <button type="button" role="switch" aria-checked={autoplay} aria-label="Autoplay Arrange" onClick={toggleAutoplay} className="flex items-center gap-3 rounded-full bg-black/35 py-1 pl-4 pr-1">
-            <span className="font-display text-[22px] font-black text-white">Autoplay Arrange</span>
-            <span className={`relative h-[38px] w-[70px] rounded-full transition ${autoplay ? 'bg-[#2fd14f]' : 'bg-white/30'}`}>
-              <span className={`absolute top-[3px] h-[32px] w-[32px] rounded-full bg-white shadow transition-all ${autoplay ? 'left-[35px]' : 'left-[3px]'}`} />
-            </span>
-          </button>
           <button
             type="button"
-            aria-label={`Sort by ${sortBy === 'rank' ? 'suit' : 'rank'}`}
+            aria-label={`Sort: ${sortBy === 'dealt' ? 'dealt order' : `by ${sortBy}`} — tap to change`}
             onClick={() => {
-              setSortBy(sortBy === 'rank' ? 'suit' : 'rank');
+              setSortBy(sortBy === 'dealt' ? 'rank' : sortBy === 'rank' ? 'suit' : 'dealt');
               play('tap');
             }}
             disabled={phase !== 'arranging'}
@@ -908,12 +854,13 @@ export default function Practice() {
           </button>
         </div>
 
-        {/* Declared Luck popup (right after the deal) */}
+        {/* Arrangement popup (after the deal): empty rows, your cards in dealt order */}
         {luck && round && phase === 'arranging' && rowsUse(luck, new Set(round.cards)) && (
           <LuckPopup
             key={round.id}
             gameId={round.id}
             initial={luck}
+            cards={round.cards}
             tierName={`${round.tier.name} · R${round.round} · ${banksText(round.banker)}`}
             bet={round.bet}
             betLabel={round.banker === 1 ? `Covering ${fmt(round.covered ?? 0)}` : undefined}
@@ -986,9 +933,6 @@ export default function Practice() {
                     <button type="button" role="switch" aria-checked={soundOn} onClick={toggleSound} className="flex w-full items-center justify-between rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
                       Sound <span className={soundOn ? 'text-[#7dffa0]' : 'text-white/50'}>{soundOn ? 'ON' : 'OFF'}</span>
                     </button>
-                    <button type="button" role="switch" aria-checked={autoplay} onClick={toggleAutoplay} className="flex w-full items-center justify-between rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
-                      Autoplay Arrange <span className={autoplay ? 'text-[#7dffa0]' : 'text-white/50'}>{autoplay ? 'ON' : 'OFF'}</span>
-                    </button>
                     <Link href="/settings/" className="block rounded-2xl bg-black/30 px-6 py-4 font-display text-[28px] font-black">
                       More settings ›
                     </Link>
@@ -1002,7 +946,7 @@ export default function Practice() {
                     <p>The banker places no bet — it covers everyone else's bets. When you are not the banker, tap a chip to place your bet (each bot places its own); when you are, just tap Deal. Everyone gets 13 cards; arrange yours into <b className="text-[#ffe14d]">Front</b> (3), <b className="text-[#ffe14d]">Middle</b> (5) and <b className="text-[#ffe14d]">Back</b> (5). Back must be at least as strong as Middle, and Middle at least as strong as Front. Tap <b className="text-[#ffe14d]">READY</b> to lock your cards, <b className="text-[#ffe14d]">Reset</b> to rearrange, then <b className="text-[#ffe14d]">Submit</b>. A misplaced hand can still be submitted but pays a 2× bet penalty — to the banker, or as banker to every player.</p>
                     <p>Every player is compared with the banker lane by lane (Front vs Front, Middle vs Middle, Back vs Back). Win all 3 = 2× bet, win 2 = 1× bet; lose 2 = −1×, lose all 3 = −2×. <b className="text-[#ffe14d]">An identical lane goes to the banker.</b></p>
                     <p>Declared Luck (Six Pairs, Three Flushes or Three Straights) beats the lane comparison and pays 2× bet. The bots declare their own Lucky Hands.</p>
-                    <p className="text-white/70">Tap cards then a lane (or drag them). Autoplay Arrange fills the lanes for you; Sort switches rank / suit order.</p>
+                    <p className="text-white/70">Nothing is arranged for you: your 13 cards go straight into Front, Middle and Back in the order they were dealt. Tap a card, then another card to swap them (or drag one onto another) until the rows are how you want them. Sort changes your hand's order on the table (dealt / rank / suit).</p>
                   </div>
                 )}
 
