@@ -1,3 +1,5 @@
+import { CardBackArt, CardFaceArt } from './CardArt';
+
 const SUITS: Record<string, { symbol: string; red: boolean; name: string }> = {
   S: { symbol: '♠', red: false, name: 'spades' },
   H: { symbol: '♥', red: true, name: 'hearts' },
@@ -19,13 +21,19 @@ export function sortCards(cards: string[], by: 'rank' | 'suit' = 'rank'): string
 }
 
 /**
- * A touch-friendly playing card rendered with CSS (no image assets).
+ * A touch-friendly playing card in the PUSOY 553 design (Components/CardArt.tsx — the same art as the
+ * mobile app): pearl face with gold filigree, serif corner index, pips / 553 Ace emblem / court
+ * portraits; face-down cards show the red and gold 553 back.
  */
 export default function PlayingCard({ code, selected, onClick, size = 'md', faceDown }: { code?: string; selected?: boolean; onClick?: () => void; size?: 'sm' | 'md'; faceDown?: boolean }) {
-  const dims = size === 'sm' ? 'h-14 w-10 text-xs' : 'h-20 w-14 text-sm sm:h-24 sm:w-16';
+  const dims = size === 'sm' ? 'h-14 w-10' : 'h-20 w-14 sm:h-24 sm:w-[4.3rem]';
 
   if (faceDown || !code) {
-    return <div className={`${dims} shrink-0 rounded-lg border-2 border-white/60 bg-gradient-to-br from-brand-600 to-brand-900 shadow-theme-sm`} />;
+    return (
+      <div className={`${dims} relative shrink-0 overflow-hidden rounded-[7%/5%] bg-[#5a0408] shadow-theme-sm`} aria-hidden="true">
+        <CardBackArt className="absolute inset-0 h-full w-full" />
+      </div>
+    );
   }
 
   const suit = SUITS[code[1]];
@@ -38,13 +46,11 @@ export default function PlayingCard({ code, selected, onClick, size = 'md', face
       disabled={!onClick}
       aria-label={`${rank} of ${suit?.name}`}
       aria-pressed={selected}
-      className={`${dims} relative flex shrink-0 select-none flex-col justify-between rounded-lg border bg-white p-1 font-semibold shadow-theme-sm transition ${
-        suit?.red ? 'text-error-600' : 'text-gray-900'
-      } ${selected ? '-translate-y-2 border-brand-500 ring-3 ring-brand-500/40' : 'border-gray-300'} ${onClick ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'}`}
+      className={`${dims} relative shrink-0 select-none overflow-hidden rounded-[7%/5%] bg-[#fbf5ea] shadow-theme-sm transition ${
+        selected ? '-translate-y-2 ring-3 ring-brand-500/60' : ''
+      } ${onClick ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'}`}
     >
-      <span className="leading-none">{rank}</span>
-      <span className="self-center text-xl leading-none sm:text-2xl">{suit?.symbol}</span>
-      <span className="self-end rotate-180 leading-none">{rank}</span>
+      <CardFaceArt code={code} className="pointer-events-none absolute inset-0 h-full w-full" />
     </button>
   );
 }

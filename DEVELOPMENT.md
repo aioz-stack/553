@@ -358,6 +358,15 @@ live `wallet.updated` (each "+" opens the wallet — there is no deposit), daily
 leaderboard, notifications, Friends List (search, add, accept/decline, online/last seen, invite),
 Single Player, Multiplayer, Sound ON/OFF, Settings, Logout.
 
+**Card design** (`CardArt.tsx`, kept identical in `mobile/src/components/` and `resources/js/Components/`):
+every card in both apps — `PlayingCard`, the deal and reveal animations, the bots' fans
+(`CardBack553`) — is drawn by `CardFaceArt` / `CardBackArt`, pure SVG on a 100 × 140 card (no image
+files). Face: pearl-cream with gold filigree top-right and bottom-left, serif corner index repeated
+upside down, standard pip layouts for 2–10, Aces with a large suit emblem, crown and gold "553", and
+illustrated Jack / Queen / King portraits in red and gold robes; crimson for hearts / diamonds,
+near-black for spades / clubs. Back: deep red lattice, ornate gold frame, crowned "553" laurel
+medallion. Tiny cards (`size="xs"`) show one large index and suit so they stay readable.
+
 **Settings panel** (`mobile/src/components/SettingsPanel.tsx`; opened by the home Settings tile, also
 at `/settings/`, whose Close returns to `/home/`; signed-in devices moved to `/settings/devices/`):
 - **Audio:** BGM ON/OFF (`lib/music.ts` — a looping pentatonic tune synthesised with Web Audio, no audio

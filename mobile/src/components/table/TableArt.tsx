@@ -6,6 +6,7 @@
  */
 
 import { useId, type CSSProperties } from 'react';
+import { CardBackArt } from '@/components/CardArt';
 
 const d = (s: number): CSSProperties => ({ animationDelay: `${s}s` });
 
@@ -344,25 +345,12 @@ export function MiniCrest() {
   );
 }
 
-/** Red card back with a gold border, crown and "553". */
+/** The 553 card back (the shared card design, components/CardArt.tsx) at a fixed size. */
 export function CardBack553({ w = 70, h = 98 }: { w?: number; h?: number }) {
-  const id = useId().replace(/:/g, '');
   return (
-    <svg width={w} height={h} viewBox="0 0 70 98" aria-hidden="true">
-      <defs>
-        <linearGradient id={`${id}r`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ff4a3a" />
-          <stop offset="1" stopColor="#b3121a" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="68" height="96" rx="7" fill={`url(#${id}r)`} stroke="#fff" strokeWidth="2" />
-      <rect x="5" y="5" width="60" height="88" rx="5" fill="none" stroke="#ffd34d" strokeWidth="2" />
-      <path d="M22 40 L19 26 L28 33 L35 22 L42 33 L51 26 L48 40Z" fill="#ffd34d" stroke="#8a4a00" strokeWidth="1.5" />
-      <text x="35" y="62" textAnchor="middle" fontSize="18" fontWeight="900" fill="#fff3a0" stroke="#7a0a0e" strokeWidth="3" paintOrder="stroke">
-        553
-      </text>
-      <path d="M10 82 q 25 -8 50 0" stroke="#ffd34d" strokeWidth="1.5" fill="none" />
-    </svg>
+    <span className="relative block overflow-hidden rounded-[7%/5%] bg-[#5a0408] shadow-[0_2px_4px_rgb(0_0_0/0.35)]" style={{ width: w, height: h }} aria-hidden="true">
+      <CardBackArt className="absolute inset-0 h-full w-full" />
+    </span>
   );
 }
 

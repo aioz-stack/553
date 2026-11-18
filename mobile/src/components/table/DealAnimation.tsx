@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { lightNow, reducedNow } from '@/lib/motion';
 import { play } from '@/lib/sound';
+import { CardBackArt, CardFaceArt } from '@/components/CardArt';
 
 /**
  * Shuffle-and-deal animation for the Single Player table (1600×900 stage coordinates).
@@ -217,29 +218,20 @@ function toFrames(keys: Key[], shadow = false): Keyframe[] {
   });
 }
 
-const SUIT: Record<string, { s: string; red: boolean }> = { S: { s: '♠', red: false }, H: { s: '♥', red: true }, D: { s: '♦', red: true }, C: { s: '♣', red: false } };
-
-/** Purple card back with a gold spade, white edge and a sliver of card thickness. */
+/** The 553 card back (shared card design), with a sliver of card thickness. */
 function Back() {
   return (
-    <span className="absolute inset-0 rounded-[8px] border-[3px] border-white bg-[linear-gradient(160deg,#7b5cff,#3a1a8c)] shadow-[0_1px_0_#cfc6e8,0_2px_0_#9c90bf,0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden]">
-      <span className="absolute inset-[5px] flex items-center justify-center rounded-[4px] border-2 border-[#ffd34d]/70 bg-[repeating-linear-gradient(45deg,rgb(255_211_77/0.16)_0_3px,transparent_3px_7px)]">
-        <span className="text-[40px] leading-none text-[#ffd34d] drop-shadow-[0_1px_0_#6a3a00]">♠</span>
-      </span>
+    <span className="absolute inset-0 overflow-hidden rounded-[8px] shadow-[0_1px_0_#e9c46a,0_2px_0_#9a6a14,0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden]">
+      <CardBackArt className="absolute inset-0 h-full w-full" />
     </span>
   );
 }
 
+/** Your card face (shared card design), on the far side until the card turns over. */
 function Face({ code }: { code: string }) {
-  const suit = SUIT[code[1]] ?? SUIT.S;
-  const rank = code[0] === 'T' ? '10' : code[0];
   return (
-    <span className={`absolute inset-0 rounded-[8px] border-2 border-[#e8e2f5] bg-white shadow-[0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden] [transform:rotateY(180deg)] ${suit.red ? 'text-[#d81e3c]' : 'text-[#1b1336]'}`}>
-      <span className="absolute left-[6px] top-[3px] flex flex-col items-center font-display font-black leading-none">
-        <span className="text-[26px]">{rank}</span>
-        <span className="text-[22px]">{suit.s}</span>
-      </span>
-      <span className="absolute bottom-[4px] right-[8px] text-[44px] leading-none">{suit.s}</span>
+    <span className="absolute inset-0 overflow-hidden rounded-[8px] bg-[#fbf5ea] shadow-[0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
+      <CardFaceArt code={code} className="absolute inset-0 h-full w-full" />
     </span>
   );
 }
