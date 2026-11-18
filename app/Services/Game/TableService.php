@@ -220,6 +220,11 @@ class TableService
                 throw new BusinessRuleException('Ready status can only change before the game starts.', 409, 'invalid_state');
             }
 
+            // Multiplayer lobbies use Choose Your Seat: confirm a seat, then Start (LobbyService::pressStart).
+            if ($table->room->isLobby()) {
+                throw new BusinessRuleException('Confirm your seat, then press Start.', 409, 'use_lobby_start');
+            }
+
             $player = GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $user->id)->firstOrFail();
             $player->forceFill(['is_ready' => $ready, 'last_seen_at' => now(), 'is_connected' => true])->save();
 

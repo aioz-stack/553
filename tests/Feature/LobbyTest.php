@@ -41,20 +41,33 @@ function lbCreate($test, User $u, array $over = [])
     ]);
 }
 
-/** Owner + three joined players, the three ready. */
+/** Owner + three joined players, everyone's seat (1–4 in join order) confirmed. */
 function lbFull($test, array $over = []): array
 {
     $owner = lbPlayer();
     $room = lbCreate($test, $owner, $over)->assertCreated()->json('data');
+    $test->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 1])->assertOk();
     $others = [];
     foreach (range(1, 3) as $i) {
         $p = lbPlayer();
         $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join", ['password' => $over['password'] ?? null])->assertCreated();
-        $test->actingAs($p, 'sanctum')->postJson("/api/v1/tables/{$room['table_id']}/ready", ['ready' => true])->assertOk();
+        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => $i + 1])->assertOk();
         $others[] = $p;
     }
 
     return [$owner, $room, $others];
+}
+
+/** All four press Start; after the 3-second countdown the next look at the lobby starts the match. */
+function lbStart($test, array $players, array $room): GameTable
+{
+    foreach ($players as $p) {
+        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
+    }
+    $test->travel(3100)->milliseconds();
+    $test->actingAs($players[0], 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk();
+
+    return GameTable::query()->findOrFail($room['table_id']);
 }
 
 function lbPlayRound(GameTable $table): GameSession
@@ -164,35 +177,108 @@ test('quick join: picks an affordable public lobby with free seats (fullest firs
     $this->actingAs(lbPlayer(50), 'sanctum')->postJson('/api/v1/lobbies/quick-join')->assertStatus(404)->assertJsonPath('error', 'no_lobby');
 });
 
-test('only the owner starts, with exactly four players and the others ready; nothing is deducted on entry', function () {
-    [$owner, $room, $others] = lbFull($this);
-    $this->actingAs($others[0], 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertStatus(403)->assertJsonPath('error', 'not_owner');
+test('choose your seat: one seat per player, no two players on one seat, reserved until confirmed', function () {
+    $owner = lbPlayer();
+    $room = lbCreate($this, $owner)->assertCreated()->json('data');
+    // You arrive holding a seat (reserved) and choose / confirm one.
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")
+        ->assertJsonPath('data.seats.0.state', 'reserved')->assertJsonPath('data.my_seat', 1)->assertJsonPath('data.my_seat_confirmed', false)
+        ->assertJsonPath('data.seats.1.state', 'available');
+    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 3])->assertOk()
+        ->assertJsonPath('data.my_seat', 3)->assertJsonPath('data.seats.2.state', 'occupied')->assertJsonPath('data.seats.0.state', 'available');
 
-    // Unready one player: the owner cannot start yet.
-    $this->actingAs($others[2], 'sanctum')->postJson("/api/v1/tables/{$room['table_id']}/ready", ['ready' => false])->assertOk();
-    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.can_start', false);
-    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertStatus(409)->assertJsonPath('error', 'not_ready');
-    // Readying does not start a lobby game by itself.
-    $this->actingAs($others[2], 'sanctum')->postJson("/api/v1/tables/{$room['table_id']}/ready", ['ready' => true])->assertOk();
-    expect(GameTable::query()->find($room['table_id'])->status)->not->toBe(TableStatus::InGame);
+    $guest = lbPlayer();
+    $this->actingAs($guest, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join")->assertCreated()->assertJsonPath('data.my_seat', 1);
+    // The owner's seat is taken; the guest's own reserved seat cannot be taken by the owner either.
+    $this->actingAs($guest, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 3])->assertStatus(409)->assertJsonPath('error', 'seat_taken');
+    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 1])->assertStatus(409)->assertJsonPath('error', 'seat_taken');
+    $this->actingAs($guest, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 4])->assertOk();
+    $this->actingAs($guest, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 9])->assertStatus(422);
+    // Not in the lobby: no seat.
+    $this->actingAs(lbPlayer(), 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 2])->assertStatus(404)->assertJsonPath('error', 'not_seated');
+
+    $seats = GameTable::query()->find($room['table_id'])->players()->pluck('seat', 'user_id')->all();
+    expect($seats)->toBe([$owner->id => 3, $guest->id => 4]);
+    // Start stays unavailable until all four have confirmed.
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.can_press_start', false)->assertJsonPath('data.all_confirmed', false);
+    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertStatus(409)->assertJsonPath('error', 'seats_not_confirmed');
+    // Lobby tables cannot be readied the old way.
+    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/tables/{$room['table_id']}/ready", ['ready' => true])->assertStatus(409)->assertJsonPath('error', 'use_lobby_start');
+});
+
+test('all four press Start → synchronized server countdown → the match starts; nothing is deducted on entry', function () {
+    [$owner, $room, $others] = lbFull($this);
+    $show = fn ($u) => $this->actingAs($u, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk();
+    $show($owner)->assertJsonPath('data.all_confirmed', true)->assertJsonPath('data.can_press_start', true)->assertJsonPath('data.countdown_ends_at', null);
+
+    foreach ([$owner, $others[0], $others[1]] as $p) {
+        $this->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
+    }
+    $show($owner)->assertJsonPath('data.ready_count', 3)->assertJsonPath('data.countdown_ends_at', null)->assertJsonPath('data.seats.3.is_ready', false);
     expect(balance($others[0]))->toBe(10_000 * 100);
 
-    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.can_start', true);
-    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk()->assertJsonPath('data.status', 'IN_GAME');
-    // Double tap: still fine.
+    // The fourth press starts the countdown; everyone gets the same end time from the server.
+    $this->actingAs($others[2], 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
+    $endsAt = $show($others[0])->json('data.countdown_ends_at');
+    expect($endsAt)->not->toBeNull()->and($show($others[1])->json('data.countdown_ends_at'))->toBe($endsAt);
+    // Seats are locked during the countdown; the match has not started yet.
+    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 1])->assertStatus(409)->assertJsonPath('error', 'countdown_running');
+    expect(GameTable::query()->find($room['table_id'])->status)->not->toBe(TableStatus::InGame);
+
+    $this->travel(3100)->milliseconds();
+    $show($owner)->assertJsonPath('data.table_status', 'IN_GAME')->assertJsonPath('data.countdown_ends_at', null);
+    // A late tap changes nothing.
     $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
 
     $table = GameTable::query()->find($room['table_id']);
     $session = GameSession::query()->find($table->current_session_id);
     expect($table->status)->toBe(TableStatus::InGame)->and($session->banker_user_id)->toBe($owner->id)
         ->and($session->config['arrangement_seconds'])->toBe(45)->and($session->config['min_bet'])->toBe(10_000);
+    // Seats are kept for the match.
+    expect($table->players()->pluck('seat', 'user_id')->all())->toBe([$owner->id => 1, $others[0]->id => 2, $others[1]->id => 3, $others[2]->id => 4]);
     $this->actingAs(lbPlayer(), 'sanctum')->getJson('/api/v1/lobbies')->assertJsonPath('data.0.status', 'in_game');
+});
+
+test('the countdown is cancelled (and every Start reset) when a player withdraws, leaves or drops out', function () {
+    [$owner, $room, $others] = lbFull($this);
+    $all = [$owner, ...$others];
+    $pressAll = fn () => collect($all)->each(fn ($p) => $this->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk());
+    $table = fn () => GameTable::query()->find($room['table_id']);
+
+    // Withdraw.
+    $pressAll();
+    expect($table()->countdown_ends_at)->not->toBeNull();
+    $this->actingAs($others[1], 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start", ['ready' => false])->assertOk()
+        ->assertJsonPath('data.countdown_ends_at', null)->assertJsonPath('data.ready_count', 0);
+
+    // Drop out: one player stops checking in; the server cancels instead of starting.
+    $pressAll();
+    $this->travel(7)->seconds();
+    foreach ([$owner, $others[0], $others[1]] as $p) {
+        $this->actingAs($p, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk();
+    }
+    expect($table()->status)->not->toBe(TableStatus::InGame)->and($table()->countdown_ends_at)->toBeNull()
+        ->and($table()->players()->where('is_ready', true)->count())->toBe(0);
+
+    // Leave during the countdown.
+    $this->actingAs($others[2], 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk(); // back online
+    $pressAll();
+    $this->actingAs($others[2], 'sanctum')->postJson("/api/v1/tables/{$room['table_id']}/leave")->assertOk();
+    expect($table()->countdown_ends_at)->toBeNull()->and($table()->players()->count())->toBe(3);
+});
+
+test('a player gone longer than the seat timeout loses the seat before the match', function () {
+    config(['pusoy.lobby.seat_release_seconds' => 60]);
+    [$owner, $room, $others] = lbFull($this);
+    $this->travel(30)->seconds();
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.seats.1.is_connected', false)->assertJsonPath('data.players', 4);
+    $this->travel(40)->seconds();
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.players', 1)->assertJsonPath('data.seats.1.state', 'available');
 });
 
 test('round bank: the creator banks first, then the banker rotates clockwise; banker mode keeps the creator', function () {
     [$owner, $room, $others] = lbFull($this, ['game_mode' => 'round_bank']);
-    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
-    $table = GameTable::query()->find($room['table_id']);
+    $table = lbStart($this, [$owner, ...$others], $room);
     $seatOrder = [$owner->id, $others[0]->id, $others[1]->id, $others[2]->id];
 
     $bankers = [];
@@ -204,9 +290,8 @@ test('round bank: the creator banks first, then the banker rotates clockwise; ba
     }
     expect($bankers)->toBe($seatOrder);
 
-    [$owner2, $room2] = lbFull($this, ['game_mode' => 'banker', 'name' => 'Bank']);
-    $this->actingAs($owner2, 'sanctum')->postJson("/api/v1/lobbies/{$room2['id']}/start")->assertOk();
-    $t2 = GameTable::query()->find($room2['table_id']);
+    [$owner2, $room2, $others2] = lbFull($this, ['game_mode' => 'banker', 'name' => 'Bank']);
+    $t2 = lbStart($this, [$owner2, ...$others2], $room2);
     lbPlayRound($t2);
     $this->travel(10)->seconds();
     app(BankerMatchService::class)->startRound($t2->fresh());

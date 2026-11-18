@@ -14,12 +14,13 @@ export function Gem({ size = 30 }: { size?: number }) {
   return <Diamond size={size} className="inline-block shrink-0 drop-shadow-[0_2px_2px_rgb(0_0_0/0.4)]" />;
 }
 
-type Tone = 'gold' | 'purple' | 'red' | 'green' | 'dark';
+type Tone = 'gold' | 'purple' | 'red' | 'green' | 'dark' | 'blue';
 const TONES: Record<Tone, string> = {
   gold: 'border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] via-[#ffc531] to-[#e08a00] text-[#4a1d00] shadow-[0_7px_0_#8a4a00]',
   purple: 'border-[#ffd34d] bg-gradient-to-b from-[#c47cff] via-[#8f2ff0] to-[#5a12b0] text-white shadow-[0_7px_0_#36086e]',
   red: 'border-[#ffc2c2] bg-gradient-to-b from-[#ff6b5c] to-[#b3121a] text-white shadow-[0_7px_0_#6b0606]',
   green: 'border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] text-white shadow-[0_7px_0_#0b6b2a]',
+  blue: 'border-[#9ad4ff] bg-gradient-to-b from-[#3a8aff] to-[#0d3fb0] text-white shadow-[0_7px_0_#082a78]',
   dark: 'border-[#d9a441] bg-gradient-to-b from-[#6a1218] to-[#33060a] text-[#ffe9b0] shadow-[0_6px_0_#1a0204]',
 };
 

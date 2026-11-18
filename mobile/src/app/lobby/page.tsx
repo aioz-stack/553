@@ -148,6 +148,7 @@ export default function MultiplayerLobby() {
   const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | null>(null);
   const [pwFor, setPwFor] = useState<LobbySummary | null>(null);
   const [unread, setUnread] = useState(0);
+  const [leaving, setLeaving] = useState(false);
 
   const say = useCallback((ok: boolean, text: string) => setToast({ ok, text }), []);
   useEffect(() => {
@@ -193,14 +194,20 @@ export default function MultiplayerLobby() {
 
   const balance = vc !== undefined ? Number(vc) : undefined;
 
+  /** Go to a lobby's Choose Your Seat screen with a short zoom-and-fade exit. */
+  const goTo = (id: number) => {
+    setLeaving(true);
+    setTimeout(() => router.push(roomUrl(id)), 380);
+  };
+
   const enter = (lobby: LobbyDetail) => {
     window.dispatchEvent(new Event('pusoy:wallet'));
-    router.push(roomUrl(lobby.id));
+    goTo(lobby.id);
   };
 
   const join = async (lobby: LobbySummary, password?: string) => {
     if (lobby.is_mine) {
-      router.push(roomUrl(lobby.id));
+      goTo(lobby.id);
       return;
     }
     if (lobby.type === 'private' && password === undefined) {
@@ -260,6 +267,8 @@ export default function MultiplayerLobby() {
   return (
     <Screen title="Multiplayer" immersive>
       <LandscapeStage background={<LanternRoom className="h-full w-full" />}>
+        {/* Cinematic hand-off: the lobby zooms and fades out as you go to a table. */}
+        <div className={`absolute inset-0 ${leaving ? 'cs-exit' : ''}`}>
         <div className="absolute inset-0 bg-gradient-to-b from-[#1a0420]/30 via-transparent to-[#1a0420]/50" />
 
         {/* ---- top bar ---- */}
@@ -519,7 +528,7 @@ export default function MultiplayerLobby() {
         {/* You are already in a lobby that is not on this page — or seated at another table, which
             blocks joining a lobby until you leave it: a way back either way. */}
         {myLobby && !rows.some((r) => r.id === myLobby) && (
-          <button type="button" onClick={() => router.push(roomUrl(myLobby))} className="absolute bottom-[24px] left-[24px] z-20 rounded-full border-4 border-[#4ee36b] bg-[#0f2a1c]/95 px-6 py-2 font-display text-[22px] font-black text-white">
+          <button type="button" onClick={() => goTo(myLobby)} className="absolute bottom-[24px] left-[24px] z-20 rounded-full border-4 border-[#4ee36b] bg-[#0f2a1c]/95 px-6 py-2 font-display text-[22px] font-black text-white">
             You are in a lobby — tap to return
           </button>
         )}
@@ -546,6 +555,7 @@ export default function MultiplayerLobby() {
             {toast.text}
           </div>
         )}
+        </div>
       </LandscapeStage>
     </Screen>
   );

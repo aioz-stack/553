@@ -35,6 +35,9 @@ export interface LobbySummary {
 export interface LobbySeat {
   seat: number;
   user_id: number | null;
+  /** available · reserved (held, not confirmed) · occupied (confirmed). */
+  state: 'available' | 'reserved' | 'occupied';
+  seat_confirmed?: boolean;
   name?: string;
   username?: string;
   is_ready?: boolean;
@@ -51,7 +54,16 @@ export interface LobbyDetail extends LobbySummary {
   is_owner: boolean;
   is_seated: boolean;
   banker_rule: string;
-  can_start: boolean;
+  my_seat: number | null;
+  my_seat_confirmed: boolean;
+  my_ready: boolean;
+  all_confirmed: boolean;
+  ready_count: number;
+  /** Server time the synchronized countdown ends (ISO, ms); null when none is running. */
+  countdown_ends_at: string | null;
+  /** Server clock at response time, to line the countdown up across devices. */
+  server_time: string;
+  can_press_start: boolean;
   start_hint: string;
 }
 
@@ -117,14 +129,13 @@ export function useLobbyUpdates(onChange: () => void, enabled = true): void {
 }
 
 /**
- * Live waiting room: table events on the seated players' presence channel (`table.{id}`) plus
- * a 3 s poll fallback and a 10 s heartbeat so the server knows you are still here.
+ * Live Choose Your Seat: table events on the seated players' presence channel (`table.{id}`)
+ * plus polling — every 3 s normally, every 0.4 s while the countdown runs. Each poll (GET
+ * /lobbies/{id}) is also your heartbeat and lets the server run the countdown / start the match.
  */
-export function useWaitingRoomUpdates(tableId: number | null, onChange: () => void, heartbeat: () => void): void {
+export function useWaitingRoomUpdates(tableId: number | null, onChange: () => void, fast = false): void {
   const cb = useRef(onChange);
   cb.current = onChange;
-  const beat = useRef(heartbeat);
-  beat.current = heartbeat;
 
   useEffect(() => {
     if (!tableId) return undefined;
@@ -133,17 +144,18 @@ export function useWaitingRoomUpdates(tableId: number | null, onChange: () => vo
       .then((echo) => {
         if (!echo) return;
         const ch = echo.join(`table.${tableId}`);
-        ['player.joined', 'player.left', 'player.ready', 'table.full', 'match.started', 'match.completed', 'player.disconnected', 'player.reconnected'].forEach((e) => ch.listen(`.${e}`, () => cb.current()));
+        ['player.joined', 'player.left', 'player.ready', 'player.seated', 'table.full', 'match.countdown', 'match.countdown_cancelled', 'match.started', 'match.completed', 'player.disconnected', 'player.reconnected'].forEach((e) =>
+          ch.listen(`.${e}`, () => cb.current()),
+        );
         leave = () => echo.leave(`table.${tableId}`);
       })
       .catch(() => undefined);
-    const poll = setInterval(() => cb.current(), 3_000);
-    const hb = setInterval(() => beat.current(), 10_000);
-    beat.current();
-    return () => {
-      clearInterval(poll);
-      clearInterval(hb);
-      leave?.();
-    };
+    return () => leave?.();
   }, [tableId]);
+
+  useEffect(() => {
+    if (!tableId) return undefined;
+    const poll = setInterval(() => cb.current(), fast ? 400 : 3_000);
+    return () => clearInterval(poll);
+  }, [tableId, fast]);
 }

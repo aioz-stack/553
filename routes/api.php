@@ -81,6 +81,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::patch('lobbies/{room}', [LobbyController::class, 'update'])->middleware('throttle:game-actions');
         Route::post('lobbies/{room}/join', [LobbyController::class, 'join'])->middleware('throttle:lobby-join');
         Route::post('lobbies/{room}/start', [LobbyController::class, 'start'])->middleware('throttle:game-actions');
+        Route::post('lobbies/{room}/seat', [LobbyController::class, 'seat'])->middleware('throttle:game-actions');
         Route::post('lobbies/{room}/kick', [LobbyController::class, 'kick'])->middleware('throttle:game-actions');
 
         Route::get('tables/current', [TableController::class, 'current']);

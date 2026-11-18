@@ -9,6 +9,7 @@ use App\Models\GameSession;
 use App\Models\GameTable;
 use App\Services\Game\BankerMatchService;
 use App\Services\Game\GameEngine;
+use App\Services\Game\LobbyService;
 use App\Services\Game\TableService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -23,9 +24,11 @@ use Throwable;
 #[Description('Expire arrangement timers, retry stuck resolutions/settlements, detect disconnects and ready timeouts')]
 class SweepGames extends Command
 {
-    public function handle(GameEngine $engine, TableService $tables, BankerMatchService $match): int
+    public function handle(GameEngine $engine, TableService $tables, BankerMatchService $match, LobbyService $lobbies): int
     {
         $tables->sweep();
+        // Multiplayer lobbies: countdowns, dropped players, seat release.
+        $lobbies->sweep($match);
 
         GameSession::query()->where('status', GameStatus::Arranging->value)->get()->each(function (GameSession $session) use ($engine) {
             if ($session->arrangement_deadline->isPast()) {

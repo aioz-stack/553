@@ -545,11 +545,25 @@ Home → Multiplayer opens `/lobby/` (mobile, 1600×900 stage). Built on the exi
   re-checks seats (max 4) and balance (`min_entry` and the 2× minimum-bet reserve); joining again is a
   no-op. **Quick Join**: public lobbies only, affordable (`min_entry` and reserve ≤ your VC), with free
   seats, fullest first then oldest; tries the next if one fills meanwhile; 404 `no_lobby` when none.
-- **Waiting room** (`/lobby/room/?id=`): four seats with owner crown, BANKER badge, Ready, online; players
-  toggle Ready (`tables/{id}/ready`); the owner can Edit (name / password / time), Remove a player, and
-  **Start** only with exactly four seated and the other three ready (`maybeStart(byOwner: true)`; lobby
-  tables never auto-start). On start every client moves to `/play/?table=`. Owner leaving → ownership
-  (and the creator/banker role) passes to the next seated player; last player leaving → the lobby closes.
+- **Choose Your Seat** (`/lobby/room/?id=`; Create and Join both land here with a zoom-and-fade
+  transition): seats 1 top, 2 left, 3 right, 4 bottom. A player who joins holds one seat (**Reserved**,
+  `game_players.seat_confirmed = false`); tapping a glowing **Available** seat glides your avatar there
+  (**Selected**), **Confirm Seat** saves it (`POST lobbies/{id}/seat`, row-locked; the unique
+  (table, seat) index makes two players on one seat impossible) → **Occupied**. Change Seat undoes a pick.
+- **Start:** hidden until all four seats are confirmed; then **every** player presses START
+  (`POST lobbies/{id}/start`, `ready: false` withdraws). When all four have, the server sets
+  `game_tables.countdown_ends_at` = now + 3 s (`match.countdown`); clients show 3 → 2 → 1 → GO aligned to
+  the server clock (`server_time`). `LobbyService::tick` (run on every `GET lobbies/{id}`, which is also
+  the heartbeat, and by `pusoy:sweep`) starts the match when it ends (`maybeStart(byOwner: true)`; lobby
+  tables never auto-start) — or cancels it and resets every Start if anyone withdraws, leaves or has not
+  been heard from for 6 s (`match.countdown_cancelled`). Seats are locked during the countdown and kept
+  for the match. `tables/{id}/ready` is refused for lobby tables (`use_lobby_start`).
+- **Presence:** the seat screen polls `GET lobbies/{id}` every 3 s (0.4 s in the countdown); a player
+  silent 6 s shows offline; one gone `pusoy.lobby.seat_release_seconds` (60) loses the seat before the
+  match. Back (←) returns to the lobby list keeping your seat ("You are in a lobby — tap to return");
+  Leave Lobby (with a confirm) gives it up. The owner can Edit the lobby and Remove players before the
+  countdown. Owner leaving → ownership (and the creator/banker role) passes to the next seated player;
+  last player leaving → the lobby closes. On start every client zooms out into `/play/?table=`.
 - **Money:** unchanged banker-match money — each round's bets are held in escrow from VC wallets and
   settled with idempotent ledger entries (BankerMatchService); balances never come from the client.
 - **Live:** every lobby change (and table join/leave/ready/start/end at a lobby) broadcasts
@@ -618,7 +632,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
-| Multiplayer lobbies | `GET lobbies` (`tab` all/public/private, `search`, `page`; 5 per page + counts), `POST lobbies` (`name`, `password?`, `game_mode` banker/round_bank, `min_entry` 100/250/500/1000/2000, `preparation_seconds` 30/45/60/75), `POST lobbies/quick-join`, `GET lobbies/{id}`, `PATCH lobbies/{id}` (owner: name/password/time), `POST lobbies/{id}/join` (`password?`), `POST lobbies/{id}/start` (owner), `POST lobbies/{id}/kick` (owner, `user_id`); ready / leave / heartbeat use `tables/{id}/…` |
+| Multiplayer lobbies | `GET lobbies` (`tab` all/public/private, `search`, `page`; 5 per page + counts), `POST lobbies` (`name`, `password?`, `game_mode` banker/round_bank, `min_entry` 100/250/500/1000/2000, `preparation_seconds` 30/45/60/75), `POST lobbies/quick-join`, `GET lobbies/{id}` (also the heartbeat), `PATCH lobbies/{id}` (owner: name/password/time), `POST lobbies/{id}/join` (`password?`), `POST lobbies/{id}/seat` (`seat` 1–4), `POST lobbies/{id}/start` (`ready?`; every player), `POST lobbies/{id}/kick` (owner, `user_id`); leave uses `tables/{id}/leave` |
 | Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}` — Round Bank, you + 3 bots; CP only with `FEATURE_CP_WAGERING` |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |

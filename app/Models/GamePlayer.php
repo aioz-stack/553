@@ -13,6 +13,7 @@ class GamePlayer extends Model
     {
         return [
             'is_ready' => 'boolean',
+            'seat_confirmed' => 'boolean',
             'is_connected' => 'boolean',
             'missed_rounds' => 'integer',
             'banker_rounds' => 'integer',

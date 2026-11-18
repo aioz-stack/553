@@ -74,6 +74,14 @@ return [
     ],
 
     /*
+    | Multiplayer lobbies (Choose Your Seat): a player who has been gone this long loses their
+    | seat before the match starts (never during the countdown).
+    */
+    'lobby' => [
+        'seat_release_seconds' => (int) env('LOBBY_SEAT_RELEASE_SECONDS', 60),
+    ],
+
+    /*
     | Banker modes (Round Bank = rotating banker, Banker Mode = fixed banker).
     | Settlement is per player vs the banker, in multiples of the player's bet,
     | keyed by "wins-losses-ties" across Front/Middle/Back. Missing keys pay 0

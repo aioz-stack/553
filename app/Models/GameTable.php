@@ -27,6 +27,7 @@ class GameTable extends Model
             'status' => TableStatus::class,
             'game_mode' => GameMode::class,
             'full_at' => 'datetime',
+            'countdown_ends_at' => 'datetime',
             'closed_at' => 'datetime',
             'next_round_at' => 'datetime',
             'rounds_total' => 'integer',

@@ -51,10 +51,22 @@ class LobbyController extends Controller
         return response()->json(['data' => $this->lobbies->show($request->user(), $room->refresh())], 201);
     }
 
-    /** GET /lobbies/{room} — the waiting room: lobby details and its four seats. */
-    public function show(Request $request, GameRoom $room): JsonResponse
+    /**
+     * GET /lobbies/{room} — Choose Your Seat: lobby details and its four seats. For a seated player
+     * this is also the heartbeat, and it runs the server's countdown / housekeeping.
+     */
+    public function show(Request $request, GameRoom $room, BankerMatchService $match): JsonResponse
     {
-        return response()->json(['data' => $this->lobbies->show($request->user(), $room)]);
+        return response()->json(['data' => $this->lobbies->show($request->user(), $room, $match)]);
+    }
+
+    /** POST /lobbies/{room}/seat — confirm (or change to) a free seat 1–4. */
+    public function seat(Request $request, GameRoom $room, BankerMatchService $match): JsonResponse
+    {
+        $data = $request->validate(['seat' => ['required', 'integer', 'between:1,4']]);
+        $this->lobbies->chooseSeat($request->user(), $room, (int) $data['seat']);
+
+        return response()->json(['data' => $this->lobbies->show($request->user(), $room->refresh(), $match)]);
     }
 
     /** POST /lobbies/{room}/join — private lobbies need the password. */
@@ -74,12 +86,16 @@ class LobbyController extends Controller
         return response()->json(['data' => $this->lobbies->show($request->user(), $seat->table->room)], 201);
     }
 
-    /** POST /lobbies/{room}/start — owner only; four players, everyone else ready. */
+    /**
+     * POST /lobbies/{room}/start — press (ready: true, default) or withdraw (false) Start. Every one
+     * of the four players presses it; then the server runs the 3-second countdown and starts the match.
+     */
     public function start(Request $request, GameRoom $room, BankerMatchService $match): JsonResponse
     {
-        $table = $this->lobbies->start($request->user(), $room, $match);
+        $data = $request->validate(['ready' => ['sometimes', 'boolean']]);
+        $this->lobbies->pressStart($request->user(), $room, (bool) ($data['ready'] ?? true), $match);
 
-        return response()->json(['data' => ['table_id' => $table->id, 'status' => $table->status->value]]);
+        return response()->json(['data' => $this->lobbies->show($request->user(), $room->refresh(), $match)]);
     }
 
     /** PATCH /lobbies/{room} — owner only, before the game: name, password, preparation time. */

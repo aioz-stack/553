@@ -857,6 +857,13 @@ class BankerMatchService
     {
         $remaining = GamePlayer::query()->where('game_table_id', $table->id)->orderBy('seat')->get();
 
+        // Someone left during a lobby's pre-match countdown: stop it and withdraw everyone's Start.
+        if ($table->countdown_ends_at) {
+            $table->forceFill(['countdown_ends_at' => null])->save();
+            GamePlayer::query()->where('game_table_id', $table->id)->update(['is_ready' => false]);
+            event(new TableEvent($table->id, GameEvents::COUNTDOWN_CANCELLED, ['reason' => 'player_left']));
+        }
+
         if (in_array($table->status, [TableStatus::WaitingForPlayers, TableStatus::Ready], true)) {
             if ($remaining->isEmpty()) {
                 $this->end($table, 'abandoned');

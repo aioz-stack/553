@@ -9,6 +9,7 @@ use App\Enums\RoomVisibility;
 use App\Enums\TableStatus;
 use App\Events\Game\GameEvents;
 use App\Events\Game\LobbyEvent;
+use App\Events\Game\TableEvent;
 use App\Exceptions\BusinessRuleException;
 use App\Models\GamePlayer;
 use App\Models\GameRoom;
@@ -17,6 +18,7 @@ use App\Models\User;
 use App\Services\Audit\AuditLogger;
 use App\Services\Wallet\WalletService;
 use App\Support\Points;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -52,8 +54,17 @@ class LobbyService
 
     public const PER_PAGE = 5;
 
+    /** The synchronized pre-match countdown (3 → 2 → 1). */
+    public const COUNTDOWN_SECONDS = 3;
+
+    /** A player in the waiting room not heard from for this long counts as disconnected. */
+    public const PRESENCE_SECONDS = 6;
+
     /** Table events that change what the Lobby screen shows. */
     public const TABLE_EVENTS_THAT_CHANGE_LOBBIES = [
+        GameEvents::PLAYER_SEATED,
+        GameEvents::COUNTDOWN_STARTED,
+        GameEvents::COUNTDOWN_CANCELLED,
         GameEvents::PLAYER_JOINED,
         GameEvents::PLAYER_LEFT,
         GameEvents::PLAYER_READY,
@@ -260,10 +271,20 @@ class LobbyService
      *
      * @return array<string, mixed>
      */
-    public function show(User $user, GameRoom $room): array
+    public function show(User $user, GameRoom $room, ?BankerMatchService $match = null): array
     {
         $this->assertLobby($room);
         $table = $this->openTable($room);
+
+        // Looking at the lobby keeps you present, and runs the server's countdown / housekeeping.
+        if ($table && $match) {
+            $this->touch($user, $table);
+            $this->tick($table, $match);
+            $room->refresh();
+            $room->unsetRelation('tables');
+            $table = $this->openTable($room) ?? GameTable::query()->find($table->id);
+        }
+
         $players = $table ? GamePlayer::query()->with('user.profile')->where('game_table_id', $table->id)->orderBy('seat')->get() : collect();
         $bankerId = $table?->banker_user_id ?? $table?->creator_user_id;
 
@@ -275,16 +296,23 @@ class LobbyService
                 'user_id' => $p->user_id,
                 'name' => $p->user->profile?->display_name ?? $p->user->name,
                 'username' => $p->user->username,
+                // occupied = seat confirmed; reserved = held by a player who has not confirmed yet
+                'state' => $p->seat_confirmed ? 'occupied' : 'reserved',
+                'seat_confirmed' => (bool) $p->seat_confirmed,
                 'is_ready' => (bool) $p->is_ready,
                 'is_connected' => (bool) $p->is_connected,
                 'is_owner' => $p->user_id === $room->owner_id,
                 'is_banker' => $p->user_id === $bankerId,
                 'is_you' => $p->user_id === $user->id,
-            ] : ['seat' => $seat, 'user_id' => null];
+            ] : ['seat' => $seat, 'user_id' => null, 'state' => 'available'];
         }
 
         $seated = $players->firstWhere('user_id', $user->id);
-        $others = $players->where('user_id', '!=', $room->owner_id);
+        $allConfirmed = $players->count() === 4 && $players->every('seat_confirmed');
+        $inGame = $table?->status === TableStatus::InGame;
+        $counting = (bool) $table?->countdown_ends_at;
+        $unconfirmed = $players->where('seat_confirmed', false)->count();
+        $notStarted = $players->where('is_ready', false)->count();
 
         return $this->summary($room, $seated ? $room->id : null) + [
             'table_id' => $table?->id,
@@ -292,15 +320,23 @@ class LobbyService
             'seats' => $seats,
             'is_owner' => $room->owner_id === $user->id,
             'is_seated' => $seated !== null,
+            'my_seat' => $seated?->seat,
+            'my_seat_confirmed' => (bool) $seated?->seat_confirmed,
+            'my_ready' => (bool) $seated?->is_ready,
+            'all_confirmed' => $allConfirmed,
+            'ready_count' => $players->where('is_ready', true)->count(),
+            'countdown_ends_at' => $table?->countdown_ends_at?->toIso8601ZuluString('millisecond'),
+            'server_time' => now()->toIso8601ZuluString('millisecond'),
             'banker_rule' => $room->game_mode === GameMode::Banker ? 'The lobby owner banks every round.' : 'The lobby owner banks first; the banker then rotates clockwise each round.',
-            'can_start' => $room->owner_id === $user->id && $table !== null && $table->status !== TableStatus::InGame
-                && $players->count() === 4 && $others->every('is_ready'),
+            'can_press_start' => $seated !== null && $allConfirmed && ! $inGame,
             'start_hint' => match (true) {
                 $table === null => 'This lobby is closed.',
-                $table->status === TableStatus::InGame => 'The game is in progress.',
+                $inGame => 'The game is starting…',
+                $counting => 'Get ready…',
                 $players->count() < 4 => 'Waiting for '.(4 - $players->count()).' more player'.(4 - $players->count() === 1 ? '' : 's').'…',
-                ! $others->every('is_ready') => 'Waiting for everyone to be ready…',
-                default => $room->owner_id === $user->id ? 'Everyone is ready — start the game!' : 'Waiting for the owner to start…',
+                ! $allConfirmed => $unconfirmed === 1 ? 'Waiting for 1 player to confirm a seat…' : "Waiting for {$unconfirmed} players to confirm their seats…",
+                $notStarted > 0 => $seated?->is_ready ? "Waiting for {$notStarted} more to press Start…" : 'All seats confirmed — press Start!',
+                default => 'Starting…',
             },
         ];
     }
@@ -373,45 +409,187 @@ class LobbyService
     // Owner actions
     // ------------------------------------------------------------------
 
-    /** The owner starts the game: four players seated, the other three ready. */
-    public function start(User $user, GameRoom $room, BankerMatchService $match): GameTable
+    // ------------------------------------------------------------------
+    // Choose Your Seat → Start → countdown → match
+    // ------------------------------------------------------------------
+
+    /**
+     * Confirm (or change to) a seat. You hold exactly one seat while in the lobby; you can move to
+     * any free seat until the countdown starts. Two players can never hold one seat (row lock here,
+     * and the unique (table, seat) index as the last word). Changing seat withdraws your Start.
+     */
+    public function chooseSeat(User $user, GameRoom $room, int $seat): GamePlayer
     {
         $this->assertLobby($room);
 
-        $table = DB::transaction(function () use ($user, $room, $match) {
-            $table = GameTable::query()->where('game_room_id', $room->id)->where('status', '!=', TableStatus::Closed->value)->lockForUpdate()->first()
-                ?? throw new BusinessRuleException('This lobby is closed.', 409, 'room_closed');
-            $room->refresh();
+        return DB::transaction(function () use ($user, $room, $seat) {
+            $table = $this->lockedOpenTable($room);
+            $this->assertBeforeCountdown($table);
 
-            if ($room->owner_id !== $user->id) {
-                throw new BusinessRuleException('Only the lobby owner can start the game.', 403, 'not_owner');
+            $player = GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $user->id)->lockForUpdate()->first()
+                ?? throw new BusinessRuleException('Join this lobby first.', 404, 'not_seated');
+
+            $holder = GamePlayer::query()->where('game_table_id', $table->id)->where('seat', $seat)->lockForUpdate()->first();
+            if ($holder && $holder->user_id !== $user->id) {
+                throw new BusinessRuleException('That seat is already taken — choose another one.', 409, 'seat_taken');
             }
 
+            try {
+                $player->forceFill(['seat' => $seat, 'seat_confirmed' => true, 'is_ready' => false, 'last_seen_at' => now(), 'is_connected' => true])->save();
+            } catch (UniqueConstraintViolationException) {
+                throw new BusinessRuleException('That seat was just taken — choose another one.', 409, 'seat_taken');
+            }
+
+            event(new TableEvent($table->id, GameEvents::PLAYER_SEATED, ['user_id' => $user->id, 'seat' => $seat]));
+
+            return $player;
+        });
+    }
+
+    /**
+     * Press (or withdraw) Start. Only once all four players have confirmed their seats. When all
+     * four have pressed it, the server starts the synchronized 3-second countdown; the match begins
+     * when it ends (tick) unless someone leaves, withdraws or drops out first.
+     */
+    public function pressStart(User $user, GameRoom $room, bool $ready, BankerMatchService $match): GameTable
+    {
+        $this->assertLobby($room);
+
+        $table = DB::transaction(function () use ($user, $room, $ready) {
+            $table = $this->lockedOpenTable($room);
             if ($table->status === TableStatus::InGame) {
-                return $table; // already started (double tap)
+                return $table; // already started (a late tap)
             }
 
             $players = GamePlayer::query()->where('game_table_id', $table->id)->lockForUpdate()->get();
-            if ($players->count() !== 4) {
-                throw new BusinessRuleException('A game needs exactly four players.', 409, 'not_enough_players');
-            }
-            if (! $players->where('user_id', '!=', $user->id)->every('is_ready')) {
-                throw new BusinessRuleException('Everyone must be ready first.', 409, 'not_ready');
+            $me = $players->firstWhere('user_id', $user->id) ?? throw new BusinessRuleException('Join this lobby first.', 404, 'not_seated');
+
+            if ($ready && ($players->count() !== 4 || ! $players->every('seat_confirmed'))) {
+                throw new BusinessRuleException('All four players must confirm their seats first.', 409, 'seats_not_confirmed');
             }
 
-            // Pressing Start means the owner is ready too.
-            GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $user->id)->update(['is_ready' => true]);
+            $me->forceFill(['is_ready' => $ready, 'last_seen_at' => now(), 'is_connected' => true])->save();
+            event(new TableEvent($table->id, GameEvents::PLAYER_READY, ['user_id' => $user->id, 'is_ready' => $ready]));
 
-            if (! $match->maybeStart($table, byOwner: true)) {
-                throw new BusinessRuleException('The game could not start — every player needs enough diamonds for the minimum bet.', 409, 'cannot_start');
+            if (! $ready && $table->countdown_ends_at) {
+                $this->cancelCountdown($table, 'player_cancelled');
+            } elseif ($ready && ! $table->countdown_ends_at && $players->every(fn (GamePlayer $p) => $p->user_id === $user->id || $p->is_ready)) {
+                $endsAt = now()->addSeconds(self::COUNTDOWN_SECONDS);
+                $table->forceFill(['countdown_ends_at' => $endsAt])->save();
+                event(new TableEvent($table->id, GameEvents::COUNTDOWN_STARTED, ['ends_at' => $endsAt->toIso8601ZuluString('millisecond'), 'seconds' => self::COUNTDOWN_SECONDS]));
             }
 
             return $table->refresh();
         });
 
-        AuditLogger::log($user, 'lobby.started', $room, null, ['table_id' => $table->id]);
+        $this->tick($table, $match);
 
-        return $table;
+        return $table->refresh();
+    }
+
+    /**
+     * Server-side housekeeping for one lobby table, run whenever someone looks at the lobby (and by
+     * the scheduler): mark silent players disconnected, release seats of players gone too long
+     * (before the match), cancel a countdown when anyone dropped out, and start the match when the
+     * countdown has run out. Safe to run any number of times (row-locked, state re-checked).
+     */
+    public function tick(GameTable $table, BankerMatchService $match): void
+    {
+        $started = DB::transaction(function () use ($table, $match) {
+            $table = GameTable::query()->whereKey($table->id)->lockForUpdate()->first();
+            if (! $table || ! in_array($table->status, [TableStatus::WaitingForPlayers, TableStatus::Ready], true)) {
+                return false;
+            }
+
+            $now = now();
+            $players = GamePlayer::query()->with('user')->where('game_table_id', $table->id)->lockForUpdate()->get();
+
+            foreach ($players as $p) {
+                $seen = $p->last_seen_at ?? $p->created_at;
+                if ($p->is_connected && $seen->lt($now->copy()->subSeconds(self::PRESENCE_SECONDS))) {
+                    $p->forceFill(['is_connected' => false])->save();
+                    event(new TableEvent($table->id, GameEvents::PLAYER_DISCONNECTED, ['user_id' => $p->user_id]));
+                }
+            }
+
+            if ($table->countdown_ends_at) {
+                $missing = $players->count() !== 4 || ! $players->every(fn (GamePlayer $p) => $p->is_ready && $p->seat_confirmed && $p->is_connected);
+                if ($missing) {
+                    $this->cancelCountdown($table, 'player_disconnected');
+                } elseif ($now->gte($table->countdown_ends_at)) {
+                    $table->forceFill(['countdown_ends_at' => null])->save();
+                    if (! $match->maybeStart($table, byOwner: true)) {
+                        $this->cancelCountdown($table, 'cannot_start');
+                    }
+
+                    return true;
+                }
+            }
+
+            // Release the seats of players who have been gone too long (never during a countdown).
+            if (! $table->countdown_ends_at) {
+                $release = (int) config('pusoy.lobby.seat_release_seconds', 60);
+                foreach ($players as $p) {
+                    $seen = $p->last_seen_at ?? $p->created_at;
+                    if (! $p->is_connected && $seen->lt($now->copy()->subSeconds($release))) {
+                        $this->tables->leave($p->user, $table);
+                    }
+                }
+            }
+
+            return false;
+        });
+
+        if ($started) {
+            AuditLogger::log(null, 'lobby.started', $table->room, null, ['table_id' => $table->id]);
+        }
+    }
+
+    /** Run tick() for every lobby table that has not started yet (scheduler, every minute). */
+    public function sweep(BankerMatchService $match): void
+    {
+        GameTable::query()->whereIn('status', [TableStatus::WaitingForPlayers->value, TableStatus::Ready->value])
+            ->whereHas('room', fn ($q) => $q->whereNotNull('lobby_code'))
+            ->get()
+            ->each(fn (GameTable $t) => $this->tick($t, $match));
+    }
+
+    /** Stop the countdown and withdraw everyone's Start (they press it again when ready). */
+    public function cancelCountdown(GameTable $table, string $reason): void
+    {
+        $table->forceFill(['countdown_ends_at' => null])->save();
+        GamePlayer::query()->where('game_table_id', $table->id)->update(['is_ready' => false]);
+        event(new TableEvent($table->id, GameEvents::COUNTDOWN_CANCELLED, ['reason' => $reason]));
+    }
+
+    /** A seated player looking at the lobby is present (this is the waiting room's heartbeat). */
+    private function touch(User $user, GameTable $table): void
+    {
+        $p = GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $user->id)->first();
+        if (! $p) {
+            return;
+        }
+        $wasGone = ! $p->is_connected;
+        $p->forceFill(['last_seen_at' => now(), 'is_connected' => true])->save();
+        if ($wasGone) {
+            event(new TableEvent($table->id, GameEvents::PLAYER_RECONNECTED, ['user_id' => $user->id]));
+        }
+    }
+
+    private function lockedOpenTable(GameRoom $room): GameTable
+    {
+        return GameTable::query()->where('game_room_id', $room->id)->where('status', '!=', TableStatus::Closed->value)->lockForUpdate()->first()
+            ?? throw new BusinessRuleException('This lobby is closed.', 409, 'room_closed');
+    }
+
+    private function assertBeforeCountdown(GameTable $table): void
+    {
+        if ($table->status === TableStatus::InGame) {
+            throw new BusinessRuleException('The game has already started.', 409, 'invalid_state');
+        }
+        if ($table->countdown_ends_at) {
+            throw new BusinessRuleException('The countdown has started — seats are locked.', 409, 'countdown_running');
+        }
     }
 
     /**
@@ -486,8 +664,8 @@ class LobbyService
             throw new BusinessRuleException('Only the lobby owner can change this lobby.', 403, 'not_owner');
         }
         $table = $this->openTable($room);
-        if ($table === null || $table->status === TableStatus::InGame) {
-            throw new BusinessRuleException('The lobby can only be changed before the game starts.', 409, 'invalid_state');
+        if ($table === null || $table->status === TableStatus::InGame || $table->countdown_ends_at) {
+            throw new BusinessRuleException('The lobby can only be changed before the countdown starts.', 409, 'invalid_state');
         }
     }
 }
