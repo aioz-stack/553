@@ -46,7 +46,13 @@ class CreateSuperAdmin extends Command
     public static function bootstrap(string $name, string $username, string $email, string $password): User
     {
         $user = new User(['name' => $name, 'username' => $username, 'email' => $email, 'password' => $password]);
-        $user->forceFill(['role' => Role::SuperAdmin, 'status' => UserStatus::Active, 'email_verified_at' => now()])->save();
+        $user->forceFill([
+            'role' => Role::SuperAdmin,
+            'status' => UserStatus::Active,
+            'email_verified_at' => now(),
+            'approved_at' => now(),
+            'referral_code' => \App\Services\Users\ReferralService::newCode($username),
+        ])->save();
 
         app(WalletService::class)->provision($user);
         AuditLogger::log(null, 'user.create_super_admin', $user, null, ['username' => $username]);
