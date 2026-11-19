@@ -13,7 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
- * The authenticated user's own wallets. CP and VC are always separate.
+ * The authenticated user's own wallets: Gold (Single Player) and Chips (Multiplayer), never combined.
  */
 class WalletController extends Controller
 {
@@ -24,9 +24,7 @@ class WalletController extends Controller
         return response()->json([
             'data' => WalletResource::collection($request->user()->wallets()->orderBy('type')->orderBy('currency')->get())->resolve($request),
             'meta' => [
-                'cash_deposits_enabled' => (bool) config('pusoy.features.cash_deposits'),
-                'cash_withdrawals_enabled' => (bool) config('pusoy.features.cash_withdrawals'),
-                'daily_reward_enabled' => (bool) config('pusoy.features.daily_vc_reward'),
+                'daily_reward_enabled' => (bool) config('pusoy.features.daily_chips_reward'),
                 'daily_reward_claimed' => $request->user()->profile?->last_daily_reward_on?->isToday() ?? false,
             ],
         ]);
@@ -35,7 +33,7 @@ class WalletController extends Controller
     public function transactions(Request $request): AnonymousResourceCollection
     {
         $request->validate([
-            'currency' => ['nullable', 'in:CP,VC'],
+            'currency' => ['nullable', 'in:GD,CH'],
             'type' => ['nullable', 'string', 'max:32'],
             'wallet_type' => ['nullable', 'in:player,allocation,commission'],
             'role' => ['nullable', 'in:banker,player'],
@@ -61,26 +59,16 @@ class WalletController extends Controller
 
     public function claimDailyReward(Request $request, WalletService $wallets): JsonResponse
     {
-        if (! config('pusoy.features.daily_vc_reward') || ! $request->user()->isPlayer()) {
+        if (! config('pusoy.features.daily_chips_reward') || ! $request->user()->isPlayer()) {
             throw new BusinessRuleException('Daily rewards are not available.', 403, 'feature_disabled');
         }
 
         $transaction = $wallets->claimDailyReward($request->user());
 
         return response()->json([
-            'message' => $transaction->wasRecentlyCreated ? 'Daily VC reward claimed.' : 'You already claimed today\'s reward.',
+            'message' => $transaction->wasRecentlyCreated ? 'Daily Chips reward claimed.' : 'You already claimed today\'s reward.',
             'data' => ['reference' => $transaction->reference, 'amount' => (new TransactionResource($transaction))->resolve($request)['amount']],
         ], $transaction->wasRecentlyCreated ? 201 : 200);
     }
 
-    /**
-     * Real-money deposits/withdrawals stay disabled until legal approval.
-     */
-    public function cashDisabled(): JsonResponse
-    {
-        return response()->json([
-            'message' => 'Cash deposits, withdrawals and redemption are disabled pending regulatory approval.',
-            'error' => 'feature_disabled',
-        ], 403);
-    }
 }

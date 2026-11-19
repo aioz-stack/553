@@ -11,10 +11,28 @@ export default function Transactions() {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
   const role = useQueryParam('role');
-  const { data, loading } = useFetch<{ data: Transaction[]; meta: { current_page: number; last_page: number } }>(user ? '/wallet/transactions' : null, { page, role: role ?? undefined });
+  // Gold (Single Player) and Chips (Multiplayer) keep separate histories.
+  const [currency, setCurrency] = useState<'' | 'GD' | 'CH'>('');
+  const { data, loading } = useFetch<{ data: Transaction[]; meta: { current_page: number; last_page: number } }>(user ? '/wallet/transactions' : null, { page, role: role ?? undefined, currency: currency || undefined });
 
   return (
     <Screen title={role === 'banker' ? 'Banker history' : 'Transactions'} back>
+      <div className="glass mb-3 flex gap-1 rounded-2xl p-1" role="tablist" aria-label="Currency">
+        {([['', 'All'], ['GD', 'Gold'], ['CH', 'Chips']] as const).map(([c, label]) => (
+          <button
+            key={c}
+            role="tab"
+            aria-selected={currency === c}
+            onClick={() => {
+              setCurrency(c);
+              setPage(1);
+            }}
+            className={`h-10 flex-1 rounded-xl font-display text-sm font-extrabold transition ${currency === c ? 'bg-gradient-to-b from-gold-300 to-gold-500 text-night-900 shadow' : 'text-white/70'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {loading && <Spinner />}
       {data?.data.length === 0 && <p className="pt-10 text-center text-white/60">No transactions yet.</p>}
       <ul className="space-y-2">

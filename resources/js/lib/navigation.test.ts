@@ -44,7 +44,7 @@ describe('role-specific navigation', () => {
     const all = ['manage_players', 'manage_agents', 'allocate_points', 'manage_rooms', 'review_transactions', 'view_reports', 'manage_commissions', 'manage_games', 'view_audit_logs', 'freeze_allocations'];
     const links = hrefs(user('super_admin', all));
 
-    expect(links).toEqual(expect.arrayContaining(['/admin/administrators', '/admin/settings', '/admin/audit-logs', '/admin/wallets?currency=CP']));
+    expect(links).toEqual(expect.arrayContaining(['/admin/administrators', '/admin/settings', '/admin/audit-logs', '/admin/wallets?currency=CH', '/admin/wallets?currency=GD']));
   });
 
   it('drops empty groups and routes each role home', () => {

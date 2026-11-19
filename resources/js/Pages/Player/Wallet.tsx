@@ -7,23 +7,22 @@ import type { Wallet as WalletType } from '../../lib/types';
 import { useApi } from '../../lib/useApi';
 
 export default function Wallet() {
-  const { data } = useApi<{ data: WalletType[]; meta: { cash_deposits_enabled: boolean; cash_withdrawals_enabled: boolean } }>('/wallet');
+  const { data } = useApi<{ data: WalletType[] }>('/wallet');
   const player = data?.data.filter((w) => w.type === 'player') ?? [];
 
   return (
     <PageShell title="Wallet">
       <Alert tone="info">
-        CP and VC are separate wallets and can never be combined or converted. VC is free-play only and cannot be withdrawn or redeemed.
-        {data && !data.meta.cash_withdrawals_enabled && ' Cash deposits, withdrawals and redemption are disabled pending regulatory approval.'}
+        Gold (Single Player) and Chips (Multiplayer) are separate wallets: they can never be combined, transferred or exchanged, and neither can be deposited, withdrawn or redeemed.
       </Alert>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
         {player.map((w) => (
           <StatCard
             key={w.id}
             icon={<IconWallet />}
-            label={w.currency === 'VC' ? 'Virtual Coins (VC)' : 'Cash Points (CP)'}
+            label={w.currency === 'CH' ? 'Chips (Multiplayer)' : 'Gold (Single Player)'}
             value={points(w.balance, w.currency)}
-            hint={w.is_frozen ? 'Frozen' : w.currency === 'VC' ? 'Credited by your agent, daily rewards and game winnings' : 'PHP-denominated accounting points'}
+            hint={w.is_frozen ? 'Frozen' : w.currency === 'CH' ? 'Credited by your agent, daily rewards and Multiplayer winnings' : 'Won and lost in Single Player'}
           />
         ))}
       </div>

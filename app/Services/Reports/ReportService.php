@@ -117,13 +117,12 @@ class ReportService
             'agent' => ['id' => $agent->id, 'code' => $agent->code, 'status' => $agent->status],
             'players' => $playerIds->count(),
             'active_players_7d' => GameResult::query()->whereIn('user_id', $playerIds)->where('created_at', '>=', now()->subDays(7))->distinct('user_id')->count('user_id'),
-            'allocation' => ['CP' => $balance(WalletType::Allocation, Currency::CP), 'VC' => $balance(WalletType::Allocation, Currency::VC)],
-            'commission_wallet' => ['CP' => $balance(WalletType::Commission, Currency::CP), 'VC' => $balance(WalletType::Commission, Currency::VC)],
+            'allocation' => ['CH' => $balance(WalletType::Allocation, Currency::CH)],
+            'commission_wallet' => ['CH' => $balance(WalletType::Commission, Currency::CH)],
             'allocation_frozen' => $wallets->where('type', WalletType::Allocation)->contains('is_frozen', true),
             'commissions' => $commission->values(),
             'distributed' => [
-                'CP' => Points::decimal((int) WalletTransaction::query()->where('type', TransactionType::AgentAllocation->value)->where('related_agent_id', $agent->user_id)->where('currency', 'CP')->sum('amount')),
-                'VC' => Points::decimal((int) WalletTransaction::query()->where('type', TransactionType::AgentAllocation->value)->where('related_agent_id', $agent->user_id)->where('currency', 'VC')->sum('amount')),
+                'CH' => Points::decimal((int) WalletTransaction::query()->where('type', TransactionType::AgentAllocation->value)->where('related_agent_id', $agent->user_id)->where('currency', 'CH')->sum('amount')),
             ],
         ];
     }

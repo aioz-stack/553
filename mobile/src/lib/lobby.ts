@@ -18,9 +18,9 @@ export interface LobbySummary {
   name: string;
   game_mode: LobbyMode;
   game_mode_label: string;
-  /** Diamonds you must hold to enter. */
+  /** Chips you must hold to enter. */
   min_entry: number;
-  /** Minimum bet per round (diamonds, decimal string). */
+  /** Minimum bet per round (Chips, decimal string). */
   min_bet: string;
   preparation_seconds: number;
   players: number;
@@ -81,7 +81,8 @@ export const MODE_RULE: Record<LobbyMode, string> = {
   round_bank: '12 rounds · the owner banks first, then the banker rotates clockwise.',
 };
 
-export const fmtDiamonds = (n: number | string) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+/** A Chips amount (whole or with cents), e.g. 1,000 or 12.5. */
+export const fmtChips = (n: number | string) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 /**
  * Live lobby list: listens to `lobby.updated` on the public `lobbies` channel (Reverb) and also

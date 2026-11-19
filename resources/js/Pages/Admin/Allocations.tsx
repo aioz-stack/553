@@ -8,7 +8,7 @@ import type { SharedProps } from '../../lib/types';
 import { useApi } from '../../lib/useApi';
 
 /**
- * Super Admin issues new CP/VC to administrators, agents or players.
+ * Super Admin issues new Chips to administrators, agents or players (Gold is Single Player only).
  * Administrators allocate from their own allocation balance, within limits.
  */
 export default function Allocations() {

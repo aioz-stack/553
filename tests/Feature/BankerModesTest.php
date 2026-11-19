@@ -108,7 +108,7 @@ function nextRound(GameTable $table): ?GameSession
 
 function totalVc(): int
 {
-    return (int) DB::table('wallets')->where('currency', 'VC')->sum('balance');
+    return (int) DB::table('wallets')->where('currency', 'CH')->sum('balance');
 }
 
 test('round bank: banker rotates by seat each round, 12 rounds, money is conserved', function () {
@@ -132,7 +132,7 @@ test('round bank: banker rotates by seat each round, 12 rounds, money is conserv
             // Zero-sum per round (no fee in this room).
             ->and((int) GameResult::query()->where('game_session_id', $session->id)->sum('net_amount'))->toBe(0)
             // Every reserve for the round has been paid back out of escrow.
-            ->and(app(WalletService::class)->escrow(Currency::VC)->fresh()->balance)->toBe(0);
+            ->and(app(WalletService::class)->escrow(Currency::CH)->fresh()->balance)->toBe(0);
 
         if ($round < 12) {
             nextRound($table);
@@ -145,7 +145,7 @@ test('round bank: banker rotates by seat each round, 12 rounds, money is conserv
         ->and($table->fresh()->status)->toBe(TableStatus::Closed)
         ->and($table->fresh()->end_reason)->toBe('completed')
         ->and($table->fresh()->rounds_played)->toBe(12)
-        ->and(app(WalletService::class)->escrow(Currency::VC)->fresh()->balance)->toBe(0)
+        ->and(app(WalletService::class)->escrow(Currency::CH)->fresh()->balance)->toBe(0)
         ->and(totalVc())->toBe($before)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 

@@ -9,7 +9,7 @@ vi.mock('@/lib/api', () => ({
   ApiError: class extends Error {},
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5, name: 'Pat Player', username: 'player', level: { level: 1 } } }) }));
-vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ cp: '0.00', vc: '2055.00' }) }));
+vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ gold: '0.00', chips: '2055.00' }) }));
 vi.mock('@/lib/useLandscapeLock', () => ({ useLandscapeLock: () => undefined }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn(), useSound: () => [true, vi.fn()] }));
 vi.mock('@/lib/echo', () => ({ getEcho: async () => null }));
@@ -81,7 +81,7 @@ describe('Multiplayer Lobby', () => {
     expect(items[2]).toHaveTextContent('Full');
     expect(within(items[2]).queryByRole('button')).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull();
-    expect(screen.getByLabelText('Diamond balance')).toHaveTextContent('2,055');
+    expect(screen.getByLabelText('Chips balance')).toHaveTextContent('2,055');
   });
 
   it('tabs and search ask the server again from page 1', async () => {

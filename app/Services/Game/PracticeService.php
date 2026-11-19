@@ -419,8 +419,8 @@ class PracticeService
         }
 
         try {
-            // Gold is free-play: the house reserve is issued; legacy CP rounds draw on the platform wallet.
-            $this->transfer($currency, TransactionType::GameEntry, $currency === Currency::GD ? null : $this->wallets->platform($currency), $escrow, $amount, "{$label}: house reserve", $user, "sp:{$game->id}:reserve:house");
+            // Gold is free-play: the house reserve is issued.
+            $this->transfer($currency, TransactionType::GameEntry, null, $escrow, $amount, "{$label}: house reserve", $user, "sp:{$game->id}:reserve:house");
         } catch (InsufficientBalanceException) {
             throw new BusinessRuleException('The house bank cannot cover this bet right now.', 422, 'house_insufficient');
         }
@@ -474,6 +474,30 @@ class PracticeService
             relatedPlayerId: $user->id,
             metadata: ['single_player' => true],
         ));
+    }
+
+    /**
+     * Leave Single Player (the Leave button, or closing the game for good): the match ends now.
+     * An unsubmitted round is void, so both reserves are returned in full (ledger keys
+     * `sp:{round}:release:*`, once). A match that is already over is returned unchanged.
+     */
+    public function leave(User $user, PracticeMatch $match): PracticeMatch
+    {
+        $match = DB::transaction(function () use ($user, $match) {
+            /** @var PracticeMatch $match */
+            $match = PracticeMatch::query()->whereKey($match->id)->lockForUpdate()->firstOrFail();
+            $this->ownMatch($user, $match);
+
+            if ($match->status === PracticeMatch::ACTIVE) {
+                $this->abandon($match);
+                AuditLogger::log($user, 'practice.left', $match, null, ['rounds_played' => $match->rounds_played]);
+            }
+
+            return $match->refresh();
+        });
+        $this->gold->pushBalances($user);
+
+        return $match;
     }
 
     private function abandon(PracticeMatch $match): void

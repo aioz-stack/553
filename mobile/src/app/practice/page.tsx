@@ -17,7 +17,7 @@ import { BOT_AVATARS } from '@/lib/avatars';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { OUT_OF_GOLD_URL, type GoldWallet } from '@/lib/gold';
+import { OUT_OF_GOLD_URL, leaveMatch, type GoldWallet } from '@/lib/gold';
 import { PICKER_URL, saveSelection, selectionFromUrl, type PracticeTier } from '@/lib/singlePlayer';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
@@ -77,7 +77,7 @@ export interface RoundState {
 export interface MatchState {
   id: number;
   status: 'active' | 'completed' | 'abandoned' | 'out_of_gold';
-  /** The match ended early: you ran out of Gold (Single Player leaves for Home and the free Gold Points). */
+  /** The match ended early: you ran out of Gold (Single Player leaves for Home and the free Gold). */
   out_of_gold?: boolean;
   tier: { key: string; name: string };
   rounds_total: number;
@@ -230,12 +230,12 @@ function RevealedHand({ p, card, step, gap, horizontal, plan = null, now = Numbe
  * Gold Wallet: every settled round credits or deducts your Gold on the
  * server (the screen only shows it). When a round leaves you Out of Gold the
  * server ends the match; after the reveal this screen returns you to Home,
- * which offers the free Gold Points (Single Player only).
+ * which offers the free Gold (Single Player only).
  */
 export default function Practice() {
   const { user } = useAuth();
   const router = useRouter();
-  // Your Gold wallet from the server (Total Amount, Gold Points): the same source as Home and the arrangement popup.
+  // Your Gold wallet from the server (Total Amount): the same source as Home and the arrangement popup.
   const { wallet: goldWallet } = useGoldWallet(user?.id);
   const [soundOn] = useSound();
   useLandscapeLock();
@@ -274,7 +274,7 @@ export default function Practice() {
   const say = useCallback((ok: boolean, text: string) => setToast({ ok, text }), []);
 
   // Out of Gold: the server has ended the match. Once the reveal show is over (played or skipped) the
-  // result stays up for `leaving` ms, then you go Home (free Gold Points popup). null = not leaving.
+  // result stays up for `leaving` ms, then you go Home (free Gold popup). null = not leaving.
   const [leaving, setLeaving] = useState<number | null>(null);
   const leaveOutOfGold = useCallback((delay: number) => setLeaving(delay), []);
 
@@ -445,6 +445,21 @@ export default function Practice() {
     } catch {
       // the round result is already on screen
     }
+  };
+
+  // ---- Leave: the server ends the match (an unsubmitted round is void, its Gold reserve returned) ----
+  const leaveTable = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      if (match && match.status === 'active') await leaveMatch(match.id);
+    } catch {
+      // still leave the screen; the match stays resumable on the server
+    } finally {
+      inFlight.current = false;
+    }
+    window.dispatchEvent(new Event('pusoy:wallet'));
+    router.replace(PICKER_URL);
   };
 
   // ---- Declared Luck ----
@@ -679,7 +694,7 @@ export default function Practice() {
           <MiniCrest />
         </div>
 
-        {/* Your Gold wallet: Total Amount + Gold Points (live from the server) */}
+        {/* Your Gold wallet: Total Amount (live from the server) */}
         <GoldWalletHud wallet={goldWallet} className="absolute right-[365px] top-[12px] z-20" />
 
         {/* Bet pill + round / banker + match gold */}
@@ -1066,12 +1081,12 @@ export default function Practice() {
                 {panel === 'leave' && (
                   <div className="space-y-6 text-center">
                     <h2 className="font-display text-[40px] font-black">Leave the table?</h2>
-                    <p className="text-[24px] text-white/85">Your round and match are kept. Choose {tier?.name ?? 'this level'} again to continue.</p>
+                    <p className="text-[24px] text-white/85">Leaving ends this match. A round you have not submitted is cancelled and its reserved Gold goes back to your wallet.</p>
                     <div className="flex justify-center gap-4">
                       <button type="button" onClick={() => setPanel(null)} className="h-[72px] rounded-full border-4 border-white/60 bg-black/30 px-8 font-display text-[28px] font-black">
                         Stay
                       </button>
-                      <button type="button" onClick={() => router.replace(PICKER_URL)} className="h-[72px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[28px] font-black text-[#4a1d00]">
+                      <button type="button" onClick={leaveTable} className="h-[72px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[28px] font-black text-[#4a1d00]">
                         Leave
                       </button>
                     </div>

@@ -13,8 +13,7 @@ export default function Reports() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
         <StatCard label="Players" value={d?.players ?? 0} />
         <StatCard label="Active (7 days)" value={d?.active_players_7d ?? 0} />
-        <StatCard label="VC distributed" value={points(d?.distributed.VC)} />
-        <StatCard label="CP distributed" value={points(d?.distributed.CP)} />
+        <StatCard label="Chips distributed" value={points(d?.distributed.CH)} />
       </div>
       <Card className="mt-6" title="Commission summary">
         <table className="min-w-full text-sm">

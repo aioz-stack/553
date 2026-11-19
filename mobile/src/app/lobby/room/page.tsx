@@ -4,15 +4,16 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
-import { CandyButton, EyeButton, Gem, Modal, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
+import { CandyButton, EyeButton, ChipMark, Modal, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
 import SettingsPanel from '@/components/SettingsPanel';
 import { LanternRoom, MiniCrest, PokerTable } from '@/components/table/TableArt';
 import { Avatar } from '@/components/game';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useBalance } from '@/lib/useBalance';
 import { useQueryParam } from '@/lib/hooks';
-import { MODE_RULE, fmtDiamonds, useWaitingRoomUpdates, type LobbyDetail, type LobbySeat } from '@/lib/lobby';
+import { MODE_RULE, fmtChips, useWaitingRoomUpdates, type LobbyDetail, type LobbySeat } from '@/lib/lobby';
 import { play } from '@/lib/sound';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
 
@@ -140,6 +141,8 @@ function SeatTile({
 
 export default function ChooseYourSeat() {
   const { user } = useAuth();
+  // Your Chips (Multiplayer only), reloaded when the lobby changes (seat, start, match).
+  const { chips, reload: reloadChips } = useBalance(user?.id);
   const router = useRouter();
   const idParam = useQueryParam('id');
   const roomId = idParam ? Number(idParam) : null;
@@ -220,16 +223,24 @@ export default function ChooseYourSeat() {
     if (count === null) lastCount.current = null;
   }, [count]);
 
+  // Seats, starts and matches can move Chips: reload your balance when any of them changes.
+  useEffect(() => {
+    reloadChips();
+  }, [lobby?.table_status, lobby?.my_seat, lobby?.players, lobby?.countdown_ends_at, reloadChips]);
+
   // The match started: a cinematic exit (zoom + fade), then into the game table.
   const gameTable = lobby?.is_seated && lobby.table_status === 'IN_GAME' ? lobby.table_id : null;
   useEffect(() => {
     if (gameTable) setExiting(true);
   }, [gameTable]);
+  // The router is read through a ref so unrelated re-renders (e.g. a balance update) never restart this timer.
+  const routerRef = useRef(router);
+  routerRef.current = router;
   useEffect(() => {
     if (!exiting || !gameTable) return undefined;
-    const t = setTimeout(() => router.replace(`/play/?table=${gameTable}`), 650);
+    const t = setTimeout(() => routerRef.current.replace(`/play/?table=${gameTable}`), 650);
     return () => clearTimeout(t);
-  }, [exiting, gameTable, router]);
+  }, [exiting, gameTable]);
 
   // Keep the pick in sync: once your seat is confirmed there, the pick is done.
   useEffect(() => {
@@ -334,7 +345,7 @@ export default function ChooseYourSeat() {
             <div className="absolute right-[22px] top-[18px] z-20 flex w-[430px] flex-col items-end gap-1.5">
               <div className="lx-gold w-full rounded-[24px] p-[5px] shadow-[0_6px_0_#7a3e00]">
                 <div className="flex h-[64px] items-center gap-3 rounded-[19px] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-4">
-                  <Gem size={44} />
+                  <ChipMark size={44} />
                   <span className="flex-1 text-center font-display text-[30px] font-black text-white">{lobby.game_mode_label}</span>
                   <TypeBadge type={lobby.type} className="text-[17px]" />
                 </div>
@@ -343,7 +354,10 @@ export default function ChooseYourSeat() {
                 {lobby.name} · <span className="text-[#ffe14d]">ID {lobby.lobby_id}</span>
               </span>
               <span className="rounded-full bg-black/55 px-4 py-0.5 font-display text-[19px] font-black text-white/90">
-                Bet {fmtDiamonds(lobby.min_bet)} · Min Entry {fmtDiamonds(lobby.min_entry)} · Prep {lobby.preparation_seconds}s
+                Bet {fmtChips(lobby.min_bet)} · Min Entry {fmtChips(lobby.min_entry)} · Prep {lobby.preparation_seconds}s
+              </span>
+              <span className="flex items-center gap-2 rounded-full bg-black/55 px-3 py-0.5 font-display text-[19px] font-black text-white" aria-label="Your Chips">
+                <ChipMark size={24} /> Your Chips <span className="text-[#ffe14d]">{chips !== undefined ? fmtChips(Math.floor(Number(chips))) : '…'}</span>
               </span>
               <span className="flex items-center gap-2 rounded-full bg-black/55 px-4 py-0.5 font-display text-[19px] font-black text-white/90">
                 Players <span key={players} className="cs-bump inline-block text-[#ffe14d]">{players}/4</span>

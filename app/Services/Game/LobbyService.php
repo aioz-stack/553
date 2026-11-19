@@ -24,18 +24,18 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Multiplayer lobbies (the 553 Lobby): player-created, four-seat diamond (VC) rooms
+ * Multiplayer lobbies (the 553 Lobby): player-created, four-seat Chips rooms
  * on top of the existing rooms / tables / 12-round banker matches.
  *
  * - A lobby is a game_room with a public Lobby ID (`lobby_code`), an optional
- *   password (stored hashed; set = private lobby), a Minimum Entry (the diamond
+ *   password (stored hashed; set = private lobby), a Minimum Entry (the Chips
  *   balance you must hold to enter — nothing is deducted on entry) and a
  *   Preparation Time (the arrangement timer). Game type: Banker Mode (the creator
  *   banks every round) or Round Bank (the creator banks first, then it rotates).
  * - Exactly four players: the owner presses Start once all four are seated and
  *   the others are ready (`owner_starts`; tables never start on their own).
  * - Money is the existing banker-match money: each round's bets are held in
- *   escrow from the players' VC wallets and settled by BankerMatchService, with
+ *   escrow from the players' Chips wallets and settled by BankerMatchService, with
  *   idempotent ledger entries. The minimum bet is Minimum Entry ÷ 10, so a
  *   player holding the Minimum Entry can always cover a round (worst case as the
  *   banker against three players: 3 × 2 × bet = 6 × bet).
@@ -43,7 +43,7 @@ use Illuminate\Support\Str;
  */
 class LobbyService
 {
-    /** Minimum Entry choices, in diamonds. */
+    /** Minimum Entry choices, in Chips. */
     public const MIN_ENTRIES = [100, 250, 500, 1000, 2000];
 
     /** Preparation Time choices (seconds to arrange the 13 cards). */
@@ -101,8 +101,8 @@ class LobbyService
             }
 
             $minEntry = Points::toMinor((string) $data['min_entry']);
-            if ($this->wallets->for($user, Currency::VC)->balance < $minEntry) {
-                throw new BusinessRuleException('You need at least '.number_format($data['min_entry']).' diamonds to create this lobby.', 422, 'insufficient_balance');
+            if ($this->wallets->for($user, Currency::CH)->balance < $minEntry) {
+                throw new BusinessRuleException('You need at least '.number_format($data['min_entry']).' Chips to create this lobby.', 422, 'insufficient_balance');
             }
 
             $password = isset($data['password']) && $data['password'] !== '' ? $data['password'] : null;
@@ -112,7 +112,7 @@ class LobbyService
                 'name' => trim($data['name']),
                 'slug' => Str::slug($data['name']).'-'.Str::lower(Str::random(6)),
                 'description' => $mode->label().' lobby by '.$user->username,
-                'currency' => Currency::VC,
+                'currency' => Currency::CH,
                 'entry_amount' => intdiv($minEntry, self::ENTRY_TO_BET),
                 'payout_mode' => 'winner_takes_all',
                 'game_mode' => $mode,
@@ -216,7 +216,7 @@ class LobbyService
                 'counts' => $counts,
                 'my_lobby_id' => $mine,
                 'other_table_id' => $seat && ! $mine ? $seat->game_table_id : null,
-                'balance' => Points::decimal($this->wallets->for($user, Currency::VC)->balance),
+                'balance' => Points::decimal($this->wallets->for($user, Currency::CH)->balance),
             ],
         ];
     }
@@ -381,7 +381,7 @@ class LobbyService
             throw new BusinessRuleException('You are already in a lobby.', 409, 'already_seated');
         }
 
-        $balance = $this->wallets->for($user, Currency::VC)->balance;
+        $balance = $this->wallets->for($user, Currency::CH)->balance;
         $reserve = (int) config('pusoy.banker.reserve_multiplier', 2);
 
         $candidates = GameRoom::query()->lobby()->active()->whereNull('lobby_password')
@@ -404,7 +404,7 @@ class LobbyService
             }
         }
 
-        throw new BusinessRuleException('No open lobby matches your diamonds right now — create one!', 404, 'no_lobby');
+        throw new BusinessRuleException('No open lobby matches your Chips right now — create one!', 404, 'no_lobby');
     }
 
     // ------------------------------------------------------------------

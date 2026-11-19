@@ -2,38 +2,44 @@
 
 namespace App\Enums;
 
+/**
+ * The game has exactly two currencies, kept as two independent wallet systems:
+ *
+ *  - GD — Gold: Single Player only (bets, winnings, losses, the Out of Gold reward).
+ *  - CH — Chips: Multiplayer only (rooms, lobbies, entry, winnings, losses, platform
+ *    fees, agent allocations and commissions).
+ *
+ * Neither is cash: nothing can be deposited, withdrawn, redeemed or exchanged, and
+ * the two can never be mixed, transferred or used for each other (LedgerService
+ * refuses any transfer whose wallets are not all in the transfer currency).
+ */
 enum Currency: string
 {
-    case CP = 'CP';
-    case VC = 'VC';
-    /** Single Player Gold: free-play, won and lost automatically in Single Player only. */
     case GD = 'GD';
-    /** Gold Points: free reward points (the Out of Gold claim), convertible 1:1 into Gold only. */
-    case GP = 'GP';
+    case CH = 'CH';
 
-    /**
-     * Only CP is cash-denominated. VC, Gold and Gold Points are free-play:
-     * never withdrawable, redeemable or convertible into CP or VC.
-     */
-    public function isCash(): bool
+    public function label(): string
     {
-        return $this === self::CP;
+        return match ($this) {
+            self::GD => 'Gold',
+            self::CH => 'Chips',
+        };
     }
 
-    /** Gold and Gold Points belong to Single Player and are never used by rooms, lobbies, allocations or payouts. */
+    /** Gold belongs to Single Player only. */
     public function isSinglePlayer(): bool
     {
-        return $this === self::GD || $this === self::GP;
+        return $this === self::GD;
     }
 
     /**
-     * The currencies of rooms, lobbies, allocations, commissions and payouts.
+     * The currency of rooms, lobbies, allocations, commissions and payouts.
      *
      * @return list<self>
      */
     public static function multiplayer(): array
     {
-        return [self::CP, self::VC];
+        return [self::CH];
     }
 
     /** @return list<string> */

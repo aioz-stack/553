@@ -78,7 +78,7 @@ Local demo accounts (password `password`, created only when `APP_ENV=local`):
 | `superadmin` | Super Admin |
 | `admin` | Administrator (all abilities except audit logs) |
 | `agent`, `agent2` | Agents (`agent` owns `player`, `demo1`–`demo6`) |
-| `player`, `demo1`…`demo12` | Players with 1,000 VC each |
+| `player`, `demo1`…`demo12` | Players (Chips from a fresh seed: 1,000 each; Gold from the Out of Gold claim) |
 
 Testing a full game alone: join a room as `player` in the browser, then
 `php artisan pusoy:fill-table vc-starter` seats and readies three demo players, and
@@ -200,30 +200,43 @@ Enforcement: Gates (one per ability + `staff`, `super-admin`, `agent`, `play`), 
 
 ## 5. Wallets & ledger
 
+- **Two currencies only** (`App\Enums\Currency`), two independent wallet systems:
+  - **Gold (`GD`) — Single Player only:** bets, winnings, losses and the free Out of Gold reward.
+  - **Chips (`CH`) — Multiplayer only:** rooms, lobbies, Round Bank / Banker Mode entry, bets, winnings,
+    losses, platform fees, agent allocations and commissions.
+  Neither is cash: there are no deposits, withdrawals, redemption or payouts, and the two can never be
+  mixed, transferred or exchanged (`LedgerService` refuses a transfer whose wallets are not all in the
+  transfer currency; every Multiplayer validator accepts only `CH` — `Currency::multiplayer()`; Single
+  Player only ever touches `GD`). Cash Points, Virtual Coins and Gold Points were removed on 2026-11-19
+  (migration `2026_11_19_180000_gold_and_chips_only`, see §10).
 - Amounts are **BIGINT minor units** (1 point = 100). API sends/receives decimal strings
   (`"2000.50"`), converted by `App\Support\Points`. No floats touch balances.
 - One `wallets` table: `(user, currency, type)` where type ∈ `player`, `allocation`,
-  `commission`, plus system wallets `escrow:{CP|VC|GD|GP}` and `platform:{CP|VC|GD|GP}`. The spec's
+  `commission`, plus system wallets `escrow:{GD|CH}` and `platform:{GD|CH}`. Players get a Gold and a Chips
+  player wallet; admins and agents also get Chips allocation / commission wallets (never Gold). The spec's
   `agent_wallets` / `agent_wallet_transactions` are these allocation/commission wallets — there is
-  deliberately no second wallet system. Currencies never mix (enforced in `LedgerService`): **CP** (cash,
-  disabled), **VC** (diamonds, Multiplayer), and the Single Player free-play pair **GD** (Gold) and **GP**
-  (Gold Points, convertible 1:1 into Gold only) — see Single Player below. Only CP is cash (`Currency::isCash`).
-- `wallet_transactions` is immutable (model blocks update/delete): reference, idempotency key,
+  deliberately no second wallet system.
+- `wallet_transactions` is immutable (model blocks update/delete): unique reference, idempotency key,
   type, currency, source/destination wallet, amount, **balance before/after for both sides**,
   status, reason, created_by, approved_by, related player/agent, game session, reversal link.
-  Corrections are `REVERSAL` entries (one per original).
+  Corrections are `REVERSAL` entries (one per original). Gold and Chips histories are separate
+  (`GET wallet/transactions?currency=GD|CH`; mobile Transactions has All / Gold / Chips tabs).
 - `LedgerService::transfer()` runs in a DB transaction, locks wallets with `SELECT … FOR UPDATE`
   in id order, refuses negative balances and frozen sources, and is idempotent (same key → same
-  transaction; same key with different parameters → 409).
-- Issuance: only Super Admin allocations, the optional daily VC reward, and Single Player free-play Gold
-  (house reserves, the Out of Gold Gold Points claim and Gold Points → Gold conversions) have a null source.
+  transaction; same key with different parameters → 409) — so every deduction and win is processed once.
+- Issuance (null source): Super Admin allocations, the optional daily Chips reward
+  (`FEATURE_DAILY_CHIPS_REWARD`, `DAILY_CHIPS_REWARD_AMOUNT`), and Single Player Gold (house reserves and the
+  Out of Gold claim).
 - `php artisan pusoy:reconcile` (daily) checks every balance against the ledger and that escrow
-  equals active holds + room carry-over banks.
-- Cash: deposits, withdrawals/redemption, CP wagering and CP commission payouts are behind
-  `FEATURE_*` flags, **all false by default**. `POST /wallet/deposit|withdraw` return 403.
+  equals active holds + room carry-over banks + held Single Player reserves.
+- **Sync:** every wallet change pushes the owner's new balance on their private `user.{id}` channel
+  (`wallet.updated`); the mobile app also reloads balances after every deal / settlement / claim / leave
+  (`pusoy:wallet` window event), on Multiplayer game steps, on lobby changes and when the app returns to the
+  foreground. Home, the Lobby, Choose Your Seat, the Multiplayer table, the Single Player table, Profile and
+  Wallet all read the server (`useBalance` for Chips, `useGoldWallet` for Gold's Total Amount).
 
-Allocation workflow: Super Admin → Admin/Agent allocation wallet (or a player) → Agent → own
-players. Records in `wallet_allocations`; manual credits/debits in `wallet_adjustments`.
+Allocation workflow (Chips): Super Admin → Admin/Agent allocation wallet (or a player) → Agent → own
+players. Records in `wallet_allocations`; manual credits/debits (Gold or Chips) in `wallet_adjustments`.
 
 ---
 
@@ -283,7 +296,7 @@ entry and the bank always balances). Platform fee is `fee_bps` of each **winner'
 attributed to that winner. Strategy classes: `app/Game/Payout/*`; each result asserts
 `Σpayouts + fee + carry_out = pot + carry_in`.
 
-Players cannot choose payout modes. Player-created private rooms are VC-only, fee-free, and use
+Players cannot choose payout modes. Player-created private rooms play for Chips, fee-free, and use
 `PRIVATE_ROOM_PAYOUT_MODE`.
 
 These two payout modes belong to **classic** rooms (`game_mode = classic`). The seeded classic
@@ -356,7 +369,7 @@ more XP). The friends list shows names, level and status only — never balances
 scales to the screen like a game canvas; artwork is original SVG (`BeachLandscape`, `HomeArt`).
 In the native app the home locks to landscape (`@capacitor/screen-orientation`, status bar hidden)
 and returns to portrait when you leave it; in a portrait browser the stage is rotated 90°. Every
-control is live: profile/level, gold-coin (CP) and diamond (VC) balances shown separately with
+control is live: profile/level, Gold (gold coins) and Chips (casino chip) balances shown separately with
 live `wallet.updated` (each "+" opens the wallet — there is no deposit), daily bonus,
 leaderboard, notifications, Friends List (search, add, accept/decline, online/last seen, invite),
 Single Player, Multiplayer, Sound ON/OFF, Settings, Logout.
@@ -497,17 +510,19 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   Bots only declare with a qualifying hand, so they never fail. (Multiplayer Banker Mode still answers a
   non-qualifying declaration with 422 `not_lucky` and no penalty.) Bot-vs-bank results between bots are computed too (standings), every round is
   zero-sum, and each round settles once (row lock + status).
-- **Gold Wallet (automatic, `App\Services\Game\GoldService`):** Single Player always plays for **Gold (`GD`)**,
-  a free-play currency of its own: it can never be withdrawn, redeemed, or converted into CP or VC, and no
-  room, lobby, allocation, commission or payout accepts it (`Currency::multiplayer()` = CP, VC in their
-  validators; Gold/Gold Points wallets are player wallets only). Every deal reserves your worst case (2 × your bet, or 2 × the
-  bots' total when you bank) from your Gold wallet, and the house's matching reserve is issued (free-play, no
-  cash bank) into Gold escrow (`GAME_ENTRY`, keys `sp:{round}:reserve:*`); settlement pays both out of escrow
-  (`GAME_REWARD` / `GAME_REFUND`, keys `sp:{round}:payout:*`; the house share lands in `platform:GD`). So
-  winnings are credited and losses deducted automatically, the balance can never go negative, a round settles
-  exactly once (row lock + status + ledger idempotency keys), and the new balance is pushed on `user.{id}`
-  (`wallet.updated`). Abandoning a match releases open reserves; `WalletService::reconcile()` counts held reserves
-  per match currency (`practice_matches.currency`; matches from before this change are `CP`).
+- **Gold Wallet (automatic, `App\Services\Game\GoldService`):** Single Player always plays for **Gold (`GD`)**;
+  no Multiplayer room, lobby, allocation, commission or payout accepts it, and Chips are never used here. Every
+  deal reserves your worst case (2 × your bet, or 2 × the bots' total when you bank) from your Gold wallet, and
+  the house's matching reserve is issued into Gold escrow (`GAME_ENTRY`, keys `sp:{round}:reserve:*`);
+  settlement pays both out of escrow (`GAME_REWARD` / `GAME_REFUND`, keys `sp:{round}:payout:*`; the house share
+  lands in `platform:GD`). So winnings are credited and losses deducted automatically, the balance can never go
+  negative, a round settles exactly once (row lock + status + ledger idempotency keys), and the new balance is
+  pushed on `user.{id}` (`wallet.updated`).
+- **Leaving / disconnecting:** `POST practice/matches/{id}/leave` (the table's Leave button) ends the match; a
+  round you have not submitted is void and both reserves are returned in full (`sp:{round}:release:*`, once).
+  Closing the app or losing the connection does not settle anything: the open round stays resumable (no
+  timer) with its reserve held, and the Gold display counts it as "in play". Starting a new match abandons
+  the old one the same way.
 - **Out of Gold (Single Player only):** you can no longer keep playing when **mid-match** your Gold can't cover
   the next round's smallest reserve (2 × the tier's lowest bet, or 2 × three lowest bets when you bank) or
   **between matches** it is below the lowest tier minimum (Beginner, 1,000). Zero and negative always count; a
@@ -515,33 +530,28 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   (`practice_matches.status = out_of_gold`, audit `practice.out_of_gold`); deal and new match answer 409
   `out_of_gold`. The tier minimum applies when a match **starts**; mid-match a deal only needs its reserve, and
   `GET practice/tiers` keeps the tier of a match in progress `eligible` while your Gold covers its next round.
-- **Free 1,000 Gold Points:** a separate **Gold Points (`GP`)** wallet. `POST practice/gold/claim` credits
-  `pusoy.practice.out_of_gold_reward` (1,000, env `SINGLE_PLAYER_GOLD_REWARD`) only while you are Out of Gold
-  and have no unconverted claim (`GOLD_POINTS_REWARD`, key `gold-points-claim:{user}:{n}`, serialised on
-  the user row, audit `gold_points.claimed`). Repeated clicks, refreshes and duplicate requests return the same
-  claim (200, same reference); a player with Gold left gets 409 `not_eligible`. `POST practice/gold/convert
-  {request_id, amount?}` converts Gold Points into Gold one way, 1:1 (two `GOLD_CONVERSION` rows: burn GP,
-  issue GD; keys `gold-convert:{user}:{request_id}:out|in`), so a retried request converts once.
-  `GET practice/gold` → `{gold, gold_points, out_of_gold, can_claim, claim_amount, minimum_to_start}`; the
-  same object is in `GET practice/tiers` (`meta.gold_wallet`) and every match (`gold_wallet`, `out_of_gold`).
-- **Total Amount & Gold Points in game:** `GET practice/gold` also returns `reserved` (Gold held for your open
-  round) and `total` (spendable + reserved). `mobile/src/lib/useGoldWallet.ts` is the one source for every
-  display: it loads that endpoint and reloads it (never computes) on `wallet.updated` for GD/GP on the private
-  `user.{id}` channel, on the `pusoy:wallet` window event (fired after every deal, settlement, claim and
-  conversion) and when the app returns to the foreground; one request at a time, plus one follow-up for changes
-  that arrive meanwhile. `components/table/GoldWalletHud.tsx` (Total Amount, "N in play", Gold Points; fixed size,
-  flashes on change) sits on the table header and inside the arrangement popup beside SUBMIT, clear of the cards.
-  Home's Gold pill shows the same Total Amount, with a Gold Points badge under it.
-- **Mobile:** Home's coin pill is your Gold. When a round leaves you Out of Gold the table shows the result,
-  then an "Out of Gold!" banner, and once the reveal is over (or skipped) returns you to `/home/?gold=out`.
-  Home then opens `OutOfGoldPopup` (title, message, CLAIM 1,000 GOLD POINTS → "Convert to Gold & Play").
-  Tapping Single Player while Out of Gold opens the same popup instead of the level picker. Multiplayer
-  never checks Gold or shows the popup. The Wallet screen lists Gold, Gold Points, VC and CP separately and
-  can convert Gold Points.
+- **Free 1,000 Gold:** `POST practice/gold/claim {request_id}` credits `pusoy.practice.out_of_gold_reward`
+  (1,000, env `SINGLE_PLAYER_GOLD_REWARD`) **straight into Gold**, only while you are Out of Gold
+  (`OUT_OF_GOLD_REWARD`, key `out-of-gold:{user}:{request_id}`, serialised on the user row, audit
+  `gold.claimed`). The popup sends one `request_id`, so repeated clicks, refreshes and retried requests return
+  the same claim (200, same reference); with Gold left a new claim gets 409 `not_eligible`.
+  `GET practice/gold` → `{gold, reserved, total, out_of_gold, can_claim, claim_amount, minimum_to_start}`;
+  the same object is in `GET practice/tiers` (`meta.gold_wallet`) and every match (`gold_wallet`, `out_of_gold`).
+- **Total Amount in game:** `total` = spendable Gold + `reserved` (Gold held for your open round), so the number
+  does not dip while you arrange. `mobile/src/lib/useGoldWallet.ts` is the one Gold source for Home, Profile,
+  Wallet, the table and the arrangement popup: it loads that endpoint and reloads it (never computes) on
+  `wallet.updated` (GD), on `pusoy:wallet` and when the app returns to the foreground; one request at a time,
+  plus one follow-up for changes that arrive meanwhile. `components/table/GoldWalletHud.tsx` (Total Gold,
+  "N in play"; fixed size, flashes on change) sits on the table header and inside the arrangement popup beside
+  SUBMIT, clear of the cards.
+- **Mobile:** When a round leaves you Out of Gold the table shows the result, then an "Out of Gold!" banner,
+  and once the reveal is over (or skipped) returns you to `/home/?gold=out`. Home then opens `OutOfGoldPopup`
+  (title, message, CLAIM 1,000 GOLD → "Play Single Player"). Tapping Single Player while Out of Gold opens the
+  same popup instead of the level picker. Multiplayer never checks Gold or shows the popup.
 - API: `GET practice/tiers`, `POST practice/matches {tier}` (abandons any active match),
   `GET practice/matches/current`, `GET practice/matches/{id}` (history, standings per seat, running gold),
-  `POST practice/matches/{id}/deal`, `GET practice/{round}`, `POST practice/{round}/preview|suggest|lucky|submit`,
-  `GET practice/gold`, `POST practice/gold/claim`, `POST practice/gold/convert`.
+  `POST practice/matches/{id}/deal`, `POST practice/matches/{id}/leave`, `GET practice/{round}`,
+  `POST practice/{round}/preview|suggest|lucky|submit`, `GET practice/gold`, `POST practice/gold/claim`.
   Owner-only (404 for others). Migration `2026_11_19_110000` closed free-play matches from the brief
   one-bot format.
 
@@ -551,7 +561,7 @@ Landscape table on the 1600×900 `LandscapeStage` (rotates itself on portrait br
 locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/table/TableArt.tsx`.
 
 - Seats: LuckyBot left, CardBot top, AceBot right, you at the bottom; the banker's tile is blue with a
-  BANKER badge. Top right: Bet pill, round / banker, tier, match Gold and CP balance.
+  BANKER badge. Top right: Bet pill, round / banker, tier, match Gold and the Total Gold wallet card.
 - Betting: tap a chip to bet and deal; after each round the chips return for the next round's bet.
   Resuming: an open round of the active match at the same tier continues.
 - **Dragging cards** (`components/table/useCardDrag.tsx`, used by the arrangement popup and the table
@@ -584,24 +594,24 @@ locks landscape via `lib/useLandscapeLock.ts`). Original SVG art in `components/
   After round 12 a **Match results** panel shows the standings of all four players and the 12-round history.
 - Back (asks during a round; the match is kept), Settings (sound, autoplay), ? (rules).
 
-### Multiplayer — the 553 Lobby (player-created diamond lobbies)
+### Multiplayer — the 553 Lobby (player-created Chips lobbies)
 
 Home → Multiplayer opens `/lobby/` (mobile, 1600×900 stage). Built on the existing rooms → tables →
 12-round banker matches (BankerMatchService); `App\Services\Game\LobbyService` adds the lobby layer.
 
 - **A lobby** is a `game_room` with `lobby_code` (unique 6-digit Lobby ID), `lobby_password` (bcrypt
-  hash, never returned; set = Private, empty = Public), `min_entry` (diamonds you must **hold** to enter —
-  nothing is deducted on entry), `owner_starts` (true) and `min_players` = 4. Currency: VC (diamonds).
+  hash, never returned; set = Private, empty = Public), `min_entry` (Chips you must **hold** to enter —
+  nothing is deducted on entry), `owner_starts` (true) and `min_players` = 4. Currency: Chips (`CH`).
   Minimum bet per round = Minimum Entry ÷ 10, so holding the entry always covers a round (worst case as
   banker vs three players: 6 × bet). Preparation Time = the room's arrangement timer.
 - **Game type:** Banker Mode = the lobby owner banks all 12 rounds (if they leave, the richest player takes
   over — unchanged rules); Round Bank = the owner banks first, then the banker rotates clockwise by seat
   (`chooseBanker` now picks the table creator for the first Round Bank round).
-- **Create** (`POST lobbies`): validates fields and your diamonds, locks your user row (no double create),
+- **Create** (`POST lobbies`): validates fields and your Chips, locks your user row (no double create),
   refuses if you are already seated, creates the room, seats you in seat 1 as owner. **Join**: private
   lobbies check the password (`Hash::check`, throttled `lobby-join` 15/min); `TableService` locks and
   re-checks seats (max 4) and balance (`min_entry` and the 2× minimum-bet reserve); joining again is a
-  no-op. **Quick Join**: public lobbies only, affordable (`min_entry` and reserve ≤ your VC), with free
+  no-op. **Quick Join**: public lobbies only, affordable (`min_entry` and reserve ≤ your Chips), with free
   seats, fullest first then oldest; tries the next if one fills meanwhile; 404 `no_lobby` when none.
 - **Choose Your Seat** (`/lobby/room/?id=`; Create and Join both land here with a zoom-and-fade
   transition): seats 1 top, 2 left, 3 right, 4 bottom. A player who joins holds one seat (**Reserved**,
@@ -622,7 +632,7 @@ Home → Multiplayer opens `/lobby/` (mobile, 1600×900 stage). Built on the exi
   Leave Lobby (with a confirm) gives it up. The owner can Edit the lobby and Remove players before the
   countdown. Owner leaving → ownership (and the creator/banker role) passes to the next seated player;
   last player leaving → the lobby closes. On start every client zooms out into `/play/?table=`.
-- **Money:** unchanged banker-match money — each round's bets are held in escrow from VC wallets and
+- **Money:** unchanged banker-match money — each round's bets are held in escrow from Chips wallets and
   settled with idempotent ledger entries (BankerMatchService); balances never come from the client.
 - **Live:** every lobby change (and table join/leave/ready/start/end at a lobby) broadcasts
   `lobby.updated` on the public `lobbies` channel (`LobbyEvent`, public info only); the Lobby polls every
@@ -647,8 +657,8 @@ bet, declare Lucky when they can, and submit the server's auto-arrangement until
 `commission = floor(fee_attributed_to_player × rate_bps / 10000)` for each player who belongs to an
 agent, generated only after a completed, settled game. Unique `(agent, session, player)` prevents
 duplicates; rate and fee basis are snapshotted. Rate resolution: agent+currency rule → agent rule →
-platform default (seeded 40%). Status: pending → approved → paid (VC paid platform → agent
-commission wallet; CP stays approved while cash payouts are disabled), or rejected / reversed.
+platform default (seeded 40%). Status: pending → approved → paid (Chips paid platform → agent
+commission wallet; Chips are never paid out — payout requests are always refused), or rejected / reversed.
 
 ---
 
@@ -686,12 +696,12 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | --- | --- |
 | Auth | `POST auth/register`, `auth/login`, `auth/logout`, `GET auth/me`, `POST auth/forgot-password`, `auth/reset-password`, `GET/DELETE auth/devices` |
 | Player | `GET/PATCH profile`, `PUT profile/password`, `GET profile/stats`, `profile/games`, `leaderboard`, `notifications`, `POST notifications/read` |
-| Wallet | `GET wallet`, `wallet/transactions`, `POST wallet/daily-reward`, `wallet/allocate` (admin/agent), `wallet/deposit|withdraw` (disabled) |
+| Wallet | `GET wallet`, `wallet/transactions`, `POST wallet/daily-reward`, `wallet/allocate` (admin/agent; Chips only). No deposit / withdraw routes |
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
 | Multiplayer lobbies | `GET lobbies` (`tab` all/public/private, `search`, `page`; 5 per page + counts), `POST lobbies` (`name`, `password?`, `game_mode` banker/round_bank, `min_entry` 100/250/500/1000/2000, `preparation_seconds` 30/45/60/75), `POST lobbies/quick-join`, `GET lobbies/{id}` (also the heartbeat), `PATCH lobbies/{id}` (owner: name/password/time), `POST lobbies/{id}/join` (`password?`), `POST lobbies/{id}/seat` (`seat` 1–4), `POST lobbies/{id}/start` (`ready?`; every player), `POST lobbies/{id}/kick` (owner, `user_id`); leave uses `tables/{id}/leave` |
-| Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}`, `GET practice/gold`, `POST practice/gold/claim`, `POST practice/gold/convert` (`request_id`, `amount?`) — Round Bank, you + 3 bots; plays for Gold (free-play) |
+| Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}`, `POST practice/matches/{id}/leave`, `GET practice/gold`, `POST practice/gold/claim` (`request_id`) — Round Bank, you + 3 bots; plays for Gold only |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
 | Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
@@ -787,3 +797,20 @@ Not done / not verified:
   activates when both `FEATURE_CP_COMMISSION_PAYOUTS` and `FEATURE_CASH_WITHDRAWALS` are true.
 - Local dev uses the `database` queue/cache/session drivers; production should use Redis
   (see `DEPLOYMENT.md`). The mail driver is `log` locally (reset links appear in `storage/logs`).
+
+### 2026-11-19 — Gold & Chips only
+
+- The game now has exactly two currencies: **Gold** (Single Player) and **Chips** (Multiplayer); see §5.
+  Cash Points (CP), Virtual Coins (VC) and Gold Points (GP) are gone from the backend, database, web
+  dashboard and mobile app. Cash feature flags, `wallet/deposit|withdraw` and commission payouts were removed
+  (payout requests always answer 403). The daily reward pays Chips.
+- Migration `2026_11_19_180000_gold_and_chips_only` (irreversible): Gold Points balances moved into Gold 1:1
+  (`OUT_OF_GOLD_REWARD` rows); every CP / VC / GP wallet, ledger row, hold, allocation, adjustment, fee,
+  payout and commission deleted; rooms, sessions, admin limits and commission rules moved to `CH`; CP-only
+  rooms removed. **Chips start at zero** — an administrator allocates them. Backup of the database before the
+  migration: `storage/backups/553-before-gold-chips-2026-11-19.sql` (git-ignored); restore it to go back.
+- Out of Gold now credits 1,000 Gold directly; Single Player Leave settles on the server (void round,
+  reserves returned). Mobile shows a casino-chip icon for Chips everywhere diamonds were.
+- Verified: 241 Pest, 11 web Vitest and 91 mobile Vitest tests; live on demo11 — Home / Lobby / Choose Your
+  Seat / Profile / Wallet show the same Gold (600, incl. 100 in play) and Chips (1,000, allocated by the
+  super admin for the check); Leave returned both 100-Gold reserves; ledger reconciles.

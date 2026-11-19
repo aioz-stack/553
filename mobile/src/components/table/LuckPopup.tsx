@@ -121,7 +121,7 @@ export default function LuckPopup({
   bet: number;
   /** Replaces "Bet: N" (e.g. "Covering 450" when you are the banker). */
   betLabel?: string;
-  /** Your Gold wallet (Total Amount + Gold Points), kept live by the page (useGoldWallet). */
+  /** Your Gold wallet (Total Amount), kept live by the page (useGoldWallet). */
   wallet?: GoldWallet | null;
   /** Opponents whose card fans sit left and right of your rows. */
   seats: { left: { name: string }; right: { name: string } };
@@ -309,7 +309,7 @@ export default function LuckPopup({
           </button>
         </div>
 
-        {/* Your Gold wallet: Total Amount and Gold Points, updated live while you arrange */}
+        {/* Your Gold wallet: Total Amount, updated live while you arrange */}
         <GoldWalletHud wallet={wallet ?? null} className="absolute left-[1080px] top-[668px] z-10" />
 
         {/* decorative 553 chips */}

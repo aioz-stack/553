@@ -7,7 +7,7 @@ import type { Room } from '../../lib/types';
 import { useApi } from '../../lib/useApi';
 
 export default function Rooms() {
-  const [currency, setCurrency] = useState<'' | 'VC' | 'CP'>('');
+  const [currency, setCurrency] = useState<'' | 'CH'>('');
   const rooms = useApi<{ data: Room[] }>('/rooms', { currency: currency || undefined });
   const [form, setForm] = useState({ name: '', entry_amount: '100' });
   const [invite, setInvite] = useState({ room_id: '', code: '', username: '' });
@@ -55,8 +55,7 @@ export default function Rooms() {
             onChange={setCurrency}
             options={[
               { value: '', label: 'All' },
-              { value: 'VC', label: 'VC' },
-              { value: 'CP', label: 'CP' },
+              { value: 'CH', label: 'Chips' },
             ]}
           />
         }
@@ -70,12 +69,12 @@ export default function Rooms() {
       </Card>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card title="Create a private VC room" subtitle="Fee-free table for friends. Players cannot choose payout modes.">
+        <Card title="Create a private Chips room" subtitle="Fee-free table for friends. Players cannot choose payout modes.">
           <form onSubmit={createPrivate} className="space-y-4">
             <Field label="Room name" required>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
-            <Field label="Entry (VC)" required>
+            <Field label="Entry (Chips)" required>
               <Input value={form.entry_amount} onChange={(e) => setForm({ ...form, entry_amount: e.target.value })} inputMode="decimal" />
             </Field>
             <Button type="submit">Create room</Button>

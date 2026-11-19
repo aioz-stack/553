@@ -32,8 +32,8 @@ export default function Dashboard() {
     api.get<{ data: TableState | null }>('/tables/current').then((r) => setSeat(r.data.data)).catch(() => undefined);
   }, []);
 
-  const vc = wallet.data?.data.find((w) => w.currency === 'VC' && w.type === 'player');
-  const cp = wallet.data?.data.find((w) => w.currency === 'CP' && w.type === 'player');
+  const chips = wallet.data?.data.find((w) => w.currency === 'CH' && w.type === 'player');
+  const gold = wallet.data?.data.find((w) => w.currency === 'GD' && w.type === 'player');
   const s = stats.data?.data;
 
   const claim = async () => {
@@ -59,8 +59,8 @@ export default function Dashboard() {
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
-        <StatCard icon={<IconWallet />} label="Virtual Coins (VC)" value={points(vc?.balance)} hint="Free-play · not redeemable" />
-        <StatCard icon={<IconWallet />} label="Cash Points (CP)" value={points(cp?.balance)} hint="Accounting points · cash features disabled" />
+        <StatCard icon={<IconWallet />} label="Chips" value={points(chips?.balance)} hint="Multiplayer only" />
+        <StatCard icon={<IconWallet />} label="Gold" value={points(gold?.balance)} hint="Single Player only" />
         <StatCard icon={<IconCards />} label="Games played" value={s?.games_played ?? 0} hint={`${s?.win_rate ?? 0}% win rate`} />
         <StatCard icon={<IconTrophy />} label="Total score" value={s?.total_score ?? 0} hint={`Best game: ${s?.best_score ?? 0}`} />
       </div>
@@ -89,7 +89,7 @@ export default function Dashboard() {
             <LinkButton href="/lobby">Find a table</LinkButton>
             {wallet.data?.meta.daily_reward_enabled && (
               <Button variant="outline" onClick={claim} disabled={wallet.data.meta.daily_reward_claimed}>
-                {wallet.data.meta.daily_reward_claimed ? 'Daily VC claimed ✓' : 'Claim free daily VC'}
+                {wallet.data.meta.daily_reward_claimed ? 'Daily Chips claimed ✓' : 'Claim free daily Chips'}
               </Button>
             )}
             <LinkButton href="/history" variant="outline">

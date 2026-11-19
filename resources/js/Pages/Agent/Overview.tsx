@@ -8,11 +8,11 @@ export interface AgentOverviewData {
   agent: { code: string; status: string };
   players: number;
   active_players_7d: number;
-  allocation: { CP: string; VC: string };
-  commission_wallet: { CP: string; VC: string };
+  allocation: { CH: string };
+  commission_wallet: { CH: string };
   allocation_frozen: boolean;
   commissions: Array<{ status: string; currency: string; total: string }>;
-  distributed: { CP: string; VC: string };
+  distributed: { CH: string };
 }
 
 export default function Overview() {
@@ -24,9 +24,8 @@ export default function Overview() {
       {d?.allocation_frozen && <Alert tone="warning">Your allocation balance is frozen by an administrator. You cannot distribute points until it is unfrozen.</Alert>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
         <StatCard icon={<IconUser />} label="My players" value={d?.players ?? 0} hint={`${d?.active_players_7d ?? 0} active in 7 days`} />
-        <StatCard icon={<IconWallet />} label="VC allocation balance" value={points(d?.allocation.VC)} hint="Distributable to your players" />
-        <StatCard icon={<IconCoins />} label="CP allocation balance" value={points(d?.allocation.CP)} hint="Accounting points" />
-        <StatCard icon={<IconTrophy />} label="Commission wallet (VC)" value={points(d?.commission_wallet.VC)} hint="Separate from allocations" />
+        <StatCard icon={<IconWallet />} label="Chips allocation balance" value={points(d?.allocation.CH)} hint="Distributable to your players" />
+        <StatCard icon={<IconTrophy />} label="Commission wallet (Chips)" value={points(d?.commission_wallet.CH)} hint="Separate from allocations" />
       </div>
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card title="Commissions" subtitle="Percentage of platform fees from your players' completed games. Rates are set by the Super Admin.">
@@ -47,7 +46,7 @@ export default function Overview() {
             <LinkButton href="/agent/referral-codes" variant="outline">Referral codes</LinkButton>
           </div>
           <p className="mt-4 text-sm text-gray-500">
-            Distributed so far: {points(d?.distributed.VC, 'VC')} · {points(d?.distributed.CP, 'CP')}
+            Distributed so far: {points(d?.distributed.CH, 'CH')}
           </p>
         </Card>
       </div>

@@ -61,7 +61,7 @@ test('joining reserves the entry in escrow and leaving refunds it', function () 
 
     $seat = $this->tables->join($player, $room);
     expect(balance($player))->toBe(10_000 - $room->entry_amount)
-        ->and(app(WalletService::class)->escrow(Currency::VC)->balance)->toBe($room->entry_amount);
+        ->and(app(WalletService::class)->escrow(Currency::CH)->balance)->toBe($room->entry_amount);
 
     $this->tables->leave($player, $seat->table);
     expect(balance($player))->toBe(10_000)
@@ -91,12 +91,13 @@ test('players without enough balance cannot join', function () {
     expect(fn () => $this->tables->join($player, $room))->toThrow(BusinessRuleException::class, 'Insufficient');
 });
 
-test('CP rooms are blocked while CP wagering is disabled', function () {
-    $room = GameRoom::factory()->cp()->create();
+test('Gold is never accepted in Multiplayer: a player holding only Gold cannot enter a room', function () {
+    $room = GameRoom::factory()->create();
     $player = User::factory()->create();
-    fund($player, 100_000, Currency::CP);
+    fund($player, 100_000_00, Currency::GD);
 
-    expect(fn () => $this->tables->join($player, $room))->toThrow(BusinessRuleException::class, 'regulatory');
+    expect(fn () => $this->tables->join($player, $room))->toThrow(BusinessRuleException::class, 'Insufficient');
+    expect(balance($player, Currency::GD))->toBe(100_000_00);
 });
 
 test('the game starts when four players are ready and each sees only their own cards', function () {
@@ -258,7 +259,7 @@ test('a failed settlement leaves the game in scoring and can be retried', functi
     [, $session, $players] = startGame();
 
     // Simulate an interrupted settlement: break the escrow balance temporarily.
-    $escrow = app(WalletService::class)->escrow(Currency::VC);
+    $escrow = app(WalletService::class)->escrow(Currency::CH);
     DB::table('wallets')->where('id', $escrow->id)->update(['balance' => 0]);
 
     foreach ($players as $player) {

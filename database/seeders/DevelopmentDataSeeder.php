@@ -48,10 +48,9 @@ class DevelopmentDataSeeder extends Seeder
         $agent = $make($super, Role::Agent, 'agent', 'Agent Alpha');
         $agent2 = $make($super, Role::Agent, 'agent2', 'Agent Bravo');
 
-        $allocations->allocate($super, $admin, Currency::VC, 500_000_00, 'Initial admin VC allocation');
-        $allocations->allocate($super, $agent, Currency::VC, 10_000_00, 'Initial agent VC allocation');
-        $allocations->allocate($super, $agent2, Currency::VC, 10_000_00, 'Initial agent VC allocation');
-        $allocations->allocate($super, $agent, Currency::CP, 5_000_00, 'Initial agent CP allocation (accounting only)');
+        $allocations->allocate($super, $admin, Currency::CH, 500_000_00, 'Initial admin Chips allocation');
+        $allocations->allocate($super, $agent, Currency::CH, 10_000_00, 'Initial agent Chips allocation');
+        $allocations->allocate($super, $agent2, Currency::CH, 10_000_00, 'Initial agent Chips allocation');
 
         $players = [$make($agent, Role::Player, 'player', 'Pat Player')];
 
@@ -62,7 +61,7 @@ class DevelopmentDataSeeder extends Seeder
 
         foreach ($players as $index => $player) {
             $owner = $index <= 6 ? $agent : $agent2;
-            $allocations->allocate($owner, $player, Currency::VC, 1_000_00, 'Welcome VC from agent', "seed-{$player->id}");
+            $allocations->allocate($owner, $player, Currency::CH, 1_000_00, 'Welcome Chips from agent', "seed-{$player->id}");
         }
     }
 }

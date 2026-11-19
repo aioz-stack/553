@@ -14,8 +14,7 @@ export default function Allocate() {
     <PageShell title="Point Allocation">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-4">
-          <StatCard label="Available VC" value={points(overview.data?.data.allocation.VC)} />
-          <StatCard label="Available CP" value={points(overview.data?.data.allocation.CP)} />
+          <StatCard label="Available Chips" value={points(overview.data?.data.allocation.CH)} />
         </div>
         <Card title="Distribute to your players" subtitle="You can only allocate from your available balance, and only to players you manage." className="lg:col-span-2">
           {players.data && <AllocateForm recipients={players.data.data} defaultRecipient={preset} onDone={overview.reload} />}

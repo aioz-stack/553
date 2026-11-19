@@ -41,7 +41,7 @@ export default function UserDetail({ userId }: { userId: number }) {
   const wallets = useApi<{ data: Wallet[] }>(auth.user?.abilities.includes('review_transactions') ? '/admin/wallets' : null, { user_id: userId });
   const agents = useApi<{ data: Array<{ id: number; name: string; agent?: { id: number; code: string } }> }>(auth.user?.abilities.includes('manage_agents') ? '/admin/agents' : null, { per_page: 100 });
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [limits, setLimits] = useState({ currency: 'VC', max_per_transaction: '', daily_limit: '' });
+  const [limits, setLimits] = useState({ currency: 'CH', max_per_transaction: '', daily_limit: '' });
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const u = user.data?.data;
 
@@ -115,8 +115,7 @@ export default function UserDetail({ userId }: { userId: number }) {
             <div className="grid grid-cols-3 gap-3">
               <Field label="Currency">
                 <Select value={limits.currency} onChange={(e) => setLimits({ ...limits, currency: e.target.value })}>
-                  <option>VC</option>
-                  <option>CP</option>
+                  <option value="CH">Chips</option>
                 </Select>
               </Field>
               <Field label="Per transaction">

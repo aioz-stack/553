@@ -60,7 +60,7 @@ class RoomController extends Controller
     }
 
     /**
-     * Players create private VC rooms with the platform's default rules;
+     * Players create private Chips rooms with the platform's default rules;
      * the payout mode follows the platform default (players cannot choose it).
      */
     public function storePrivate(Request $request): JsonResponse
@@ -78,7 +78,7 @@ class RoomController extends Controller
             'name' => $data['name'],
             'slug' => Str::slug($data['name']).'-'.Str::lower(Str::random(6)),
             'description' => 'Private room',
-            'currency' => Currency::VC,
+            'currency' => Currency::CH,
             'entry_amount' => max(100, Points::toMinor($data['entry_amount'])),
             'payout_mode' => config('pusoy.private_room_payout_mode', 'winner_takes_all'),
             'platform_fee_bps' => 0,
@@ -96,7 +96,7 @@ class RoomController extends Controller
     }
 
     /**
-     * Host a banker-mode table (VC only). The host is seated immediately and
+     * Host a banker-mode table (Chips). The host is seated immediately and
      * is the table creator, so in Banker Mode they bank every round.
      * Room rules (settlement table, fees = 0, timers) are platform defaults.
      */
@@ -129,7 +129,7 @@ class RoomController extends Controller
             'name' => $data['name'],
             'slug' => Str::slug($data['name']).'-'.Str::lower(Str::random(6)),
             'description' => GameMode::from($data['game_mode'])->label().' hosted by '.$request->user()->username,
-            'currency' => Currency::VC,
+            'currency' => Currency::CH,
             'entry_amount' => $min,
             'max_bet' => $max,
             'payout_mode' => 'winner_takes_all',

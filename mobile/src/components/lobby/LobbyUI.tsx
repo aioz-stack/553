@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Diamond } from '@/components/game';
+import { ChipIcon } from '@/components/game';
 import { play } from '@/lib/sound';
 
 /**
@@ -10,8 +10,9 @@ import { play } from '@/lib/sound';
  * Waiting Room all share one look.
  */
 
-export function Gem({ size = 30 }: { size?: number }) {
-  return <Diamond size={size} className="inline-block shrink-0 drop-shadow-[0_2px_2px_rgb(0_0_0/0.4)]" />;
+/** The Chips mark shown next to every Multiplayer amount. */
+export function ChipMark({ size = 30 }: { size?: number }) {
+  return <ChipIcon size={size} className="inline-block shrink-0 drop-shadow-[0_2px_2px_rgb(0_0_0/0.4)]" />;
 }
 
 type Tone = 'gold' | 'purple' | 'red' | 'green' | 'dark' | 'blue';

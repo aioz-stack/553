@@ -66,7 +66,7 @@ test('allocations notify the recipient and game starts notify every player', fun
     Notification::fake();
 
     $agent = User::factory()->agent()->create();
-    app(AllocationService::class)->allocate(superAdmin(), $agent, Currency::VC, 10_000);
+    app(AllocationService::class)->allocate(superAdmin(), $agent, Currency::CH, 10_000);
     Notification::assertSentTo($agent, PointsReceived::class);
 
     [, , $players] = startGame();

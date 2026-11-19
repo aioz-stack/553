@@ -16,11 +16,11 @@ export default function Reports() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
             <StatCard label="Completed games" value={d.games.completed} />
             <StatCard label="Cancelled games" value={d.games.cancelled} />
-            <StatCard label="VC issued" value={points(d.issued.VC)} />
-            <StatCard label="CP issued" value={points(d.issued.CP)} />
-            <StatCard label="VC player balances" value={points(d.player_balances.VC)} />
-            <StatCard label="CP player balances" value={points(d.player_balances.CP)} />
-            <StatCard label="VC platform fees" value={points(d.platform_fees.VC)} />
+            <StatCard label="Chips issued" value={points(d.issued.CH)} />
+            <StatCard label="Gold issued" value={points(d.issued.GD)} />
+            <StatCard label="Chips player balances" value={points(d.player_balances.CH)} />
+            <StatCard label="Gold player balances" value={points(d.player_balances.GD)} />
+            <StatCard label="Chips platform fees" value={points(d.platform_fees.CH)} />
             <StatCard label="Pending commissions" value={d.pending_commissions} />
           </div>
           <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">

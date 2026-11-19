@@ -17,7 +17,7 @@ function GridShapes() {
   );
 }
 
-const highlights = ['Four-player real-time tables', 'Free-play Virtual Coins', 'Provably fair shuffle'];
+const highlights = ['Four-player real-time tables', 'Gold for Single Player, Chips for Multiplayer', 'Provably fair shuffle'];
 
 export default function Login() {
   const { isDark, toggle } = useTheme();

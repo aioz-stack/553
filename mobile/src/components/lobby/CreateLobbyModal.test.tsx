@@ -42,7 +42,7 @@ describe('CreateLobbyModal', () => {
     render(<CreateLobbyModal balance={5000} onClose={() => {}} onCreated={() => {}} />);
     const opts = (label: string) => Array.from((screen.getByLabelText(label) as HTMLSelectElement).options).map((o) => o.textContent);
     expect(opts('Type of Game')).toEqual(['Banker Mode', 'Round Bank']);
-    expect(opts('Minimum Entry')).toEqual(['100 Diamonds', '250 Diamonds', '500 Diamonds', '1,000 Diamonds', '2,000 Diamonds']);
+    expect(opts('Minimum Entry')).toEqual(['100 Chips', '250 Chips', '500 Chips', '1,000 Chips', '2,000 Chips']);
     expect(opts('Preparation Time')).toEqual(['30 Seconds', '45 Seconds', '60 Seconds', '75 Seconds']);
   });
 
@@ -59,7 +59,7 @@ describe('CreateLobbyModal', () => {
     fireEvent.change(screen.getByLabelText('Lobby Name'), { target: { value: 'Rookie Room' } });
     fireEvent.change(screen.getByLabelText('Minimum Entry'), { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Lobby' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('You need at least 1,000 diamonds');
+    expect(await screen.findByRole('alert')).toHaveTextContent('You need at least 1,000 Chips');
     expect(apiMock).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText('Minimum Entry'), { target: { value: '500' } });

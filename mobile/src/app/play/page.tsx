@@ -12,6 +12,7 @@ import { Felt, PotDisplay, RevealedHand, Seat, TimerRing } from '@/components/Ta
 import { Notice, Screen, Spinner } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useBalance } from '@/lib/useBalance';
 import { points, titleCase, useQueryParam } from '@/lib/hooks';
 import { play } from '@/lib/sound';
 import { LUCKY_LABELS, type SeatPlayer } from '@/lib/types';
@@ -25,12 +26,19 @@ import { useSecondsLeft, useTable } from '@/lib/useTable';
  */
 export default function Play() {
   const { user } = useAuth();
+  // Your Chips (Multiplayer only), from the server; reloaded on every game step below.
+  const { chips } = useBalance(user?.id);
   const router = useRouter();
   const tableParam = useQueryParam('table');
   const tableId = tableParam ? Number(tableParam) : null;
   const { table, session, error, live, refresh, clockOffset } = useTable(tableId, user?.id);
   const secondsLeft = useSecondsLeft(session?.status === 'ARRANGING' ? session.arrangement_deadline : null, clockOffset);
   const betSecondsLeft = useSecondsLeft(session?.status === 'BETTING' ? session.betting_deadline : null, clockOffset);
+
+  // Entry, bets and settlements move Chips: reload every wallet display when the game moves on.
+  useEffect(() => {
+    window.dispatchEvent(new Event('pusoy:wallet'));
+  }, [session?.status, session?.round_number, table?.status]);
   const nextIn = useSecondsLeft(table?.next_round_at ?? null, clockOffset);
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissedFor, setDismissedFor] = useState<number | null>(null);
@@ -119,6 +127,10 @@ export default function Play() {
               {points(table.room.entry_amount)}
             </span>
           )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-black/40 py-0.5 pl-0.5 pr-2 font-display text-xs font-black text-white" aria-label="Your Chips">
+            <Coin currency="CH" size={18} />
+            {chips !== undefined ? points(chips) : '…'}
+          </span>
           <span className={`h-2.5 w-2.5 rounded-full ${live ? 'bg-mint-400 shadow-[0_0_8px_#45e0a5]' : 'animate-pulse bg-gold-400'}`} title={live ? 'Live' : 'Syncing'} />
         </span>
       }

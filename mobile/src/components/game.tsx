@@ -15,10 +15,12 @@ import { Glitter, RimGlint } from './Sparkles';
 const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(' ');
 
 /** Gold (VC) or silver-blue (CP) coin drawn in SVG. */
-export function Coin({ currency = 'VC', size = 22, className }: { currency?: 'VC' | 'CP' | string; size?: number; className?: string }) {
+/** A currency coin: Gold (GD) is a gold coin; Chips (CH) is a casino chip. */
+export function Coin({ currency = 'CH', size = 22, className }: { currency?: 'GD' | 'CH' | string; size?: number; className?: string }) {
+  if (currency === 'CH') return <ChipIcon size={size} className={className} />;
   const id = `coin-${currency}`;
   const springId = useId();
-  const [a, b, c] = currency === 'CP' ? ['#e8f1ff', '#8fb3e8', '#3f6aa8'] : currency === 'GP' ? ['#fff0ff', '#f08cff', '#8a2bb8'] : ['#fff3b0', '#ffc83a', '#c27a04'];
+  const [a, b, c] = ['#fff3b0', '#ffc83a', '#c27a04'];
 
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" className={cx('lx-spring-icon', className)} style={springStyle(springId, 2.6, 1.6)} aria-hidden="true">
@@ -33,14 +35,14 @@ export function Coin({ currency = 'VC', size = 22, className }: { currency?: 'VC
       <circle cx="16" cy="15" r="14" fill={`url(#${id})`} />
       <circle cx="16" cy="15" r="10" fill="none" stroke={c} strokeOpacity="0.5" strokeWidth="1.5" />
       <text x="16" y="19.5" textAnchor="middle" fontSize="11" fontWeight="900" fill={c} fontFamily="system-ui">
-        {{ CP: '₱', GD: 'G', GP: 'GP' }[currency] ?? 'V'}
+        G
       </text>
     </svg>
   );
 }
 
 /** Rounded balance pill with a coin on the left (like a game HUD). */
-export function CoinPill({ amount, currency = 'VC', onPlus, compact }: { amount: string | number | null | undefined; currency?: string; onPlus?: () => void; compact?: boolean }) {
+export function CoinPill({ amount, currency = 'CH', onPlus, compact }: { amount: string | number | null | undefined; currency?: string; onPlus?: () => void; compact?: boolean }) {
   return (
     <span className={cx('inline-flex items-center gap-1.5 rounded-full border border-gold-400/50 bg-black/45 py-0.5 pl-0.5 shadow-inner', onPlus ? 'pr-0.5' : 'pr-3')}>
       <Coin currency={currency} size={compact ? 20 : 24} />
@@ -207,26 +209,29 @@ export function Confetti({ count = 28 }: { count?: number }) {
   );
 }
 
-/** Faceted diamond gem (the home screen shows the VC balance as diamonds). */
-export function Diamond({ size = 24, className }: { size?: number; className?: string }) {
+/** Casino chip: the Chips (Multiplayer) currency icon. */
+export function ChipIcon({ size = 24, className }: { size?: number; className?: string }) {
   const springId = useId();
+  const id = useId().replace(/:/g, '');
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" className={cx('lx-spring-icon', className)} style={springStyle(springId, 2.6, 1.6)} aria-hidden="true">
       <defs>
-        <linearGradient id="gem-a" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#d9fbff" />
-          <stop offset="1" stopColor="#38c8ff" />
-        </linearGradient>
-        <linearGradient id="gem-b" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#6fe3ff" />
-          <stop offset="1" stopColor="#1b7fe0" />
-        </linearGradient>
+        <radialGradient id={`chip-${id}`} cx="0.4" cy="0.35" r="0.75">
+          <stop offset="0" stopColor="#ff7a7a" />
+          <stop offset="0.6" stopColor="#e0262f" />
+          <stop offset="1" stopColor="#8a0a10" />
+        </radialGradient>
       </defs>
-      <path d="M8 5h16l6 8-14 15L2 13l6-8Z" fill="#0f5fb8" />
-      <path d="M8 5h16l6 8H2l6-8Z" fill="url(#gem-a)" />
-      <path d="M2 13h28L16 28 2 13Z" fill="url(#gem-b)" />
-      <path d="M11 13 16 5l5 8-5 15-5-15Z" fill="#fff" fillOpacity="0.35" />
-      <path d="M9.5 8.5h4" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="16" cy="17" r="14" fill="#5a0609" />
+      <circle cx="16" cy="15.5" r="14" fill={`url(#chip-${id})`} />
+      {Array.from({ length: 8 }, (_, i) => (
+        <rect key={i} x="14.2" y="1.8" width="3.6" height="5" rx="1" fill="#fff" transform={`rotate(${i * 45} 16 15.5)`} />
+      ))}
+      <circle cx="16" cy="15.5" r="8.2" fill="#fff6e0" stroke="#ffc531" strokeWidth="1.6" />
+      <circle cx="16" cy="15.5" r="5.6" fill="none" stroke="#e0262f" strokeWidth="1" strokeDasharray="2 1.6" />
+      <text x="16" y="18.6" textAnchor="middle" fontSize="8.5" fontWeight="900" fill="#b3141b" fontFamily="system-ui">
+        C
+      </text>
     </svg>
   );
 }

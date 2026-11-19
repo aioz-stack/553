@@ -27,7 +27,7 @@ class AdjustWalletRequest extends FormRequest
         return [
             'wallet_id' => ['required_without:user_id', 'nullable', 'integer', 'exists:wallets,id'],
             'user_id' => ['required_without:wallet_id', 'nullable', 'integer', 'exists:users,id'],
-            'currency' => ['required_with:user_id', 'nullable', 'in:CP,VC'],
+            'currency' => ['required_with:user_id', 'nullable', 'in:GD,CH'],
             'direction' => ['required', 'in:credit,debit'],
             'amount' => $this->amountRule(),
             'reason' => ['required', 'string', 'min:5', 'max:255'],

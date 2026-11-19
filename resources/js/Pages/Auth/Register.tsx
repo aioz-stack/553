@@ -22,7 +22,7 @@ export default function Register({ referral }: { referral?: string | null }) {
   return (
     <AuthCard
       title="Create your account"
-      subtitle="Play free with Virtual Coins. Have an agent referral code? Add it below."
+      subtitle="Play Single Player for Gold and Multiplayer for Chips. Have an agent referral code? Add it below."
       footer={
         <>
           Already have an account?{' '}

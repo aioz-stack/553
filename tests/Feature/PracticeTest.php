@@ -331,8 +331,8 @@ test('Gold Wallet: your worst case is reserved per round, results credit or dedu
     $gold = spSubmitAuto($this, $me, $id)->assertCreated()->json('data.result.gold');
     expect(balance($me, Currency::GD))->toBe((5_000 + $gold) * 100)->and($house())->toBe((2 * $covered - $gold) * 100)->and($escrow())->toBe(0);
     expect($wallets->reconcile()['ok'])->toBeTrue();
-    // CP and VC are never touched by Single Player.
-    expect(balance($me, Currency::CP))->toBe(0)->and(balance($me, Currency::VC))->toBe(0);
+    // Chips are never touched by Single Player.
+    expect(balance($me, Currency::CH))->toBe(0);
 
     // Processing the same result again changes nothing.
     $count = WalletTransaction::query()->count();

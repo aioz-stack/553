@@ -364,10 +364,6 @@ class TableService
             throw new BusinessRuleException('This room is not open.', 409, 'room_closed');
         }
 
-        if ($room->currency === Currency::CP && ! config('pusoy.features.cp_wagering')) {
-            throw new BusinessRuleException('CP rooms are disabled pending regulatory approval.', 403, 'feature_disabled');
-        }
-
         if ($room->visibility === RoomVisibility::Private
             && $room->owner_id !== $user->id
             && ! ($inviteCode && hash_equals((string) $room->invite_code, strtoupper($inviteCode)))
@@ -379,7 +375,7 @@ class TableService
 
         // Multiplayer lobbies: you must hold at least the lobby's Minimum Entry (nothing is deducted on entry).
         if ($room->min_entry !== null && $balance < $room->min_entry && ! $this->activeSeat($user)) {
-            throw new BusinessRuleException('You need at least '.number_format(Points::decimal($room->min_entry)).' diamonds to enter this lobby.', 422, 'insufficient_balance');
+            throw new BusinessRuleException('You need at least '.number_format(Points::decimal($room->min_entry)).' Chips to enter this lobby.', 422, 'insufficient_balance');
         }
         // Banker modes: enough to cover the minimum bet's 2× reserve.
         $needed = $room->game_mode->hasBanker()

@@ -21,7 +21,7 @@ interface CurrencyTotals {
   total_minor: number;
   by_type: Record<WalletTypeKey, { total: string; total_minor: number; wallets: number }>;
 }
-type Summary = Record<'CP' | 'VC', CurrencyTotals>;
+type Summary = Record<'GD' | 'CH', CurrencyTotals>;
 
 interface UserHit {
   id: number;
@@ -38,15 +38,15 @@ type Target = { kind: 'wallet'; wallet: Wallet } | { kind: 'user' };
 const TYPES: WalletTypeKey[] = ['player', 'allocation', 'commission', 'platform', 'escrow'];
 
 /**
- * Wallet management, also used as the CP and VC management screens
- * (`?currency=CP|VC`). CP and VC are always listed and totalled separately.
+ * Wallet management, also used as the Chips and Gold management screens
+ * (`?currency=CH|GD`). Chips and Gold are always listed and totalled separately.
  * Super Admin can deposit (credit) or withdraw (debit) points; both are
  * immutable, audited ledger entries. Points only — no real money moves.
  */
 export default function Wallets() {
   const { auth } = usePage<SharedProps>().props;
-  const initial = (new URLSearchParams(window.location.search).get('currency') as 'CP' | 'VC' | null) ?? 'VC';
-  const [currency, setCurrency] = useState<'CP' | 'VC'>(initial);
+  const initial = (new URLSearchParams(window.location.search).get('currency') as 'GD' | 'CH' | null) ?? 'CH';
+  const [currency, setCurrency] = useState<'GD' | 'CH'>(initial === 'GD' ? 'GD' : 'CH');
   const [type, setType] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -58,7 +58,7 @@ export default function Wallets() {
 
   // Deposit / withdraw form
   const [target, setTarget] = useState<Target | null>(null);
-  const [form, setForm] = useState({ direction: 'credit' as Direction, currency: 'VC' as 'CP' | 'VC', amount: '', reason: '' });
+  const [form, setForm] = useState({ direction: 'credit' as Direction, currency: 'CH' as 'GD' | 'CH', amount: '', reason: '' });
   const [userSearch, setUserSearch] = useState('');
   const [picked, setPicked] = useState<UserHit | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,14 +123,14 @@ export default function Wallets() {
   const formCurrency = target?.kind === 'wallet' ? target.wallet.currency : form.currency;
 
   return (
-    <PageShell title={`${currency} Management`}>
+    <PageShell title={`${currency === 'GD' ? 'Gold' : 'Chips'} Management`}>
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
-      {currency === 'CP' && <Alert tone="warning">CP is PHP-denominated accounting points. Deposits and withdrawals here are point adjustments only; real-money deposits, withdrawals, redemption and CP wagering are disabled.</Alert>}
-      {currency === 'VC' && <Alert tone="info">VC is free-play only — never withdrawable for money, redeemable, or convertible to CP. A VC withdrawal here only removes points.</Alert>}
+      {currency === 'GD' && <Alert tone="info">Gold is Single Player only. A credit or debit here adjusts a player's Gold; it can never be used in Multiplayer or exchanged for Chips.</Alert>}
+      {currency === 'CH' && <Alert tone="info">Chips are Multiplayer only. They are never cash, never paid out, and never exchanged for Gold.</Alert>}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total wallet points — CP" value={totals ? points(totals.CP.total, 'CP') : '…'} hint={totals ? `Players ${points(totals.CP.by_type.player.total)} · Allocation ${points(totals.CP.by_type.allocation.total)}` : undefined} />
-        <StatCard label="Total wallet points — VC" value={totals ? points(totals.VC.total, 'VC') : '…'} hint={totals ? `Players ${points(totals.VC.by_type.player.total)} · Allocation ${points(totals.VC.by_type.allocation.total)}` : undefined} />
+        <StatCard label="Total Chips" value={totals ? points(totals.CH.total, 'CH') : '…'} hint={totals ? `Players ${points(totals.CH.by_type.player.total)} · Allocation ${points(totals.CH.by_type.allocation.total)}` : undefined} />
+        <StatCard label="Total Gold" value={totals ? points(totals.GD.total, 'GD') : '…'} hint={totals ? `Players ${points(totals.GD.by_type.player.total)}` : undefined} />
         <StatCard label={`${currency} in player wallets`} value={cur ? points(cur.by_type.player.total, currency) : '…'} hint={cur ? `${cur.by_type.player.wallets} wallets` : undefined} />
         <StatCard label={`${currency} in allocation wallets`} value={cur ? points(cur.by_type.allocation.total, currency) : '…'} hint={cur ? `${cur.by_type.allocation.wallets} admins / agents` : undefined} />
       </div>
@@ -140,7 +140,7 @@ export default function Wallets() {
         subtitle={cur ? `Total ${currency}: ${points(cur.total, currency)} — ${TYPES.map((t) => `${titleCase(t)} ${points(cur.by_type[t].total)}`).join(' · ')}` : undefined}
         actions={
           <>
-            <Tabs value={currency} onChange={(c) => { setCurrency(c); setPage(1); }} options={[{ value: 'VC', label: 'VC' }, { value: 'CP', label: 'CP' }]} />
+            <Tabs value={currency} onChange={(c) => { setCurrency(c); setPage(1); }} options={[{ value: 'CH', label: 'Chips' }, { value: 'GD', label: 'Gold' }]} />
             {isSuper && (
               <>
                 <Button onClick={() => open({ kind: 'user' }, 'credit')}>Deposit</Button>
@@ -244,9 +244,9 @@ export default function Wallets() {
             </Field>
             {target?.kind === 'user' ? (
               <Field label="Currency">
-                <Select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value as 'CP' | 'VC' })}>
-                  <option value="VC">VC</option>
-                  <option value="CP">CP</option>
+                <Select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value as 'GD' | 'CH' })}>
+                  <option value="CH">Chips</option>
+                  <option value="GD">Gold</option>
                 </Select>
               </Field>
             ) : (

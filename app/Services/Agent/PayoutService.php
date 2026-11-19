@@ -18,11 +18,11 @@ use App\Services\Wallet\WalletService;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Cash payout of an agent's CP commission balance.
+ * Payout requests for an agent's commission balance.
  *
- * DISABLED BY DEFAULT: requires both FEATURE_CP_COMMISSION_PAYOUTS and
- * FEATURE_CASH_WITHDRAWALS, which must stay off until Philippine legal,
- * regulatory and payment-provider approvals exist. VC is never paid out.
+ * ALWAYS DISABLED: commissions are earned in Chips, and Chips are never paid
+ * out (there is no cash currency). The flow below is kept so existing request
+ * records stay reviewable.
  *
  * Flow: agent requests (balance checked) → staff with manage_commissions
  * approves (ledger COMMISSION_PAYOUT debits the commission wallet; the cash
@@ -38,7 +38,7 @@ class PayoutService
 
     public static function enabled(): bool
     {
-        return (bool) config('pusoy.features.cp_commission_payouts') && (bool) config('pusoy.features.cash_withdrawals');
+        return false;
     }
 
     public function request(Agent $agent, Currency $currency, int $amount): AgentPayoutRequest
@@ -107,8 +107,8 @@ class PayoutService
 
     private function assertEnabled(Currency $currency): void
     {
-        if (! self::enabled() || $currency !== Currency::CP) {
-            throw new BusinessRuleException('Commission cash payouts are disabled pending regulatory approval. VC is never paid out.', 403, 'feature_disabled');
+        if (! self::enabled() || $currency !== Currency::CH) {
+            throw new BusinessRuleException('Commission payouts are not available: Chips are never paid out.', 403, 'feature_disabled');
         }
     }
 

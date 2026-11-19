@@ -27,7 +27,7 @@ function superAdmin(): User
 /**
  * Credit a wallet through the real allocation workflow (Super Admin issuance).
  */
-function fund(User $user, int $minor, Currency $currency = Currency::VC): void
+function fund(User $user, int $minor, Currency $currency = Currency::CH): void
 {
     $issuer = User::query()->where('role', 'super_admin')->where('username', 'test-issuer')->first()
         ?? User::factory()->superAdmin()->create(['username' => 'test-issuer']);
@@ -35,7 +35,7 @@ function fund(User $user, int $minor, Currency $currency = Currency::VC): void
     app(AllocationService::class)->allocate($issuer, $user, $currency, $minor, 'test funding');
 }
 
-function balance(User $user, Currency $currency = Currency::VC, WalletType $type = WalletType::Player): int
+function balance(User $user, Currency $currency = Currency::CH, WalletType $type = WalletType::Player): int
 {
     return app(WalletService::class)->for($user, $currency, $type)->fresh()->balance;
 }

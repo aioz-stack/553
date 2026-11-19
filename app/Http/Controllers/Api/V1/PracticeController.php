@@ -129,31 +129,29 @@ class PracticeController extends Controller
         return response()->json(['data' => $gold->state($request->user())]);
     }
 
-    /** Claim the free Gold Points: only when Out of Gold, credited once however often it is pressed. */
-    public function claimGoldPoints(Request $request, GoldService $gold): JsonResponse
+    /** Claim the free Gold: only when Out of Gold, credited once per popup (request_id) however often it is pressed. */
+    public function claimGold(Request $request, GoldService $gold): JsonResponse
     {
-        $claim = $gold->claim($request->user());
+        $data = $request->validate(['request_id' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9-]+$/']]);
+        $claim = $gold->claim($request->user(), $data['request_id']);
 
         return response()->json([
-            'message' => $claim['created'] ? number_format(GoldService::claimAmount()).' Gold Points claimed!' : 'You already claimed these Gold Points.',
+            'message' => $claim['created'] ? number_format(GoldService::claimAmount()).' Gold claimed!' : 'You already claimed this Gold.',
             'data' => $gold->state($request->user()) + ['reference' => $claim['transaction']->reference],
         ], $claim['created'] ? 201 : 200);
     }
 
-    /** Convert Gold Points into Gold, one way, 1:1 (all of them when no amount is given). */
-    public function convertGoldPoints(Request $request, GoldService $gold): JsonResponse
+    /**
+     * Leave Single Player: the match ends now. A round you have not submitted is void —
+     * its Gold reserve (and the house's) is returned in full, exactly once.
+     */
+    public function leaveMatch(Request $request, PracticeMatch $practiceMatch, PracticeService $practice, GoldService $gold): JsonResponse
     {
-        $data = $request->validate([
-            'amount' => ['nullable', 'integer', 'min:1', 'max:1000000000'],
-            'request_id' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9-]+$/'],
-        ]);
+        abort_unless($practiceMatch->user_id === $request->user()->id, 404);
 
-        $minor = $gold->convert($request->user(), isset($data['amount']) ? (int) $data['amount'] : null, $data['request_id']);
+        $match = $practice->leave($request->user(), $practiceMatch);
 
-        return response()->json([
-            'message' => \App\Support\Points::format($minor).' Gold Points converted to Gold.',
-            'data' => $gold->state($request->user()) + ['converted' => \App\Support\Points::decimal($minor)],
-        ]);
+        return response()->json(['data' => ['status' => $match->status, 'gold_wallet' => $gold->state($request->user())]]);
     }
 
     private function owned(Request $request, PracticeGame $game): void

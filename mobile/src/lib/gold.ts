@@ -2,10 +2,10 @@ import { api, idempotencyKey } from './api';
 
 /**
  * Single Player Gold Wallet (server: App\Services\Game\GoldService). Gold is
- * won and lost automatically by every settled Single Player round; Gold
- * Points are the free Out of Gold reward, converted one way (1:1) into Gold.
- * Both are free-play and never mix with CP or VC. Every balance change is made
- * on the server; the app only displays it.
+ * Single Player only: won and lost automatically by every settled round, and
+ * refilled by the free Out of Gold claim. It never mixes with Chips (the
+ * Multiplayer currency). Every balance change is made on the server; the app
+ * only displays it.
  */
 export interface GoldWallet {
   /** Spendable Gold. */
@@ -14,11 +14,10 @@ export interface GoldWallet {
   reserved?: string;
   /** Total Amount: spendable + reserved Gold. */
   total?: string;
-  gold_points: string;
   /** Gold can no longer cover the next round (mid-match) or the Beginner minimum. */
   out_of_gold: boolean;
   claim_amount: number;
-  /** Out of Gold and no unconverted claim waiting. */
+  /** Out of Gold: the free Gold can be claimed. */
   can_claim: boolean;
   minimum_to_start: number;
 }
@@ -26,21 +25,27 @@ export interface GoldWallet {
 /** Home with the Out of Gold popup (where Single Player sends you when you run out). Single Player only. */
 export const OUT_OF_GOLD_URL = '/home/?gold=out';
 
+/** A request id the server accepts (letters, digits and dashes). */
+export const requestKey = () => idempotencyKey().replace(/[^A-Za-z0-9-]/g, '');
+
 export function fetchGold(): Promise<GoldWallet> {
   return api<{ data: GoldWallet }>('/practice/gold').then((r) => r.data);
 }
 
-/** Claim the free Gold Points (the server checks eligibility and credits it once). */
-export function claimGoldPoints(): Promise<{ message: string; data: GoldWallet & { reference: string } }> {
-  return api('/practice/gold/claim', { method: 'POST' });
+/**
+ * Claim the free Gold straight into the Gold wallet. The server checks you are Out of Gold;
+ * `requestId` (one per popup) makes repeated clicks and retries return the same claim.
+ */
+export function claimGold(requestId: string): Promise<{ message: string; data: GoldWallet & { reference: string } }> {
+  return api('/practice/gold/claim', { method: 'POST', body: { request_id: requestId } });
 }
 
-/** Convert all Gold Points into Gold (1:1). `requestId` makes a retried request convert once. */
-export function convertGoldPoints(requestId: string = idempotencyKey().replace(/[^A-Za-z0-9-]/g, '')): Promise<{ message: string; data: GoldWallet & { converted: string } }> {
-  return api('/practice/gold/convert', { method: 'POST', body: { request_id: requestId } });
+/** Leave Single Player: the server ends the match; an unsubmitted round is void and its Gold reserve returned. */
+export function leaveMatch(matchId: number): Promise<{ data: { status: string; gold_wallet: GoldWallet } }> {
+  return api(`/practice/matches/${matchId}/leave`, { method: 'POST' });
 }
 
-/** Tell every balance display to reload (Gold / Gold Points changed). */
+/** Tell every balance display to reload (Gold or Chips changed). */
 export function walletChanged(): void {
   window.dispatchEvent(new Event('pusoy:wallet'));
 }

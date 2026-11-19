@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { api, ApiError, errorText } from '@/lib/api';
-import { MIN_ENTRIES, MODE_LABEL, MODE_RULE, PREPARATION_SECONDS, fmtDiamonds, type LobbyDetail, type LobbyMode } from '@/lib/lobby';
+import { MIN_ENTRIES, MODE_LABEL, MODE_RULE, PREPARATION_SECONDS, fmtChips, type LobbyDetail, type LobbyMode } from '@/lib/lobby';
 import { play } from '@/lib/sound';
-import { CandyButton, EyeButton, FieldRow, Gem, Modal, Select, TypeBadge, inputClass } from './LobbyUI';
+import { CandyButton, EyeButton, FieldRow, ChipMark, Modal, Select, TypeBadge, inputClass } from './LobbyUI';
 
 export const NAME_MAX = 30;
 
@@ -22,7 +22,7 @@ export function lobbyFormProblems(f: { name: string; password: string }): { name
 
 /**
  * Create Lobby popup: name, optional password (empty = Public, set = Private, shown live), game type,
- * Minimum Entry, Preparation Time. The server checks your diamonds, gives the lobby its ID, seats you
+ * Minimum Entry, Preparation Time. The server checks your Chips, gives the lobby its ID, seats you
  * as owner and returns the waiting room. With `edit`, the owner changes name / password / time.
  */
 export default function CreateLobbyModal({
@@ -31,7 +31,7 @@ export default function CreateLobbyModal({
   onCreated,
   edit,
 }: {
-  /** Your diamonds (display only; the server checks). */
+  /** Your Chips (display only; the server checks). */
   balance?: number;
   onClose: () => void;
   onCreated: (lobby: LobbyDetail) => void;
@@ -61,7 +61,7 @@ export default function CreateLobbyModal({
       return;
     }
     if (cantAfford) {
-      setErrors({ form: `You need at least ${fmtDiamonds(minEntry)} diamonds for this Minimum Entry.` });
+      setErrors({ form: `You need at least ${fmtChips(minEntry)} Chips for this Minimum Entry.` });
       return;
     }
     setBusy(true);
@@ -130,11 +130,11 @@ export default function CreateLobbyModal({
         )}
 
         {!edit && (
-          <FieldRow label="Minimum Entry" error={cantAfford ? `You have ${fmtDiamonds(balance ?? 0)} diamonds.` : null} hint={`Players need at least this many diamonds · bet ${fmtDiamonds(minEntry / 10)} per round`}>
+          <FieldRow label="Minimum Entry" error={cantAfford ? `You have ${fmtChips(balance ?? 0)} Chips.` : null} hint={`Players need at least this many Chips · bet ${fmtChips(minEntry / 10)} per round`}>
             <div className="flex items-center gap-3">
-              <Gem size={40} />
+              <ChipMark size={40} />
               <div className="flex-1">
-                <Select label="Minimum Entry" value={minEntry} onChange={setMinEntry} options={MIN_ENTRIES.map((v) => [v, `${fmtDiamonds(v)} Diamonds`])} />
+                <Select label="Minimum Entry" value={minEntry} onChange={setMinEntry} options={MIN_ENTRIES.map((v) => [v, `${fmtChips(v)} Chips`])} />
               </div>
             </div>
           </FieldRow>

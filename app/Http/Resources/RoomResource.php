@@ -54,7 +54,7 @@ class RoomResource extends JsonResource
             'seated_players' => $this->whenLoaded('tables', fn () => $this->tables
                 ->where('status', '!=', TableStatus::Closed)
                 ->sum(fn ($t) => $t->players_count ?? $t->players->count())),
-            'enabled' => $this->currency->value === 'VC' || (bool) config('pusoy.features.cp_wagering'),
+            'enabled' => true,
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

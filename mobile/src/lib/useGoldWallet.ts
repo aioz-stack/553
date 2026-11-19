@@ -6,12 +6,12 @@ import { fetchGold, type GoldWallet } from './gold';
 
 /**
  * The signed-in player's Single Player Gold Wallet, straight from the server
- * (`GET /practice/gold`: Gold, Gold reserved in the open round, Total Amount,
- * Gold Points). One source for Home, the Single Player table and the card
+ * (`GET /practice/gold`: Gold, Gold reserved in the open round, Total Amount).
+ * One source for Home, the Single Player table and the card
  * arrangement popup, so they always show the same numbers.
  *
  * It reloads (never computes) when:
- *  - the private `user.{id}` channel says a GD / GP balance changed (`wallet.updated`);
+ *  - the private `user.{id}` channel says the Gold balance changed (`wallet.updated`);
  *  - any screen fires `pusoy:wallet` after a deal, settlement, claim or conversion;
  *  - the app comes back to the foreground.
  * Only one request runs at a time; a change that arrives meanwhile triggers
@@ -54,7 +54,7 @@ export function useGoldWallet(userId: number | undefined) {
       if (!echo || cancelled) return;
       const channel = echo.private(`user.${userId}`);
       const onUpdate = (e: { currency?: string }) => {
-        if (e.currency === 'GD' || e.currency === 'GP') void reload();
+        if (e.currency === 'GD') void reload();
       };
       channel.listen('.wallet.updated', onUpdate);
       stop = () => channel.stopListening('.wallet.updated', onUpdate);

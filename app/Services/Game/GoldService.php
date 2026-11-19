@@ -24,10 +24,8 @@ use Illuminate\Support\Facades\DB;
  *
  * Gold (GD) is won and lost automatically by every settled Single Player round
  * (PracticeService reserves the worst case into escrow, then pays out once per
- * round). Gold Points (GP) are a separate wallet: the free Out of Gold reward,
- * convertible one way, 1:1, into Gold. Neither is cash: they can never be
- * withdrawn, redeemed or converted into CP or VC, and no Multiplayer room,
- * lobby, allocation or payout uses them.
+ * round). Gold is Single Player only: no Multiplayer room, lobby, allocation or
+ * payout accepts it, and it can never be mixed with or turned into Chips.
  *
  * Out of Gold: the player can no longer keep playing Single Player —
  *  - during a match: Gold cannot cover the next round's smallest reserve
@@ -36,10 +34,10 @@ use Illuminate\Support\Facades\DB;
  * Zero and negative are always Out of Gold. A held round reserve never counts
  * as Out of Gold (the round settles first).
  *
- * The 1,000 Gold Points claim is only credited when the player presses Claim,
- * only while they are Out of Gold, and never while an earlier claim is still
- * unconverted. Claims are serialised on the user row and keyed per claim
- * number, so double clicks, refreshes and duplicate requests credit it once.
+ * The free 1,000 Gold is only credited when the player presses Claim and only
+ * while they are Out of Gold (a credited claim ends that state). Claims are
+ * serialised on the user row and keyed by the popup's request id, so double
+ * clicks, refreshes and duplicate requests credit it once.
  */
 class GoldService
 {
@@ -51,11 +49,6 @@ class GoldService
     public function goldMinor(User $user): int
     {
         return (int) $this->wallets->for($user, Currency::GD)->balance;
-    }
-
-    public function pointsMinor(User $user): int
-    {
-        return (int) $this->wallets->for($user, Currency::GP)->balance;
     }
 
     public static function claimAmount(): int
@@ -109,7 +102,6 @@ class GoldService
     public function state(User $user): array
     {
         $out = $this->isOutOfGold($user);
-        $points = $this->pointsMinor($user);
         $amount = self::claimAmount();
         $gold = $this->goldMinor($user);
         // Gold held for the round you are playing (returned or settled when it ends).
@@ -124,59 +116,49 @@ class GoldService
             'gold' => Points::decimal($gold),
             'reserved' => Points::decimal($reserved),
             'total' => Points::decimal($gold + $reserved),
-            'gold_points' => Points::decimal($points),
             'out_of_gold' => $out,
             'claim_amount' => $amount,
-            // Claimable once per bust: never while an earlier claim is still unconverted.
-            'can_claim' => $out && $points < Points::toMinor($amount),
+            'can_claim' => $out,
             'minimum_to_start' => self::minimumToStart(),
         ];
     }
 
     /**
-     * Claim the free Gold Points (only when Out of Gold).
+     * Claim the free Gold (only when Out of Gold), credited straight into the Gold
+     * wallet. Serialised on the user row; `$requestId` (one per popup) makes repeated
+     * clicks, refreshes and retried requests return the same claim.
      *
      * @return array{transaction: WalletTransaction, created: bool}
      */
-    public function claim(User $user): array
+    public function claim(User $user, string $requestId): array
     {
-        $result = DB::transaction(function () use ($user) {
+        $result = DB::transaction(function () use ($user, $requestId) {
             User::query()->whereKey($user->id)->lockForUpdate()->first();
-            $wallet = $this->wallets->for($user, Currency::GP);
-            $amount = Points::toMinor(self::claimAmount());
+            $key = "out-of-gold:{$user->id}:{$requestId}";
+
+            if ($done = WalletTransaction::query()->where('idempotency_key', $key)->first()) {
+                return ['transaction' => $done, 'created' => false];
+            }
 
             if (! $this->isOutOfGold($user)) {
-                throw new BusinessRuleException('You still have Gold to play with. The free Gold Points are only for when you run out.', 409, 'not_eligible');
+                throw new BusinessRuleException('You still have Gold to play with. The free Gold is only for when you run out.', 409, 'not_eligible');
             }
 
-            $claims = WalletTransaction::query()->where('destination_wallet_id', $wallet->id)->where('type', TransactionType::GoldPointsReward->value);
-
-            if ((int) $wallet->balance >= $amount) {
-                // Already claimed and not yet converted (double click, refresh or a repeated request).
-                $last = (clone $claims)->latest('id')->first();
-
-                if ($last) {
-                    return ['transaction' => $last, 'created' => false];
-                }
-
-                throw new BusinessRuleException('You already have enough Gold Points. Convert them to Gold to keep playing.', 409, 'not_eligible');
-            }
-
-            $number = $claims->count() + 1;
+            $number = WalletTransaction::query()->where('type', TransactionType::OutOfGoldReward->value)->where('related_player_id', $user->id)->count() + 1;
             $transaction = $this->ledger->transfer(new TransferRequest(
-                type: TransactionType::GoldPointsReward,
-                currency: Currency::GP,
+                type: TransactionType::OutOfGoldReward,
+                currency: Currency::GD,
                 source: null,
-                destination: $wallet,
-                amount: $amount,
-                reason: 'Out of Gold: free '.number_format(self::claimAmount()).' Gold Points',
+                destination: $this->wallets->for($user, Currency::GD),
+                amount: Points::toMinor(self::claimAmount()),
+                reason: 'Out of Gold: free '.number_format(self::claimAmount()).' Gold',
                 actor: $user,
-                idempotencyKey: "gold-points-claim:{$user->id}:{$number}",
+                idempotencyKey: $key,
                 relatedPlayerId: $user->id,
                 metadata: ['single_player' => true, 'claim' => $number],
             ));
 
-            AuditLogger::log($user, 'gold_points.claimed', $user, null, ['amount' => self::claimAmount(), 'claim' => $number, 'reference' => $transaction->reference]);
+            AuditLogger::log($user, 'gold.claimed', $user, null, ['amount' => self::claimAmount(), 'claim' => $number, 'reference' => $transaction->reference]);
 
             return ['transaction' => $transaction, 'created' => true];
         });
@@ -186,52 +168,10 @@ class GoldService
         return $result;
     }
 
-    /**
-     * Convert Gold Points into Gold, one way, 1:1 (all of them when $points is null).
-     * Both legs commit together; a repeated $requestId never converts twice.
-     */
-    public function convert(User $user, ?int $points, string $requestId): int
-    {
-        $converted = DB::transaction(function () use ($user, $points, $requestId) {
-            User::query()->whereKey($user->id)->lockForUpdate()->first();
-            $from = $this->wallets->for($user, Currency::GP);
-            $to = $this->wallets->for($user, Currency::GD);
-            $key = "gold-convert:{$user->id}:{$requestId}";
-
-            if ($done = WalletTransaction::query()->where('idempotency_key', "{$key}:in")->first()) {
-                return (int) $done->amount;
-            }
-
-            $amount = $points === null ? (int) $from->balance : Points::toMinor($points);
-
-            if ($amount <= 0) {
-                throw new BusinessRuleException('You have no Gold Points to convert.', 422, 'nothing_to_convert');
-            }
-
-            if ($amount > (int) $from->balance) {
-                throw new BusinessRuleException('You do not have that many Gold Points.', 422, 'insufficient_gold_points');
-            }
-
-            $label = Points::format($amount).' Gold Points converted to Gold (1:1)';
-            $this->ledger->transfer(new TransferRequest(TransactionType::GoldConversion, Currency::GP, $from, null, $amount, $label, $user, "{$key}:out", $user->id, metadata: ['single_player' => true]));
-            $this->ledger->transfer(new TransferRequest(TransactionType::GoldConversion, Currency::GD, null, $to, $amount, $label, $user, "{$key}:in", $user->id, metadata: ['single_player' => true]));
-
-            AuditLogger::log($user, 'gold_points.converted', $user, null, ['amount' => Points::decimal($amount)]);
-
-            return $amount;
-        });
-
-        $this->pushBalances($user);
-
-        return $converted;
-    }
-
-    /** Push the owner's new Gold and Gold Points balances to their private channel only. */
+    /** Push the owner's new Gold balance to their private channel only. */
     public function pushBalances(User $user): void
     {
-        foreach ([Currency::GD, Currency::GP] as $currency) {
-            $balance = (int) Wallet::query()->where('user_id', $user->id)->where('currency', $currency->value)->where('type', 'player')->value('balance');
-            DB::afterCommit(fn () => event(new UserEvent($user->id, GameEvents::WALLET_UPDATED, ['currency' => $currency->value, 'balance' => Points::decimal($balance)])));
-        }
+        $balance = (int) Wallet::query()->where('user_id', $user->id)->where('currency', Currency::GD->value)->where('type', 'player')->value('balance');
+        DB::afterCommit(fn () => event(new UserEvent($user->id, GameEvents::WALLET_UPDATED, ['currency' => Currency::GD->value, 'balance' => Points::decimal($balance)])));
     }
 }

@@ -11,8 +11,7 @@ import type { Room } from '@/lib/types';
 
 export default function Rooms() {
   const { user } = useAuth();
-  const [currency, setCurrency] = useState<'' | 'VC' | 'CP'>('');
-  const rooms = useFetch<{ data: Room[] }>(user ? '/rooms' : null, { currency: currency || undefined });
+  const rooms = useFetch<{ data: Room[] }>(user ? '/rooms' : null);
   const join = useJoin();
   const [privateRoom, setPrivateRoom] = useState({ name: '', entry_amount: '100' });
   const [code, setCode] = useState({ room: '', code: '' });
@@ -40,17 +39,7 @@ export default function Rooms() {
     <Screen title="All rooms" back>
       {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
-      <div className="glass mb-4 flex gap-1 rounded-2xl p-1">
-        {(['', 'VC', 'CP'] as const).map((c) => (
-          <button
-            key={c}
-            onClick={() => setCurrency(c)}
-            className={`h-10 flex-1 rounded-xl font-display text-sm font-extrabold transition ${currency === c ? 'bg-gradient-to-b from-gold-300 to-gold-500 text-night-900 shadow' : 'text-white/70'}`}
-          >
-            {c || 'All'}
-          </button>
-        ))}
-      </div>
+      <p className="mb-4 text-center text-sm text-white/70">Every Multiplayer room plays for Chips.</p>
 
       <div className="mb-5 grid grid-cols-2 gap-3">
         {rooms.data?.data.map((room) => (

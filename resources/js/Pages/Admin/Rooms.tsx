@@ -10,7 +10,7 @@ import { useApi } from '../../lib/useApi';
 const EMPTY = {
   name: '',
   description: '',
-  currency: 'VC',
+  currency: 'CH',
   entry_amount: '90',
   game_mode: 'classic',
   rounds_total: '12',
@@ -114,7 +114,7 @@ export default function Rooms() {
           rowKey={(r) => r.id}
           columns={[
             { key: 'name', label: 'Room', render: (r) => <span className="font-medium">{r.name}{r.visibility === 'private' && <> <Badge>private</Badge></>}</span> },
-            { key: 'cur', label: 'Currency', render: (r) => <Badge tone={r.currency === 'VC' ? 'brand' : 'warning'}>{r.currency}</Badge> },
+            { key: 'cur', label: 'Currency', render: () => <Badge tone="brand">Chips</Badge> },
             { key: 'entry', label: 'Entry', align: 'right', render: (r) => points(r.entry_amount) },
             { key: 'game', label: 'Mode', render: (r) => <Badge tone={r.game_mode === 'classic' ? 'gray' : 'brand'}>{r.game_mode_label ?? titleCase(r.game_mode ?? 'classic')}</Badge> },
             { key: 'mode', label: 'Payout', render: (r) => (r.game_mode && r.game_mode !== 'classic' ? `Bets ${points(r.min_bet ?? r.entry_amount)}–${points(r.max_bet ?? r.entry_amount)}` : titleCase(r.payout_mode)) },
@@ -136,8 +136,7 @@ export default function Rooms() {
           <Field label="Name" error={errors.name} required><Input value={form.name} onChange={set('name')} /></Field>
           <Field label="Currency" error={errors.currency}>
             <Select value={form.currency} onChange={set('currency')}>
-              <option value="VC">VC (free-play)</option>
-              <option value="CP">CP (disabled until approval)</option>
+              <option value="CH">Chips (Multiplayer)</option>
             </Select>
           </Field>
           <div className="md:col-span-2">

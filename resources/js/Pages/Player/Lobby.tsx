@@ -8,10 +8,10 @@ import type { Room, TableState } from '../../lib/types';
 import { useApi } from '../../lib/useApi';
 
 /**
- * Game lobby: resume an active seat, or jump into a featured VC room.
+ * Game lobby: resume an active seat, or jump into a featured Chips room.
  */
 export default function Lobby() {
-  const rooms = useApi<{ data: Room[]; meta?: { announcement?: string | null; maintenance_message?: string | null } }>('/rooms', { currency: 'VC' });
+  const rooms = useApi<{ data: Room[]; meta?: { announcement?: string | null; maintenance_message?: string | null } }>('/rooms', { currency: 'CH' });
   const [seat, setSeat] = useState<TableState | null>(null);
 
   useEffect(() => {

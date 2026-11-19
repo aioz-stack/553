@@ -28,8 +28,8 @@ class GameRoomFactory extends Factory
             'name' => $name,
             'slug' => Str::slug($name).'-'.Str::lower(Str::random(4)),
             'description' => 'Test room',
-            'currency' => Currency::VC,
-            'entry_amount' => 9000, // 90.00 VC
+            'currency' => Currency::CH,
+            'entry_amount' => 9000, // 90.00 Chips
             'payout_mode' => PayoutMode::WinnerTakesAll,
             'platform_fee_bps' => 1000, // 10%
             'point_value' => null,
@@ -47,10 +47,5 @@ class GameRoomFactory extends Factory
     public function roundBank(): static
     {
         return $this->state(fn () => ['payout_mode' => PayoutMode::RoundBank]);
-    }
-
-    public function cp(): static
-    {
-        return $this->state(fn () => ['currency' => Currency::CP]);
     }
 }

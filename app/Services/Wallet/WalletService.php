@@ -72,7 +72,7 @@ class WalletService
         foreach (Currency::cases() as $currency) {
             $this->for($user, $currency, WalletType::Player);
 
-            // Gold / Gold Points are Single Player wallets only: never allocated or paid as commission.
+            // Gold is a Single Player wallet only: never allocated or paid as commission.
             if ($currency->isSinglePlayer()) {
                 continue;
             }
@@ -88,20 +88,20 @@ class WalletService
     }
 
     /**
-     * Free daily VC reward. One per UTC day, enforced by idempotency key.
+     * Free daily Chips reward. One per UTC day, enforced by idempotency key.
      */
     public function claimDailyReward(User $user): WalletTransaction
     {
         $date = now('UTC')->toDateString();
-        $amount = (int) config('pusoy.daily_vc_reward_amount') * 100;
+        $amount = (int) config('pusoy.daily_chips_reward_amount') * 100;
 
         $transaction = $this->ledger->transfer(new TransferRequest(
             type: TransactionType::DailyReward,
-            currency: Currency::VC,
+            currency: Currency::CH,
             source: null,
-            destination: $this->for($user, Currency::VC),
+            destination: $this->for($user, Currency::CH),
             amount: $amount,
-            reason: 'Daily free VC reward',
+            reason: 'Daily free Chips reward',
             actor: $user,
             idempotencyKey: "daily-reward:{$user->id}:{$date}",
             relatedPlayerId: $user->id,
@@ -142,7 +142,7 @@ class WalletService
         foreach (Currency::cases() as $currency) {
             $held = (int) WalletHold::query()->where('currency', $currency->value)->where('status', HoldStatus::Held->value)->sum('amount');
             $banks = (int) GameRoom::query()->where('currency', $currency->value)->sum('carry_over_amount');
-            // Single Player Round Bank reserves (player + house), in their match's currency (Gold; CP for legacy matches).
+            // Single Player Round Bank reserves (player + house) are Gold.
             $practice = (int) DB::table('practice_games')
                 ->join('practice_matches', 'practice_matches.id', '=', 'practice_games.practice_match_id')
                 ->where('practice_games.reserve_status', 'held')->where('practice_matches.currency', $currency->value)

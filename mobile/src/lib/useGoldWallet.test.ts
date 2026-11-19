@@ -7,13 +7,13 @@ vi.mock('./echo', () => ({ getEcho: () => Promise.resolve(null) }));
 
 import { useGoldWallet } from './useGoldWallet';
 
-const W = (total: string, points = '0.00') => ({ data: { gold: total, reserved: '0.00', total, gold_points: points, out_of_gold: false, can_claim: false, claim_amount: 1000, minimum_to_start: 1000 } });
+const W = (total: string) => ({ data: { gold: total, reserved: '0.00', total, out_of_gold: false, can_claim: false, claim_amount: 1000, minimum_to_start: 1000 } });
 
 describe('useGoldWallet', () => {
   beforeEach(() => apiMock.mockReset());
 
   it('loads the wallet from the server and reloads whenever any screen reports a wallet change', async () => {
-    apiMock.mockResolvedValueOnce(W('1000.00')).mockResolvedValueOnce(W('1600.00', '250.00'));
+    apiMock.mockResolvedValueOnce(W('1000.00')).mockResolvedValueOnce(W('1600.00'));
     const { result } = renderHook(() => useGoldWallet(5));
     await waitFor(() => expect(result.current.wallet?.total).toBe('1000.00'));
     expect(apiMock).toHaveBeenCalledWith('/practice/gold');
@@ -22,7 +22,6 @@ describe('useGoldWallet', () => {
       window.dispatchEvent(new Event('pusoy:wallet'));
     });
     await waitFor(() => expect(result.current.wallet?.total).toBe('1600.00'));
-    expect(result.current.wallet?.gold_points).toBe('250.00');
   });
 
   it('a change during a request is never lost: one request at a time, then one more for the latest balance', async () => {

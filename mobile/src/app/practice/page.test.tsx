@@ -339,7 +339,7 @@ describe('Single Player — Round Bank table', () => {
     expect(apiMock).not.toHaveBeenCalledWith('/practice/matches', expect.anything());
   });
 
-  it('Out of Gold: when a round leaves you unable to continue, the match ends and you are taken Home to claim free Gold Points', async () => {
+  it('Out of Gold: when a round leaves you unable to continue, the match ends and you are taken Home to claim free Gold', async () => {
     routes({ '/practice/matches/3': { data: { ...AFTER_1, status: 'out_of_gold', out_of_gold: true } } });
     const popup = await dealToPopup();
     fireEvent.click(within(popup).getByRole('button', { name: 'SUBMIT' }));
@@ -351,7 +351,7 @@ describe('Single Player — Round Bank table', () => {
   });
 
   it('Out of Gold before playing: Single Player sends you straight Home (no match is started)', async () => {
-    routes({ '/practice/tiers': { data: TIERS, meta: { gold_wallet: { gold: '0.00', gold_points: '0.00', out_of_gold: true, can_claim: true, claim_amount: 1000, minimum_to_start: 1000 } } } });
+    routes({ '/practice/tiers': { data: TIERS, meta: { gold_wallet: { gold: '0.00', out_of_gold: true, can_claim: true, claim_amount: 1000, minimum_to_start: 1000 } } } });
     render(<Practice />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/home/?gold=out'));
     expect(apiMock).not.toHaveBeenCalledWith('/practice/matches', expect.anything());
@@ -391,8 +391,11 @@ describe('Single Player — Round Bank table', () => {
     expect(screen.getByRole('dialog', { name: 'How to play' })).toHaveTextContent('swap');
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('dialog', { name: 'Leave table' })).toHaveTextContent('reserved Gold goes back to your wallet');
     fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
-    expect(replace).toHaveBeenCalledWith('/home/?single=1');
+    // Leaving ends the match on the server (the open round is void, its Gold returned), then goes to the picker.
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/practice/matches/3/leave', { method: 'POST' }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home/?single=1'));
   });
 
   it('opens the difficulty picker when no level was chosen', async () => {
@@ -406,12 +409,12 @@ describe('Single Player — Round Bank table', () => {
     expect(apiMock.mock.calls.map(([p]) => p).filter((p) => p !== '/practice/gold')).toEqual([]);
   });
 
-  it('Total Amount and Gold Points come from the server wallet, stay visible while arranging, and refresh after each round', async () => {
+  it('the Gold Total Amount comes from the server wallet, stay visible while arranging, and refresh after each round', async () => {
     let call = 0;
     const wallets = [
-      { gold: '10000.00', reserved: '0.00', total: '10000.00', gold_points: '250.00' },
-      { gold: '9400.00', reserved: '600.00', total: '10000.00', gold_points: '250.00' },
-      { gold: '10600.00', reserved: '0.00', total: '10600.00', gold_points: '250.00' },
+      { gold: '10000.00', reserved: '0.00', total: '10000.00' },
+      { gold: '9400.00', reserved: '600.00', total: '10000.00' },
+      { gold: '10600.00', reserved: '0.00', total: '10600.00' },
     ];
     routes({});
     const base = apiMock.getMockImplementation()!;
@@ -426,7 +429,8 @@ describe('Single Player — Round Bank table', () => {
     render(<Practice />);
     const hud = await screen.findByRole('group', { name: 'Gold wallet' });
     await waitFor(() => expect(within(hud).getByLabelText('Total Amount')).toHaveTextContent('10,000'));
-    expect(within(hud).getByLabelText('Gold Points')).toHaveTextContent('250');
+    // Gold only: Chips never appear in Single Player.
+    expect(hud).not.toHaveTextContent(/chips/i);
 
     // Dealing reserves your worst case: the Total Amount stays 10,000 and shows what is in play.
     fireEvent.click(await screen.findByRole('button', { name: 'Deal' }));

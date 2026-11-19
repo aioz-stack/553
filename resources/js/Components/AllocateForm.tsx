@@ -15,7 +15,7 @@ export interface Recipient {
  * submit carries a fresh idempotency key so a double-click cannot double-pay.
  */
 export default function AllocateForm({ recipients, onDone, defaultRecipient }: { recipients: Recipient[]; onDone?: () => void; defaultRecipient?: number }) {
-  const [form, setForm] = useState({ recipient_id: defaultRecipient ? String(defaultRecipient) : '', currency: 'VC', amount: '', reason: '' });
+  const [form, setForm] = useState({ recipient_id: defaultRecipient ? String(defaultRecipient) : '', currency: 'CH', amount: '', reason: '' });
   const [key, setKey] = useState(newIdempotencyKey);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -57,8 +57,7 @@ export default function AllocateForm({ recipients, onDone, defaultRecipient }: {
       <div className="grid grid-cols-2 gap-4">
         <Field label="Currency" error={errors.currency} required>
           <Select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
-            <option value="VC">VC — Virtual Coins</option>
-            <option value="CP">CP — Cash Points</option>
+            <option value="CH">Chips (Multiplayer)</option>
           </Select>
         </Field>
         <Field label="Amount" error={errors.amount} required>

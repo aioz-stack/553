@@ -1,6 +1,6 @@
 /** Shapes returned by the Laravel API (mirrors the web app's types). */
-/** CP (cash, disabled), VC (diamonds, Multiplayer), GD (Single Player Gold, free-play), GP (Gold Points, free reward → Gold 1:1). */
-export type Currency = 'CP' | 'VC' | 'GD' | 'GP';
+/** The game's only two currencies: GD = Gold (Single Player only), CH = Chips (Multiplayer only). Never mixed. */
+export type Currency = 'GD' | 'CH';
 
 export interface User {
   id: number;

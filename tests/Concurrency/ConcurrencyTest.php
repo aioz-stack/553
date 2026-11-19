@@ -96,7 +96,7 @@ test('parallel requests with one idempotency key move money once', function () {
         ->and(collect($results)->pluck('tx')->unique())->toHaveCount(1)
         ->and(WalletTransaction::query()->count())->toBe(1)
         ->and(WalletAllocation::query()->count())->toBe(1)
-        ->and(balance($agent, Currency::VC, WalletType::Allocation))->toBe(50000);
+        ->and(balance($agent, Currency::CH, WalletType::Allocation))->toBe(50000);
 });
 
 test('eight simultaneous joins fill exactly two tables of four', function () {
@@ -113,7 +113,7 @@ test('eight simultaneous joins fill exactly two tables of four', function () {
     $byTable->each(fn ($seats) => expect($seats->pluck('seat')->sort()->values()->all())->toBe([1, 2, 3, 4]));
 
     expect(WalletHold::query()->count())->toBe(8)
-        ->and(app(WalletService::class)->escrow(Currency::VC)->balance)->toBe($room->entry_amount * 8)
+        ->and(app(WalletService::class)->escrow(Currency::CH)->balance)->toBe($room->entry_amount * 8)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
 

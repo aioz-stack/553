@@ -6,7 +6,8 @@ import { getEcho } from './echo';
 import type { Wallet } from './types';
 
 /**
- * The signed-in player's own balances. Loaded from /wallet and updated live
+ * The signed-in player's own Chips and Gold. Loaded from /wallet, reloaded on
+ * `pusoy:wallet` (any screen after a transaction) and on returning to the app, and updated live
  * from the private `user.{id}` channel (`wallet.updated`), which only ever
  * carries the owner's balance.
  */
@@ -17,7 +18,7 @@ export function useBalance(userId: number | undefined) {
     if (!userId) {
       return;
     }
-    api<{ data: Wallet[] }>('/wallet').then((r) => setWallets(r.data)).catch(() => undefined);
+    api<{ data: Wallet[] }>('/wallet').then((r) => setWallets(Array.isArray(r?.data) ? r.data : [])).catch(() => undefined);
   }, [userId]);
 
   useEffect(() => {
@@ -45,17 +46,22 @@ export function useBalance(userId: number | undefined) {
     });
 
     const onFocus = () => reload();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reload();
+    };
     window.addEventListener('pusoy:wallet', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       cancelled = true;
       stop();
       window.removeEventListener('pusoy:wallet', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [userId, reload]);
 
   const find = (c: string) => wallets?.find((w) => w.type === 'player' && w.currency === c)?.balance;
 
-  // gd = Single Player Gold, gp = Gold Points (free-play; never combined with CP or VC).
-  return { vc: find('VC'), cp: find('CP'), gd: find('GD'), gp: find('GP'), reload };
+  // Two separate wallets: Chips (Multiplayer) and Gold (Single Player). Never combined.
+  return { chips: find('CH'), gold: find('GD'), reload };
 }

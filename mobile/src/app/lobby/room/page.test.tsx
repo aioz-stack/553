@@ -13,7 +13,8 @@ vi.mock('@/lib/api', () => ({
     }
   },
 }));
-vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5, name: 'Pat Player', username: 'player' } }) }));
+const me = { id: 5, name: 'Pat Player', username: 'player' };
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: me }) }));
 vi.mock('@/lib/useLandscapeLock', () => ({ useLandscapeLock: () => undefined }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn(), useSound: () => [true, vi.fn()] }));
 vi.mock('@/lib/echo', () => ({ getEcho: async () => null }));
@@ -43,7 +44,7 @@ let current: ReturnType<typeof detail>;
 beforeEach(() => {
   apiMock.mockReset();
   replace.mockReset();
-  apiMock.mockImplementation((path: string) => Promise.resolve(path === '/lobbies/14' ? { data: current } : { data: current }));
+  apiMock.mockImplementation((path: string) => Promise.resolve(path === '/wallet' ? { data: [{ id: 1, currency: 'CH', type: 'player', balance: '2500.00', is_frozen: false }] } : { data: current }));
 });
 
 describe('Choose Your Seat', () => {

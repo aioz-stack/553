@@ -35,7 +35,7 @@ export default function PayoutRequests({ mode }: { mode: 'agent' | 'staff' }) {
   };
 
   if (data && !data.meta.enabled) {
-    return <Alert tone="info">Cash commission payouts are disabled pending legal and regulatory approval. VC commissions stay in your commission wallet and are never paid out.</Alert>;
+    return <Alert tone="info">Commission payouts are not available: commissions are earned in Chips, which stay in your commission wallet and are never paid out.</Alert>;
   }
 
   return (
@@ -43,10 +43,10 @@ export default function PayoutRequests({ mode }: { mode: 'agent' | 'staff' }) {
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
       {mode === 'agent' && (
         <div className="mb-4 flex flex-wrap items-end gap-3">
-          <Field label="CP amount to request">
+          <Field label="Chips amount to request">
             <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
           </Field>
-          <Button onClick={() => run(() => api.post(endpoint, { currency: 'CP', amount }), 'Payout requested.')} disabled={!amount}>
+          <Button onClick={() => run(() => api.post(endpoint, { currency: 'CH', amount }), 'Payout requested.')} disabled={!amount}>
             Request payout
           </Button>
         </div>

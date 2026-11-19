@@ -7,7 +7,7 @@ import { CardFaceArt } from '@/components/CardArt';
 import FriendsPanel from '@/components/FriendsPanel';
 import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
-import { CandyButton, EyeButton, Gem, Lock, Modal, People, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
+import { CandyButton, EyeButton, ChipMark, Lock, Modal, People, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
 import AvatarPicker from '@/components/AvatarPicker';
 import SettingsPanel from '@/components/SettingsPanel';
 import { LanternRoom } from '@/components/table/TableArt';
@@ -15,14 +15,14 @@ import { Avatar } from '@/components/game';
 import { Screen } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { fmtDiamonds, useLobbyUpdates, type LobbyDetail, type LobbyList, type LobbySummary, type LobbyTab } from '@/lib/lobby';
+import { fmtChips, useLobbyUpdates, type LobbyDetail, type LobbyList, type LobbySummary, type LobbyTab } from '@/lib/lobby';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import { useBalance } from '@/lib/useBalance';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
 
 /**
- * Multiplayer Lobby — the 553 Lobby (1600×900 stage). Lists open diamond lobbies (All / Public /
+ * Multiplayer Lobby — the 553 Lobby (1600×900 stage). Lists open Chips lobbies (All / Public /
  * Private, search by name or Lobby ID, 5 per page), live-updated over Reverb (`lobbies` channel)
  * with a polling fallback. Quick Join finds an open public lobby you can afford; Create Lobby opens
  * the popup; Join (with the password for a private lobby) takes you to the Waiting Room. All rules,
@@ -135,7 +135,7 @@ function StatusCell({ lobby, onJoin, busy }: { lobby: LobbySummary; onJoin: () =
 export default function MultiplayerLobby() {
   const { user } = useAuth();
   const router = useRouter();
-  const { vc } = useBalance(user?.id);
+  const { chips } = useBalance(user?.id);
   const [soundOn] = useSound();
   useLandscapeLock();
 
@@ -194,7 +194,7 @@ export default function MultiplayerLobby() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const balance = vc !== undefined ? Number(vc) : undefined;
+  const balance = chips !== undefined ? Number(chips) : undefined;
 
   /** Go to a lobby's Choose Your Seat screen with a short zoom-and-fade exit. */
   const goTo = (id: number) => {
@@ -292,11 +292,11 @@ export default function MultiplayerLobby() {
 
         <div className="lx-gold absolute left-[560px] top-[22px] z-10 h-[78px] w-[480px] rounded-full p-[5px] shadow-[0_6px_0_#7a3e00]">
           <div className="flex h-full items-center gap-3 rounded-full bg-gradient-to-b from-[#5a0609] to-[#2a0204] pl-4 pr-2">
-            <Gem size={56} />
-            <span className="flex-1 text-center font-display text-[38px] font-black text-white" aria-label="Diamond balance">
-              {balance !== undefined ? fmtDiamonds(Math.floor(balance)) : '…'}
+            <ChipMark size={56} />
+            <span className="flex-1 text-center font-display text-[38px] font-black text-white" aria-label="Chips balance">
+              {balance !== undefined ? fmtChips(Math.floor(balance)) : '…'}
             </span>
-            <Link href="/wallet/" aria-label="Diamond wallet" onClick={() => play('tap')} className="lx-tile flex h-[58px] w-[58px] items-center justify-center rounded-full border-[3px] border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] to-[#e08a00] font-display text-[42px] font-black leading-none text-[#4a1d00]">
+            <Link href="/wallet/" aria-label="Chips wallet" onClick={() => play('tap')} className="lx-tile flex h-[58px] w-[58px] items-center justify-center rounded-full border-[3px] border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] to-[#e08a00] font-display text-[42px] font-black leading-none text-[#4a1d00]">
               +
             </Link>
           </div>
@@ -476,12 +476,12 @@ export default function MultiplayerLobby() {
                       {l.game_mode_label}
                     </span>
                     <span className="flex items-center justify-center gap-1">
-                      <Gem size={28} />
-                      {fmtDiamonds(l.min_bet)}
+                      <ChipMark size={28} />
+                      {fmtChips(l.min_bet)}
                     </span>
                     <span className="flex items-center justify-center gap-1">
-                      <Gem size={28} />
-                      {fmtDiamonds(l.min_entry)}
+                      <ChipMark size={28} />
+                      {fmtChips(l.min_entry)}
                     </span>
                     <span>{l.preparation_seconds}s</span>
                     <span className="flex items-center justify-center gap-2">

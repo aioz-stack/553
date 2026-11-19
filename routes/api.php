@@ -60,8 +60,6 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::get('wallet', [WalletController::class, 'balances']);
         Route::get('wallet/transactions', [WalletController::class, 'transactions']);
         Route::post('wallet/daily-reward', [WalletController::class, 'claimDailyReward'])->middleware('throttle:wallet-actions');
-        Route::post('wallet/deposit', [WalletController::class, 'cashDisabled']);
-        Route::post('wallet/withdraw', [WalletController::class, 'cashDisabled']);
 
         // Allocation (Super Admin / Administrator / Agent; rules in AllocationService)
         Route::post('wallet/allocate', [AdminWalletController::class, 'allocate'])->middleware(['role:super_admin,admin,agent', 'throttle:wallet-actions']);
@@ -102,8 +100,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Single Player: Round Bank Pusoy vs one bot (12 rounds, alternating banker)
         Route::get('practice/tiers', [PracticeController::class, 'tiers']);
         Route::get('practice/gold', [PracticeController::class, 'gold']);
-        Route::post('practice/gold/claim', [PracticeController::class, 'claimGoldPoints'])->middleware('throttle:game-actions');
-        Route::post('practice/gold/convert', [PracticeController::class, 'convertGoldPoints'])->middleware('throttle:game-actions');
+        Route::post('practice/gold/claim', [PracticeController::class, 'claimGold'])->middleware('throttle:game-actions');
+        Route::post('practice/matches/{practiceMatch}/leave', [PracticeController::class, 'leaveMatch'])->middleware('throttle:game-actions');
         Route::post('practice/matches', [PracticeController::class, 'startMatch'])->middleware('throttle:game-actions');
         Route::get('practice/matches/current', [PracticeController::class, 'currentMatch']);
         Route::get('practice/matches/{practiceMatch}', [PracticeController::class, 'showMatch']);

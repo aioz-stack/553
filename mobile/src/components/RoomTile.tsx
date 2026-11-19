@@ -29,10 +29,6 @@ interface Theme {
 
 /** Visual theme per room (cosmetic only; picked from room settings). */
 export function roomTheme(room: Room): Theme {
-  if (room.currency === 'CP') {
-    return { bg: 'from-slate-500 via-slate-700 to-slate-900', Icon: IconLock, fan: ['AS', 'AH', 'AD'] };
-  }
-
   if (room.game_mode === 'banker') {
     return { bg: 'from-orange-400 via-red-500 to-rose-950', Icon: IconCrown, fan: ['KS', 'KH', 'KD'], tag: room.is_hosted ? 'Hosted' : 'Banker', button: 'gold' };
   }

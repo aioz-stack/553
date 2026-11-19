@@ -88,7 +88,7 @@ test('agents cannot allocate to another agent player through the API', function 
     $theirs = app(UserManagementService::class)->create($agentB, Role::Player, newUserPayload());
 
     $this->actingAs($agentA)->postJson('/api/v1/wallet/allocate', [
-        'recipient_id' => $theirs->id, 'currency' => 'VC', 'amount' => '10',
+        'recipient_id' => $theirs->id, 'currency' => 'CH', 'amount' => '10',
     ])->assertForbidden();
 });
 
@@ -97,14 +97,14 @@ test('players cannot use admin, agent or allocation endpoints', function () {
 
     $this->actingAs($player)->getJson('/api/v1/admin/users')->assertForbidden();
     $this->actingAs($player)->getJson('/api/v1/agent/dashboard')->assertForbidden();
-    $this->actingAs($player)->postJson('/api/v1/wallet/allocate', ['recipient_id' => $player->id, 'currency' => 'VC', 'amount' => '100'])->assertForbidden();
+    $this->actingAs($player)->postJson('/api/v1/wallet/allocate', ['recipient_id' => $player->id, 'currency' => 'CH', 'amount' => '100'])->assertForbidden();
 });
 
-test('cash deposits and withdrawals are disabled', function () {
+test('there are no cash deposit or withdrawal routes (Gold and Chips are never cash)', function () {
     $player = User::factory()->create();
 
-    $this->actingAs($player)->postJson('/api/v1/wallet/deposit')->assertForbidden()->assertJsonPath('error', 'feature_disabled');
-    $this->actingAs($player)->postJson('/api/v1/wallet/withdraw')->assertForbidden();
+    expect($this->actingAs($player)->postJson('/api/v1/wallet/deposit')->status())->toBeIn([404, 405]);
+    expect($this->actingAs($player)->postJson('/api/v1/wallet/withdraw')->status())->toBeIn([404, 405]);
 });
 
 test('suspended accounts are refused', function () {

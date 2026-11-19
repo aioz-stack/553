@@ -39,9 +39,9 @@ try {
             $wallets = app(WalletService::class);
             $tx = app(LedgerService::class)->transfer(new TransferRequest(
                 TransactionType::PlayerDebit,
-                Currency::VC,
-                $wallets->for(User::findOrFail($args['from']), Currency::VC),
-                $wallets->for(User::findOrFail($args['to']), Currency::VC),
+                Currency::CH,
+                $wallets->for(User::findOrFail($args['from']), Currency::CH),
+                $wallets->for(User::findOrFail($args['to']), Currency::CH),
                 $args['amount'],
                 idempotencyKey: $args['key'] ?? null,
             ));
@@ -51,7 +51,7 @@ try {
         'allocate' => ['tx' => app(AllocationService::class)->allocate(
             User::findOrFail($args['actor']),
             User::findOrFail($args['recipient']),
-            Currency::VC,
+            Currency::CH,
             $args['amount'],
             'concurrency test',
             $args['key'] ?? null,

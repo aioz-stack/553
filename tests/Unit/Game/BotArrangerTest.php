@@ -112,15 +112,19 @@ test('lane strengths order hands exactly like the official comparison, including
     }
 });
 
-test('it plays the obvious strategy: quads go to the Back, the flush to the Middle; trips and a pair make a full house', function () {
+test('it plays real strategy: quads Back + flush Middle; with two trips and a pair it values all three lanes over one big Back', function () {
     $a = BotArranger::arrange(['AS', 'AH', 'AD', 'AC', '2H', '5H', '8H', 'JH', 'KH', '3C', '6D', '9S', 'QC']);
     expect($a->backValue->category)->toBe(HandCategory::FourOfAKind)
         ->and($a->middleValue->category)->toBe(HandCategory::Flush);
 
+    // K-K-K, 7-7-7, Q-Q: the naive play is a full-house Back (KKK77) with a weak Middle and Front.
+    // The bot strengthens every lane instead (pair of Queens Front, trips Middle, trips Back) — better expected result.
     $b = BotArranger::arrange(['KS', 'KH', 'KD', '7S', '7H', '7D', 'QS', 'QH', '2C', '4D', '9C', 'JD', '5S']);
-    expect($b->isFoul())->toBeFalse()
-        ->and($b->backValue->category)->toBe(HandCategory::FullHouse)
-        ->and($b->middleValue->category->value)->toBeGreaterThanOrEqual(HandCategory::OnePair->value);
+    $naive = new Arrangement(['2C', '4D', '5S'], ['QS', 'QH', '9C', 'JD', '7D'], ['KS', 'KH', 'KD', '7S', '7H']);
+    expect($b->isFoul())->toBeFalse()->and($naive->isFoul())->toBeFalse()
+        ->and($b->frontValue->category)->toBe(HandCategory::OnePair)
+        ->and($b->middleValue->category)->toBe(HandCategory::ThreeOfAKind)
+        ->and(BotArranger::score($b))->toBeGreaterThan(BotArranger::score($naive));
 });
 
 test('head to head, the bot beats random valid arrangements and the greedy arranger on the same cards', function () {

@@ -93,14 +93,14 @@ test('approving a VC commission pays it into the separate commission wallet', fu
     app(CommissionService::class)->approve($super, $commission);
 
     expect($commission->fresh()->status)->toBe(CommissionStatus::Paid)
-        ->and(balance($agent, Currency::VC, WalletType::Commission))->toBe($commission->amount)
-        ->and(balance($agent, Currency::VC, WalletType::Allocation))->toBe(0)
+        ->and(balance($agent, Currency::CH, WalletType::Commission))->toBe($commission->amount)
+        ->and(balance($agent, Currency::CH, WalletType::Allocation))->toBe(0)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 
     app(CommissionService::class)->reverse($super, $commission->fresh(), 'Chargeback test');
 
     expect($commission->fresh()->status)->toBe(CommissionStatus::Reversed)
-        ->and(balance($agent, Currency::VC, WalletType::Commission))->toBe(0);
+        ->and(balance($agent, Currency::CH, WalletType::Commission))->toBe(0);
 });
 
 test('agents cannot approve commissions or change their own rates', function () {

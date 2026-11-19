@@ -20,15 +20,15 @@ beforeEach(function () {
     $this->wallets = app(WalletService::class);
 });
 
-test('CP and VC wallets are separate and cannot be mixed', function () {
+test('Gold and Chips wallets are separate and cannot be mixed', function () {
     $player = User::factory()->create();
-    fund($player, 5000, Currency::VC);
+    fund($player, 5000, Currency::CH);
 
-    expect(balance($player, Currency::VC))->toBe(5000)
-        ->and(balance($player, Currency::CP))->toBe(0);
+    expect(balance($player, Currency::CH))->toBe(5000)
+        ->and(balance($player, Currency::GD))->toBe(0);
 
     expect(fn () => $this->ledger->transfer(new TransferRequest(
-        TransactionType::PlayerCredit, Currency::CP, $this->wallets->for($player, Currency::VC), $this->wallets->for($player, Currency::CP), 100,
+        TransactionType::PlayerCredit, Currency::GD, $this->wallets->for($player, Currency::CH), $this->wallets->for($player, Currency::GD), 100,
     )))->toThrow(BusinessRuleException::class, 'Currency mismatch');
 });
 
@@ -38,7 +38,7 @@ test('debits are refused when the balance is insufficient and nothing changes', 
     fund($a, 1000);
 
     expect(fn () => $this->ledger->transfer(new TransferRequest(
-        TransactionType::PlayerDebit, Currency::VC, $this->wallets->for($a, Currency::VC), $this->wallets->for($b, Currency::VC), 1001,
+        TransactionType::PlayerDebit, Currency::CH, $this->wallets->for($a, Currency::CH), $this->wallets->for($b, Currency::CH), 1001,
     )))->toThrow(InsufficientBalanceException::class);
 
     expect(balance($a))->toBe(1000)->and(balance($b))->toBe(0);
@@ -50,7 +50,7 @@ test('every movement records balance before and after on both sides', function (
     fund($a, 1000);
 
     $tx = $this->ledger->transfer(new TransferRequest(
-        TransactionType::PlayerDebit, Currency::VC, $this->wallets->for($a, Currency::VC), $this->wallets->for($b, Currency::VC), 400, 'test',
+        TransactionType::PlayerDebit, Currency::CH, $this->wallets->for($a, Currency::CH), $this->wallets->for($b, Currency::CH), 400, 'test',
     ));
 
     expect($tx->source_balance_before)->toBe(1000)
@@ -65,7 +65,7 @@ test('idempotency keys prevent double spending', function () {
     $b = User::factory()->create();
     fund($a, 1000);
 
-    $request = new TransferRequest(TransactionType::PlayerDebit, Currency::VC, $this->wallets->for($a, Currency::VC), $this->wallets->for($b, Currency::VC), 700, idempotencyKey: 'same-key');
+    $request = new TransferRequest(TransactionType::PlayerDebit, Currency::CH, $this->wallets->for($a, Currency::CH), $this->wallets->for($b, Currency::CH), 700, idempotencyKey: 'same-key');
 
     $first = $this->ledger->transfer($request);
     $second = $this->ledger->transfer($request);
@@ -75,7 +75,7 @@ test('idempotency keys prevent double spending', function () {
         ->and(balance($b))->toBe(700);
 
     // Same key, different parameters → conflict.
-    expect(fn () => $this->ledger->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::VC, $this->wallets->for($a, Currency::VC), $this->wallets->for($b, Currency::VC), 100, idempotencyKey: 'same-key')))
+    expect(fn () => $this->ledger->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::CH, $this->wallets->for($a, Currency::CH), $this->wallets->for($b, Currency::CH), 100, idempotencyKey: 'same-key')))
         ->toThrow(BusinessRuleException::class, 'Idempotency key');
 });
 
@@ -83,13 +83,13 @@ test('repeated concurrent-style requests can never overdraw a wallet', function 
     $a = User::factory()->create();
     $b = User::factory()->create();
     fund($a, 1000);
-    $source = $this->wallets->for($a, Currency::VC);
+    $source = $this->wallets->for($a, Currency::CH);
     $failures = 0;
 
     // Ten requests of 300 against a 1000 balance: only three may succeed.
     foreach (range(1, 10) as $i) {
         try {
-            $this->ledger->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::VC, $source, $this->wallets->for($b, Currency::VC), 300, idempotencyKey: "req-{$i}"));
+            $this->ledger->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::CH, $source, $this->wallets->for($b, Currency::CH), 300, idempotencyKey: "req-{$i}"));
         } catch (InsufficientBalanceException) {
             $failures++;
         }
@@ -103,7 +103,7 @@ test('ledger transactions are immutable and corrected by reversal', function () 
     $b = User::factory()->create();
     fund($a, 1000);
 
-    $tx = $this->ledger->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::VC, $this->wallets->for($a, Currency::VC), $this->wallets->for($b, Currency::VC), 250));
+    $tx = $this->ledger->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::CH, $this->wallets->for($a, Currency::CH), $this->wallets->for($b, Currency::CH), 250));
 
     expect(fn () => $tx->update(['amount' => 1]))->toThrow(LogicException::class)
         ->and(fn () => $tx->delete())->toThrow(LogicException::class);
@@ -121,10 +121,10 @@ test('ledger transactions are immutable and corrected by reversal', function () 
 test('frozen wallets cannot send funds', function () {
     $agent = User::factory()->agent()->create();
     fund($agent, 1000);
-    $wallet = $this->wallets->for($agent, Currency::VC, WalletType::Allocation);
+    $wallet = $this->wallets->for($agent, Currency::CH, WalletType::Allocation);
     $wallet->forceFill(['is_frozen' => true])->save();
 
-    expect(fn () => $this->ledger->transfer(new TransferRequest(TransactionType::AgentAllocation, Currency::VC, $wallet, $this->wallets->for(User::factory()->create(), Currency::VC), 10)))
+    expect(fn () => $this->ledger->transfer(new TransferRequest(TransactionType::AgentAllocation, Currency::CH, $wallet, $this->wallets->for(User::factory()->create(), Currency::CH), 10)))
         ->toThrow(BusinessRuleException::class, 'frozen');
 });
 
@@ -135,18 +135,18 @@ test('reconciliation matches balances against the ledger', function () {
     expect($this->wallets->reconcile()['ok'])->toBeTrue();
 
     // Tamper with a balance directly (bypassing the ledger) -> detected.
-    DB::table('wallets')->where('id', $this->wallets->for($a, Currency::VC)->id)->update(['balance' => 99999]);
+    DB::table('wallets')->where('id', $this->wallets->for($a, Currency::CH)->id)->update(['balance' => 99999]);
 
     expect($this->wallets->reconcile()['ok'])->toBeFalse();
 });
 
-test('the daily VC reward can only be claimed once per day', function () {
+test('the daily Chips reward can only be claimed once per day', function () {
     $player = User::factory()->create();
 
     $first = $this->wallets->claimDailyReward($player);
     $second = $this->wallets->claimDailyReward($player);
 
     expect($second->id)->toBe($first->id)
-        ->and(balance($player))->toBe(config('pusoy.daily_vc_reward_amount') * 100)
+        ->and(balance($player))->toBe(config('pusoy.daily_chips_reward_amount') * 100)
         ->and(WalletTransaction::query()->where('type', 'DAILY_REWARD')->count())->toBe(1);
 });

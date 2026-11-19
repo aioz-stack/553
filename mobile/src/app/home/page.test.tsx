@@ -10,7 +10,7 @@ vi.mock('@/lib/api', () => ({
   ApiError: class extends Error {},
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5, name: 'Pat Player', username: 'pat', role: 'player' }, logout: vi.fn() }) }));
-vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ vc: '250.00', gd: '0.00', gp: '0.00' }) }));
+vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ chips: '250.00', gold: '0.00' }) }));
 vi.mock('@/lib/useLandscapeLock', () => ({ useLandscapeLock: () => undefined }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn(), useSound: () => [true, vi.fn()] }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), push, back: vi.fn() }), usePathname: () => '/home/' }));
@@ -20,7 +20,7 @@ import Home from './page';
 
 window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false })) as typeof window.matchMedia;
 
-const gold = (over: object = {}) => ({ data: { gold: '0.00', gold_points: '0.00', out_of_gold: true, can_claim: true, claim_amount: 1000, minimum_to_start: 1000, ...over } });
+const gold = (over: object = {}) => ({ data: { gold: '0.00', out_of_gold: true, can_claim: true, claim_amount: 1000, minimum_to_start: 1000, ...over } });
 
 function routes(goldState: ReturnType<typeof gold>) {
   apiMock.mockImplementation((path: string) => {
@@ -46,7 +46,7 @@ describe('Home — Single Player Out of Gold', () => {
     window.history.replaceState(null, '', '/home/?gold=out');
     render(<Home />);
     expect(await screen.findByRole('alertdialog', { name: 'Out of Gold' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'CLAIM 1,000 GOLD POINTS' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CLAIM 1,000 GOLD' })).toBeInTheDocument();
     expect(window.location.search).toBe('');
   });
 
@@ -69,14 +69,15 @@ describe('Home — Single Player Out of Gold', () => {
     apiMock.mockClear();
     fireEvent.click(screen.getByRole('link', { name: 'Multiplayer' }));
     expect(apiMock).not.toHaveBeenCalledWith('/practice/gold');
-    // The Gold balance is shown (the coin HUD); no Gold Points popup without leaving Single Player.
+    // The Gold balance is shown (the coin HUD); no Out of Gold popup without leaving Single Player.
     expect(screen.getByLabelText('Gold balance')).toBeInTheDocument();
   });
 
-  it('shows the server Total Amount in the Gold pill and the Gold Points balance under it', async () => {
-    routes(gold({ gold: '4500.00', total: '5100.00', reserved: '600.00', gold_points: '1000.00', out_of_gold: false, can_claim: false }));
+  it('shows only Gold and Chips: the server Gold Total Amount and the Chips balance', async () => {
+    routes(gold({ gold: '4500.00', total: '5100.00', reserved: '600.00', out_of_gold: false, can_claim: false }));
     render(<Home />);
-    expect(await screen.findByRole('link', { name: 'Gold Points 1,000' })).toHaveAttribute('href', expect.stringContaining('/wallet'));
+    await waitFor(() => expect(screen.getByLabelText('Chips balance')).toHaveTextContent('250'));
+    expect(screen.queryByText(/gold points|diamond|virtual coins|cash points/i)).toBeNull();
     await waitFor(() => expect(screen.getByLabelText('Gold balance')).toHaveTextContent('5,100'));
   });
 });

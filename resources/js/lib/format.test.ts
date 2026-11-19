@@ -4,7 +4,8 @@ import { sortCards } from '../Components/PlayingCard';
 
 describe('formatting helpers', () => {
   it('formats points with two decimals and currency', () => {
-    expect(points('1250.5', 'VC')).toMatch(/^1,250\.50 VC$/);
+    expect(points('1250.5', 'CH')).toMatch(/^1,250\.50 Chips$/);
+    expect(points('3', 'GD')).toMatch(/^3\.00 Gold$/);
     expect(points(null)).toBe('0.00');
   });
 

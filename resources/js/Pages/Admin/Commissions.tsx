@@ -21,7 +21,7 @@ interface Rule {
 }
 
 export default function Commissions() {
-  const { auth, features } = usePage<SharedProps>().props;
+  const { auth } = usePage<SharedProps>().props;
   const isSuper = auth.user?.role === 'super_admin';
   const rules = useApi<{ data: Rule[] }>('/admin/commission-rules');
   const agents = useApi<{ data: Array<{ id: number; name: string; agent?: { id: number; code: string } }> }>(auth.user?.abilities.includes('manage_agents') ? '/admin/agents' : null, { per_page: 100 });
@@ -50,7 +50,7 @@ export default function Commissions() {
   return (
     <PageShell title="Commissions">
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
-      {!features.cp_commission_payouts && <Alert tone="info">Approved VC commissions are paid into the agent's commission wallet. CP commissions stay "approved" — cash payouts are disabled.</Alert>}
+      <Alert tone="info">Approved commissions are paid in Chips into the agent's commission wallet. Chips are never paid out.</Alert>
 
       <Card title="Agent commissions">
         <CommissionsTable
@@ -88,8 +88,7 @@ export default function Commissions() {
               <Field label="Currency">
                 <Select value={rule.currency} onChange={(e) => setRule({ ...rule, currency: e.target.value })}>
                   <option value="">Any</option>
-                  <option value="VC">VC</option>
-                  <option value="CP">CP</option>
+                  <option value="CH">Chips</option>
                 </Select>
               </Field>
               <Field label="Rate (basis points of the platform fee)" hint={percentFromBps(Number(rule.rate_bps) || 0)}>

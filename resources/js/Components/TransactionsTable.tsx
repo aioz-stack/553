@@ -27,8 +27,8 @@ export default function TransactionsTable({ endpoint, staff = false, extraFilter
       <div className="mb-4 flex flex-wrap gap-3">
         <Select value={currency} onChange={(e) => { setCurrency(e.target.value); setPage(1); }} className="w-36">
           <option value="">All currencies</option>
-          <option value="VC">VC</option>
-          <option value="CP">CP</option>
+          <option value="CH">Chips</option>
+          <option value="GD">Gold</option>
         </Select>
         <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1); }} className="w-56">
           <option value="">All types</option>

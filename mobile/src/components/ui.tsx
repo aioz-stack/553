@@ -85,7 +85,7 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
                 </span>
               </Link>
               <span className="ml-auto flex items-center gap-1.5">
-                {hud && <CoinPill amount={balances.vc} currency="VC" compact />}
+                {hud && <CoinPill amount={balances.chips} currency="CH" compact />}
                 {action ?? (
                   <Link href="/notifications/" className="glass flex h-9 w-9 items-center justify-center rounded-xl" aria-label="Notifications">
                     <IconBell className="h-5 w-5 text-gold-300" />

@@ -10,7 +10,7 @@ import { storage } from '@/lib/storage';
 const SLIDES = [
   { art: <CardFan cards={['AS', 'AH', 'KD', 'KC', 'QS']} size="md" spread={10} />, title: '13 cards, 3 hands', text: 'Arrange your cards into a Front (3), Middle (5) and Back (5). The Back must be your strongest.' },
   { art: <IconTrophy className="h-24 w-24 text-gold-400 drop-shadow-[0_6px_0_#9a5b03]" />, title: 'Beat every rival', text: 'Each hand is compared with the same hand of all three opponents: +1 win, −1 loss, 0 tie.' },
-  { art: <div className="flex -space-x-4"><Coin size={72} /><Coin size={72} className="-translate-y-3" /><Coin size={72} /></div>, title: 'Free-play coins', text: 'Play with Virtual Coins from your agent or the daily bonus. VC is never redeemable for money.' },
+  { art: <div className="flex -space-x-4"><Coin currency="GD" size={72} /><Coin currency="CH" size={72} className="-translate-y-3" /><Coin currency="GD" size={72} /></div>, title: 'Gold and Chips', text: 'Gold is for Single Player, Chips are for Multiplayer. They are separate, never mixed, and never cash.' },
   { art: <IconShield className="h-24 w-24 text-mint-400 drop-shadow-[0_6px_0_#06724c]" />, title: 'Provably fair', text: 'Every deck is locked in before the deal and revealed afterwards so anyone can verify it.' },
 ];
 

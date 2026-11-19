@@ -1,5 +1,6 @@
 export type Role = 'super_admin' | 'admin' | 'agent' | 'player';
-export type Currency = 'CP' | 'VC';
+/** GD = Gold (Single Player only), CH = Chips (Multiplayer only). */
+export type Currency = 'GD' | 'CH';
 
 export interface AuthUser {
   id: number;

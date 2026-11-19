@@ -185,7 +185,8 @@ class CommissionService
 
     public function payoutsEnabled(Currency $currency): bool
     {
-        return $currency === Currency::VC || (bool) config('pusoy.features.cp_commission_payouts');
+        // Approved commissions are paid in Chips into the agent's commission wallet.
+        return $currency === Currency::CH;
     }
 
     private function pay(User $actor, AgentCommission $commission): void

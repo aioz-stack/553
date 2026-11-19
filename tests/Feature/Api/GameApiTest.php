@@ -30,8 +30,10 @@ test('a player registers, logs in with a bearer token and reads their wallet', f
 
     $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('data.role', 'player');
     $this->withToken($token)->getJson('/api/v1/wallet')->assertOk()
-        ->assertJsonCount(4, 'data')
-        ->assertJsonPath('meta.cash_withdrawals_enabled', false);
+        // Exactly two wallets: Gold (Single Player) and Chips (Multiplayer).
+        ->assertJsonCount(2, 'data')
+        ->assertJsonMissingPath('meta.cash_withdrawals_enabled');
+    expect(collect($this->withToken($token)->getJson('/api/v1/wallet')->json('data'))->pluck('currency')->sort()->values()->all())->toBe(['CH', 'GD']);
 
     $this->withToken($token)->postJson('/api/v1/auth/logout')->assertOk();
 });
@@ -89,15 +91,15 @@ test('four players play a full game through the API', function () {
     $this->actingAs($players[0])->getJson('/api/v1/leaderboard')->assertOk()->assertJsonCount(4, 'data');
 });
 
-test('room listing hides private rooms and flags disabled CP rooms', function () {
-    GameRoom::factory()->create(['name' => 'Public VC']);
-    GameRoom::factory()->cp()->create(['name' => 'CP Room']);
+test('room listing hides private rooms; every room plays for Chips', function () {
+    GameRoom::factory()->create(['name' => 'Public Chips']);
     GameRoom::factory()->create(['name' => 'Secret', 'visibility' => 'private']);
 
     $rooms = $this->actingAs(User::factory()->create())->getJson('/api/v1/rooms')->assertOk()->json('data');
 
     expect(collect($rooms)->pluck('name')->all())->not->toContain('Secret')
-        ->and(collect($rooms)->firstWhere('name', 'CP Room')['enabled'])->toBeFalse();
+        ->and(collect($rooms)->pluck('currency')->unique()->values()->all())->toBe(['CH'])
+        ->and(collect($rooms)->firstWhere('name', 'Public Chips')['enabled'])->toBeTrue();
 });
 
 test('players create private rooms but cannot choose the payout mode', function () {
@@ -107,7 +109,7 @@ test('players create private rooms but cannot choose the payout mode', function 
         ->assertCreated()->json('data');
 
     expect($room['visibility'])->toBe('private')
-        ->and($room['currency'])->toBe('VC')
+        ->and($room['currency'])->toBe('CH')
         ->and($room['payout_mode'])->toBe(config('pusoy.private_room_payout_mode'));
 });
 
@@ -115,13 +117,13 @@ test('admins manage rooms through the API and edits are audited', function () {
     $super = superAdmin();
 
     $room = $this->actingAs($super)->postJson('/api/v1/admin/rooms', [
-        'name' => 'Admin Room', 'currency' => 'VC', 'entry_amount' => '90', 'payout_mode' => 'round_bank',
+        'name' => 'Admin Room', 'currency' => 'CH', 'entry_amount' => '90', 'payout_mode' => 'round_bank',
         'platform_fee_bps' => 500, 'point_value' => '10', 'arrangement_seconds' => 60, 'tie_handling' => 'split_equally',
         'timeout_policy' => 'auto_arrange', 'visibility' => 'public', 'status' => 'active',
     ])->assertCreated()->json('data');
 
     $this->actingAs($super)->postJson('/api/v1/admin/rooms', [
-        'name' => 'Bad', 'currency' => 'VC', 'entry_amount' => '90', 'payout_mode' => 'round_bank',
+        'name' => 'Bad', 'currency' => 'CH', 'entry_amount' => '90', 'payout_mode' => 'round_bank',
         'platform_fee_bps' => 500, 'point_value' => '11', 'arrangement_seconds' => 60, 'tie_handling' => 'split_equally',
         'timeout_policy' => 'auto_arrange', 'visibility' => 'public', 'status' => 'active',
     ])->assertUnprocessable()->assertJsonValidationErrors('point_value');

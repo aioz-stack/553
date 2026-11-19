@@ -1,53 +1,42 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { Coin, GameButton, Ribbon } from '@/components/game';
 import { IconList } from '@/components/icons';
 import { Notice, Screen } from '@/components/ui';
-import { errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { convertGoldPoints, walletChanged } from '@/lib/gold';
 import { points, useFetch } from '@/lib/hooks';
 import type { Currency, Wallet } from '@/lib/types';
+import { useGoldWallet } from '@/lib/useGoldWallet';
 
-/** Each wallet's name, note and colours. Gold / Gold Points are Single Player; VC is Multiplayer; CP is cash (disabled). */
+/** The game's two wallets: Gold (Single Player) and Chips (Multiplayer). */
 const INFO: Record<Currency, { name: string; note: string; bg: string; order: number }> = {
-  GD: { name: 'Gold', note: 'Single Player · won and lost automatically · free-play, not redeemable', bg: 'from-gold-400 via-gold-600 to-night-800', order: 0 },
-  GP: { name: 'Gold Points', note: 'Free reward · converts 1:1 into Gold · not redeemable', bg: 'from-fuchsia-500 via-purple-700 to-night-800', order: 1 },
-  VC: { name: 'Virtual Coins', note: 'Free-play · not redeemable', bg: 'from-felt-400 via-felt-600 to-night-800', order: 2 },
-  CP: { name: 'Cash Points', note: 'Accounting points · cash features disabled', bg: 'from-slate-500 via-slate-700 to-slate-900', order: 3 },
+  GD: { name: 'Gold', note: 'Single Player only · won and lost automatically', bg: 'from-gold-400 via-gold-600 to-night-800', order: 0 },
+  CH: { name: 'Chips', note: 'Multiplayer only · rooms, lobbies and Banker Mode', bg: 'from-[#e0262f] via-[#8a0a10] to-night-800', order: 1 },
 };
 
 export default function WalletScreen() {
   const { user } = useAuth();
   const { data, reload } = useFetch<{ data: Wallet[] }>(user ? '/wallet' : null);
-  const wallets = (data?.data.filter((w) => w.type === 'player') ?? []).sort((a, b) => (INFO[a.currency]?.order ?? 9) - (INFO[b.currency]?.order ?? 9));
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  // Gold is shown as its Total Amount (spendable + in an open round): the same number as Home and Single Player.
+  const { wallet: goldWallet } = useGoldWallet(user?.id);
+  const reserved = goldWallet?.reserved ? Number(goldWallet.reserved) : 0;
+  const wallets = (data?.data.filter((w) => w.type === 'player' && w.currency in INFO) ?? []).sort((a, b) => INFO[a.currency].order - INFO[b.currency].order);
 
-  const convert = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const r = await convertGoldPoints();
-      setMessage({ tone: 'success', text: r.message });
-      reload();
-      walletChanged();
-    } catch (e) {
-      setMessage({ tone: 'error', text: errorText(e) });
-    } finally {
-      setBusy(false);
-    }
-  };
+  // Stay in sync with every other screen: reload after any wallet change.
+  useEffect(() => {
+    const onChange = () => reload();
+    window.addEventListener('pusoy:wallet', onChange);
+    return () => window.removeEventListener('pusoy:wallet', onChange);
+  }, [reload]);
 
   return (
     <Screen title="Your wallet">
       <Ribbon tone="gold" className="mb-3">Wallet</Ribbon>
-      {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
       {wallets.map((w) => {
-        const info = INFO[w.currency] ?? INFO.VC;
+        const info = INFO[w.currency];
         return (
           <div key={w.id} className="gold-rim mb-4 rounded-[1.6rem] p-[3px] shadow-[0_10px_24px_rgb(0_0_0/0.45)]">
             <div className={`relative overflow-hidden rounded-[1.45rem] bg-gradient-to-br p-5 ${info.bg}`}>
@@ -56,24 +45,22 @@ export default function WalletScreen() {
                 <Coin currency={w.currency} size={64} className="animate-float" />
                 <div className="min-w-0 flex-1">
                   <p className="font-display text-sm font-bold text-white/75">{info.name}</p>
-                  <p className="font-display text-4xl font-black text-gold-200 drop-shadow-[0_2px_0_rgb(0_0_0/0.4)]">{points(w.balance)}</p>
+                  <p className="font-display text-4xl font-black text-gold-200 drop-shadow-[0_2px_0_rgb(0_0_0/0.4)]" aria-label={`${info.name} balance`}>
+                    {points(w.currency === 'GD' && goldWallet ? (goldWallet.total ?? goldWallet.gold) : w.balance)}
+                  </p>
                   <p className="text-xs text-white/60">
                     {info.note}
+                    {w.currency === 'GD' && reserved > 0 ? ` · ${points(reserved)} in play` : ''}
                     {w.is_frozen ? ' · frozen' : ''}
                   </p>
                 </div>
               </div>
-              {w.currency === 'GP' && Number(w.balance) > 0 && (
-                <GameButton tone="green" size="sm" className="mt-3 w-full" onClick={convert} disabled={busy}>
-                  {busy ? 'CONVERTING…' : 'CONVERT ALL TO GOLD (1:1)'}
-                </GameButton>
-              )}
             </div>
           </div>
         );
       })}
 
-      <Notice tone="info">Every wallet is separate and never combined. Gold, Gold Points and VC can never be withdrawn, redeemed or converted to CP; Gold Points only convert into Gold.</Notice>
+      <Notice tone="info">Gold and Chips are separate wallets: they are never combined, transferred or exchanged, and neither can be deposited, withdrawn or redeemed.</Notice>
 
       <Link href="/transactions/">
         <GameButton tone="purple" size="lg" className="flex w-full items-center justify-center gap-2">

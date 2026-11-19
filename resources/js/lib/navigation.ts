@@ -93,8 +93,8 @@ const staff: NavGroup[] = [
     title: 'ECONOMY',
     items: [
       { key: 'admin-wallets', label: 'WALLET MANAGEMENT', href: '/admin/wallets', icon: IconWallet, ability: 'review_transactions' },
-      { key: 'admin-cp', label: 'CP MANAGEMENT', href: '/admin/wallets?currency=CP', icon: IconCoins, ability: 'review_transactions' },
-      { key: 'admin-vc', label: 'VC MANAGEMENT', href: '/admin/wallets?currency=VC', icon: IconCoins, ability: 'review_transactions' },
+      { key: 'admin-chips', label: 'CHIPS MANAGEMENT', href: '/admin/wallets?currency=CH', icon: IconCoins, ability: 'review_transactions' },
+      { key: 'admin-gold', label: 'GOLD MANAGEMENT', href: '/admin/wallets?currency=GD', icon: IconCoins, ability: 'review_transactions' },
       { key: 'admin-allocations', label: 'ALLOCATIONS', href: '/admin/allocations', icon: IconCoins, ability: 'allocate_points' },
       { key: 'admin-transactions', label: 'TRANSACTIONS', href: '/admin/transactions', icon: IconList, ability: 'review_transactions' },
       { key: 'admin-commissions', label: 'COMMISSIONS', href: '/admin/commissions', icon: IconTrophy, ability: 'manage_commissions' },

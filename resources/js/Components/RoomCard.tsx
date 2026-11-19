@@ -32,7 +32,7 @@ export default function RoomCard({ room }: { room: Room }) {
           <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">{room.name}</h4>
           <p className="text-sm text-gray-500 dark:text-gray-400">{room.description}</p>
         </div>
-        <Badge tone={room.currency === 'VC' ? 'brand' : 'warning'}>{room.currency}</Badge>
+        <Badge tone="brand">Chips</Badge>
       </div>
       <dl className="mb-4 grid grid-cols-2 gap-2 text-sm">
         <dt className="text-gray-500">Entry</dt>
