@@ -184,3 +184,35 @@ test('Gold and Gold Points stay out of Multiplayer: no room, allocation or payou
     app(WalletService::class)->provision($admin);
     expect($admin->wallets()->whereIn('currency', ['GD', 'GP'])->get()->map(fn ($w) => $w->type instanceof BackedEnum ? $w->type->value : $w->type)->unique()->values()->all())->toBe(['player']);
 });
+
+test('the wallet reports the Total Amount: spendable Gold plus what is reserved for the open round', function () {
+    $me = gwPlayer(5_000);
+    gwState($this, $me)->assertJsonPath('data.total', '5000.00')->assertJsonPath('data.reserved', '0.00');
+
+    $match = $this->actingAs($me, 'sanctum')->postJson('/api/v1/practice/matches', ['tier' => 'beginner'])->json('data.id');
+    $deal = $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/deal", [])->assertCreated();
+    $reserved = $deal->json('data.reserved');
+
+    gwState($this, $me)->assertJsonPath('data.reserved', \App\Support\Points::decimal($reserved * 100))
+        ->assertJsonPath('data.gold', \App\Support\Points::decimal((5_000 - $reserved) * 100))
+        ->assertJsonPath('data.total', '5000.00');
+
+    $game = PracticeGame::query()->findOrFail($deal->json('data.id'));
+    $a = \App\Game\AutoArranger::arrange($game->hands[1]);
+    $net = $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$game->id}/submit", ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back])->json('data.result.gold');
+    gwState($this, $me)->assertJsonPath('data.reserved', '0.00')->assertJsonPath('data.total', \App\Support\Points::decimal((5_000 + $net) * 100));
+    expect(balance($me, Currency::GD))->toBe((5_000 + $net) * 100);
+});
+
+test('a match in progress stays playable below the tier minimum while Gold covers the next round', function () {
+    $me = gwPlayer(1_000);
+    $match = $this->actingAs($me, 'sanctum')->postJson('/api/v1/practice/matches', ['tier' => 'beginner'])->json('data.id');
+    PracticeMatch::query()->whereKey($match)->update(['rounds_played' => 1]); // round 2: LuckyBot banks
+    $wallets = app(WalletService::class);
+    app(LedgerService::class)->transfer(new TransferRequest(TransactionType::PlayerDebit, Currency::GD, $wallets->for($me, Currency::GD), null, 400_00, 'test'));
+
+    // 600 Gold: below Beginner's 1,000 to start, but enough for this match's next round.
+    $tiers = collect($this->actingAs($me, 'sanctum')->getJson('/api/v1/practice/tiers')->json('data'))->keyBy('key');
+    expect($tiers['beginner']['eligible'])->toBeTrue()->and($tiers['intermediate']['eligible'])->toBeFalse();
+    $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/deal", ['bet' => 50])->assertCreated();
+});

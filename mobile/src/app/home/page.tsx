@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
-import { Avatar, Diamond } from '@/components/game';
+import { Avatar, Coin, Diamond } from '@/components/game';
 import { CandyText, CrownArt, ExitArt, GearArt, GoldCoins, LogoCrest, RoundBankArt, SpeakerArt } from '@/components/HomeArt';
 import { IconBell, IconGift, IconPlus, IconTrophy } from '@/components/icons';
 import LandscapeStage, { useToStage } from '@/components/LandscapeStage';
@@ -23,6 +23,7 @@ import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
+import { useGoldWallet } from '@/lib/useGoldWallet';
 import { fetchGold, type GoldWallet } from '@/lib/gold';
 import { practiceUrl } from '@/lib/singlePlayer';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
@@ -199,7 +200,9 @@ function useCountUp(target: number | undefined): number | undefined {
 export default function Home() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const { vc, gd } = useBalance(user?.id);
+  const { vc } = useBalance(user?.id);
+  // Single Player Gold wallet (Total Amount + Gold Points): the same server source as the game screens.
+  const { wallet: goldWallet } = useGoldWallet(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
   const wallet = useFetch<{ meta: { daily_reward_enabled: boolean; daily_reward_claimed: boolean } }>(user ? '/wallet' : null);
   const unread = useFetch<{ meta: { unread: number } }>(user ? '/notifications' : null).data?.meta.unread ?? 0;
@@ -210,7 +213,8 @@ export default function Home() {
   const [settings, setSettings] = useState(false);
   const [avatarPicker, setAvatarPicker] = useState(false);
   const diamonds = useCountUp(vc !== undefined ? Math.floor(Number(vc)) : undefined);
-  const coins = useCountUp(gd !== undefined ? Math.floor(Number(gd)) : undefined);
+  const coins = useCountUp(goldWallet ? Math.floor(Number(goldWallet.total ?? goldWallet.gold)) : undefined);
+  const goldPoints = goldWallet ? Math.floor(Number(goldWallet.gold_points)) : undefined;
   // Single Player Out of Gold: the free Gold Points popup (never shown for Multiplayer).
   const [outOfGold, setOutOfGold] = useState<GoldWallet | null>(null);
 
@@ -313,6 +317,16 @@ export default function Home() {
 
         {/* Balances: gold coins = Single Player Gold, diamonds = VC (never combined). "+" opens the wallet; no deposits. */}
         <BalancePill x={1046} w={260} label="Gold balance" value={coins} icon={<GoldCoins size={78} />} seed={7} delay={0.6} />
+        {/* Gold Points under the Gold pill */}
+        <Link href="/wallet/" aria-label={`Gold Points ${goldPoints !== undefined ? goldPoints.toLocaleString() : ''}`} onClick={() => play('tap')} className="lx-gold lx-tile absolute left-[1062px] top-[150px] flex h-[58px] w-[214px] items-center rounded-full p-[4px] shadow-[0_5px_0_#8a4a00]">
+          <span className="flex h-full w-full items-center gap-2 rounded-full bg-gradient-to-b from-[#4a0f96] to-[#24064f] pl-1 pr-3">
+            <Coin currency="GP" size={44} />
+            <span className="flex flex-col leading-none">
+              <span className="font-display text-[13px] font-black uppercase text-[#f5b6ff]">Gold Points</span>
+              <span className="font-display text-[26px] font-black text-white">{goldPoints !== undefined ? goldPoints.toLocaleString() : '…'}</span>
+            </span>
+          </span>
+        </Link>
         <BalancePill x={1320} w={260} label="Diamond (VC) balance" value={diamonds} icon={<Diamond size={78} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} delay={1.5} />
 
         {/* Quick icons under the balance */}

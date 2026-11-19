@@ -83,6 +83,9 @@ class PracticeService
     {
         $gold = $this->goldMinor($user);
         $rows = [];
+        // The tier minimum applies when a match starts; a match in progress continues while you can cover a round.
+        $active = $this->activeMatch($user);
+        $continuing = $active && $active->wagering && ! $this->gold->isOutOfGold($user, $active) ? $active->tier : null;
 
         foreach ((array) config('pusoy.practice.tiers', []) as $key => $tier) {
             $rows[] = [
@@ -92,7 +95,7 @@ class PracticeService
                 'crown' => (bool) ($tier['crown'] ?? false),
                 'min_gold' => (int) $tier['min_gold'],
                 'bets' => array_map('intval', $tier['bets']),
-                'eligible' => $gold >= Points::toMinor((int) $tier['min_gold']),
+                'eligible' => $gold >= Points::toMinor((int) $tier['min_gold']) || $continuing === $key,
             ];
         }
 
@@ -214,10 +217,10 @@ class PracticeService
                 self::assertFullDeal($deck, $hands);
                 $arrangements = [];
 
-                // Bot strength by tier: the first `strong_bots` bots arrange with BotArranger (searches for the
-                // best-balanced valid arrangement); the others play casually (random but never fouled).
-                foreach (array_keys(self::BOTS) as $i => $seat) {
-                    $a = $i < (int) $tier['strong_bots'] ? BotArranger::arrange($hands[$seat]) : self::casualArrange($hands[$seat]);
+                // Every bot, at every level, arranges with BotArranger: an exhaustive search of all valid
+                // Front / Middle / Back splits for the best expected Round Bank result. Never random, never fouled.
+                foreach (array_keys(self::BOTS) as $seat) {
+                    $a = BotArranger::arrange($hands[$seat]);
                     $arrangements[$seat] = ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back];
                 }
 
@@ -659,29 +662,6 @@ class PracticeService
         if (! $ok) {
             throw new \RuntimeException('Deal integrity check failed: the deck must be 52 distinct cards, 13 to each seat.');
         }
-    }
-
-    /**
-     * A beginner-level bot: a random arrangement that is not fouled.
-     *
-     * @param  list<string>  $cards
-     */
-    public static function casualArrange(array $cards): Arrangement
-    {
-        for ($try = 0; $try < 400; $try++) {
-            $deck = $cards;
-            for ($i = count($deck) - 1; $i > 0; $i--) {
-                $j = random_int(0, $i);
-                [$deck[$i], $deck[$j]] = [$deck[$j], $deck[$i]];
-            }
-            $a = new Arrangement(array_slice($deck, 0, 3), array_slice($deck, 3, 5), array_slice($deck, 8, 5));
-
-            if (! $a->isFoul()) {
-                return $a;
-            }
-        }
-
-        return AutoArranger::arrange($cards);
     }
 
     // ------------------------------------------------------------------ presentation

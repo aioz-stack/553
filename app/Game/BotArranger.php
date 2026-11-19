@@ -3,110 +3,215 @@
 namespace App\Game;
 
 /**
- * Bot "intelligence" for arranging 13 cards (server-side only).
+ * Bot strategy for arranging 13 cards (server-side only, deterministic, never fouls).
  *
- * The greedy AutoArranger always puts the single strongest five cards at the
- * Back, which often leaves a weak Middle and Front. BotArranger searches many
- * valid arrangements instead and keeps the one most likely to win lanes:
+ * 1. Every five-card hand of the 13 (1,287) and every three-card hand (286) is
+ *    evaluated once and encoded as one integer strength (category, then the
+ *    tie-break ranks), so lane order checks are integer comparisons with
+ *    exactly the HandValue rules: Back ≥ Middle ≥ Front.
+ * 2. The search is exhaustive: every Back, every Middle of the 8 cards left
+ *    and the last 3 as Front — all ~72,000 splits. Fouled splits are skipped.
+ * 3. Each lane's chance of beating an opponent's same lane comes from
+ *    BotStrength: measured percentiles of real bot arrangements (self-play,
+ *    `php artisan pusoy:calibrate-bots`), not guesses.
+ * 4. The bot keeps the split with the highest expected Round Bank result,
+ *    using the settlement table (3-0 = +2 ×, 2-1 = +1 ×, 1-2 = −1 ×,
+ *    0-3 = −2 ×, config pusoy.banker.settlement), lanes treated as
+ *    independent. Ties go to the stronger Back, then Middle, then Front.
  *
- *  1. Candidate Backs: the K strongest distinct five-card hands of the 13.
- *  2. For each, candidate Middles: every five-card hand of the remaining 8
- *     that is not stronger than the Back; the last 3 cards are the Front.
- *  3. Discard fouled arrangements, score the rest and keep the best.
- *
- * Score = Σ lane weight × estimated chance of beating a typical opponent's
- * same lane (a rough table by hand category, nudged by the top rank). Front
- * and Middle wins are weighted a little higher because they are where most
- * lanes are decided. Deterministic for a given hand; never fouls.
+ * Declared Luck (Three Flushes, No Face Cards, Six Pairs) is checked
+ * separately by the game services before this arrangement is used.
  */
 final class BotArranger
 {
-    /** Rough chance that a hand of this category wins its lane, by position. */
-    private const BACK = [0 => 0.02, 1 => 0.10, 2 => 0.30, 3 => 0.50, 4 => 0.62, 5 => 0.72, 6 => 0.85, 7 => 0.96, 8 => 0.99, 9 => 1.0];
+    private const BASE = 15;
 
-    private const MIDDLE = [0 => 0.08, 1 => 0.35, 2 => 0.60, 3 => 0.75, 4 => 0.84, 5 => 0.89, 6 => 0.95, 7 => 0.99, 8 => 1.0, 9 => 1.0];
-
-    private const FRONT = [0 => 0.30, 1 => 0.75, 3 => 0.99];
-
-    private const WEIGHTS = ['front' => 1.15, 'middle' => 1.1, 'back' => 1.0];
+    /** @var list<list<int>>|null 5-of-8 index patterns */
+    private static ?array $middlePatterns = null;
 
     /**
-     * @param  list<string>  $cards
+     * @param  list<string>  $cards  13 distinct cards
      */
-    public static function arrange(array $cards, int $backCandidates = 14): Arrangement
+    public static function arrange(array $cards): Arrangement
     {
-        $fives = [];
-        foreach (self::combinations($cards, 5) as $combo) {
-            $fives[] = [$combo, HandEvaluator::evaluate($combo)];
+        $cards = array_values($cards);
+
+        if (count($cards) !== 13) {
+            return AutoArranger::arrange($cards);
         }
-        usort($fives, fn (array $a, array $b) => $b[1]->compare($a[1]));
 
+        $payoff = self::payoffTable();
+        $five = [];   // mask => [strength, P(win as Middle), P(win as Back)]
+        $three = [];  // mask => [strength, P(win as Front)]
+
+        foreach (self::masks(13, 5) as $mask) {
+            $s = self::strength(HandEvaluator::evaluate(self::pick($cards, $mask)));
+            $five[$mask] = [$s, BotStrength::chance('middle', $s), BotStrength::chance('back', $s)];
+        }
+        foreach (self::masks(13, 3) as $mask) {
+            $s = self::strength(HandEvaluator::evaluate(self::pick($cards, $mask)));
+            $three[$mask] = [$s, BotStrength::chance('front', $s)];
+        }
+
+        $patterns = self::$middlePatterns ??= self::patterns();
+        $full = (1 << 13) - 1;
         $best = null;
-        $bestScore = -1.0;
+        $bestKey = null;
 
-        foreach (array_slice($fives, 0, $backCandidates) as [$back, $backValue]) {
-            $rest = array_values(array_diff($cards, $back));
+        foreach ($five as $backMask => [$backS, , $pBack]) {
+            $restBits = [];
+            for ($i = 0, $rest = $full & ~$backMask; $i < 13; $i++) {
+                if ($rest & (1 << $i)) {
+                    $restBits[] = 1 << $i;
+                }
+            }
 
-            foreach (self::combinations($rest, 5) as $middle) {
-                $middleValue = HandEvaluator::evaluate($middle);
+            foreach ($patterns as $pattern) {
+                $midMask = $restBits[$pattern[0]] | $restBits[$pattern[1]] | $restBits[$pattern[2]] | $restBits[$pattern[3]] | $restBits[$pattern[4]];
+                [$midS, $pMid] = $five[$midMask];
 
-                if ($middleValue->compare($backValue) > 0) {
+                if ($midS > $backS) {
                     continue;
                 }
 
-                $front = array_values(array_diff($rest, $middle));
-                $arrangement = new Arrangement($front, $middle, $back);
+                $frontMask = $rest & ~$midMask;
+                [$frontS, $pFront] = $three[$frontMask];
 
-                if ($arrangement->isFoul()) {
+                // Front vs Middle compares only the ranks both hands have (HandValue::compare); the 0-padded
+                // Front strength is above the Middle's exactly when an overlapping rank is higher (a foul).
+                if ($frontS > $midS) {
                     continue;
                 }
 
-                $score = self::score($arrangement);
+                $ev = self::expected($pFront, $pMid, $pBack, $payoff);
+                $key = [$ev, $backS, $midS, $frontS];
 
-                if ($score > $bestScore) {
-                    $best = $arrangement;
-                    $bestScore = $score;
+                if ($bestKey === null || self::better($key, $bestKey)) {
+                    $bestKey = $key;
+                    $best = [$frontMask, $midMask, $backMask];
                 }
             }
         }
 
-        return $best ?? AutoArranger::arrange($cards);
+        if ($best === null) {
+            return AutoArranger::arrange($cards);
+        }
+
+        return new Arrangement(self::pick($cards, $best[0]), self::pick($cards, $best[1]), self::pick($cards, $best[2]));
     }
 
+    /**
+     * Expected result (in bets) of a split vs one opponent, from the three lane win chances.
+     *
+     * @param  array<int, float>  $payoff  lanes won (0-3) => multiple
+     */
+    public static function expected(float $pFront, float $pMid, float $pBack, array $payoff): float
+    {
+        $ev = 0.0;
+        foreach ([0, 1] as $f) {
+            foreach ([0, 1] as $m) {
+                foreach ([0, 1] as $b) {
+                    $p = ($f ? $pFront : 1 - $pFront) * ($m ? $pMid : 1 - $pMid) * ($b ? $pBack : 1 - $pBack);
+                    $ev += $p * $payoff[$f + $m + $b];
+                }
+            }
+        }
+
+        return $ev;
+    }
+
+    /** Expected result of an arrangement (for tests and analysis). */
     public static function score(Arrangement $a): float
     {
-        return self::WEIGHTS['front'] * self::chance(self::FRONT, $a->frontValue)
-            + self::WEIGHTS['middle'] * self::chance(self::MIDDLE, $a->middleValue)
-            + self::WEIGHTS['back'] * self::chance(self::BACK, $a->backValue);
+        return self::expected(
+            BotStrength::chance('front', self::strength($a->frontValue)),
+            BotStrength::chance('middle', self::strength($a->middleValue)),
+            BotStrength::chance('back', self::strength($a->backValue)),
+            self::payoffTable(),
+        );
     }
 
     /**
-     * @param  array<int, float>  $table
+     * One integer per hand: category, then up to five tie-break ranks (0-padded).
+     * Same lane: bigger = stronger, equal = tie (exactly HandValue::compare).
      */
-    private static function chance(array $table, HandValue $v): float
+    public static function strength(HandValue $v): int
     {
-        $base = $table[$v->category->value] ?? 1.0;
-        $next = $table[$v->category->value + 1] ?? ($table[$v->category->value + 2] ?? 1.0);
-        // Within a category, a higher top rank moves part of the way to the next category.
-        $top = $v->ranks[0] ?? 2;
+        $n = $v->category->value;
+        for ($i = 0; $i < 5; $i++) {
+            $n = $n * self::BASE + ($v->ranks[$i] ?? 0);
+        }
 
-        return $base + ($next - $base) * max(0, $top - 2) / 12 * 0.8;
+        return $n;
+    }
+
+    /** @return array<int, float> lanes won (0-3) => multiple of the bet */
+    private static function payoffTable(): array
+    {
+        $default = ['3-0-0' => 2, '2-1-0' => 1, '1-2-0' => -1, '0-3-0' => -2];
+        // Outside the framework (pure unit tests, tools) the standard Round Bank table applies.
+        $table = function_exists('app') && app()->bound('config') ? (array) config('pusoy.banker.settlement', $default) : $default;
+        $out = [];
+        foreach ([0, 1, 2, 3] as $wins) {
+            $out[$wins] = (float) ($table["{$wins}-".(3 - $wins).'-0'] ?? $default["{$wins}-".(3 - $wins).'-0']);
+        }
+
+        return $out;
+    }
+
+    /** @param  array{0: float, 1: int, 2: int, 3: int}  $a */
+    private static function better(array $a, array $b): bool
+    {
+        if (abs($a[0] - $b[0]) > 1e-9) {
+            return $a[0] > $b[0];
+        }
+
+        return [$a[1], $a[2], $a[3]] > [$b[1], $b[2], $b[3]];
     }
 
     /**
-     * @param  list<string>  $items
-     * @return \Generator<list<string>>
+     * @param  list<string>  $cards
+     * @return list<string>
      */
-    private static function combinations(array $items, int $size, int $start = 0, array $current = []): \Generator
+    private static function pick(array $cards, int $mask): array
     {
-        if (count($current) === $size) {
-            yield $current;
-
-            return;
+        $out = [];
+        foreach ($cards as $i => $card) {
+            if ($mask & (1 << $i)) {
+                $out[] = $card;
+            }
         }
 
-        for ($i = $start, $n = count($items); $i <= $n - ($size - count($current)); $i++) {
-            yield from self::combinations($items, $size, $i + 1, [...$current, $items[$i]]);
+        return $out;
+    }
+
+    /** @return list<int> every $k-bit mask of $n bits */
+    private static function masks(int $n, int $k): array
+    {
+        $out = [];
+        for ($m = 0; $m < (1 << $n); $m++) {
+            if (substr_count(decbin($m), '1') === $k) {
+                $out[] = $m;
+            }
         }
+
+        return $out;
+    }
+
+    /** @return list<list<int>> every 5-of-8 index pattern */
+    private static function patterns(): array
+    {
+        $out = [];
+        foreach (self::masks(8, 5) as $m) {
+            $idx = [];
+            for ($i = 0; $i < 8; $i++) {
+                if ($m & (1 << $i)) {
+                    $idx[] = $i;
+                }
+            }
+            $out[] = $idx;
+        }
+
+        return $out;
     }
 }

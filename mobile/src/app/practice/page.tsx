@@ -7,6 +7,7 @@ import { CandyText, GoldCoins } from '@/components/HomeArt';
 import LandscapeStage from '@/components/LandscapeStage';
 import PlayingCard, { sortCards } from '@/components/PlayingCard';
 import DealAnimation from '@/components/table/DealAnimation';
+import GoldWalletHud from '@/components/table/GoldWalletHud';
 import LuckPopup from '@/components/table/LuckPopup';
 import { useCardDrag } from '@/components/table/useCardDrag';
 import { fxAt, isUp, laneShown, RevealBanner, RevealFx, revealPlan, useRevealClock, type RevealPlan } from '@/components/table/RevealShow';
@@ -20,7 +21,7 @@ import { OUT_OF_GOLD_URL, type GoldWallet } from '@/lib/gold';
 import { PICKER_URL, saveSelection, selectionFromUrl, type PracticeTier } from '@/lib/singlePlayer';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
-import { useBalance } from '@/lib/useBalance';
+import { useGoldWallet } from '@/lib/useGoldWallet';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
 import { reducedNow } from '@/lib/motion';
 
@@ -234,7 +235,8 @@ function RevealedHand({ p, card, step, gap, horizontal, plan = null, now = Numbe
 export default function Practice() {
   const { user } = useAuth();
   const router = useRouter();
-  const { gd } = useBalance(user?.id);
+  // Your Gold wallet from the server (Total Amount, Gold Points): the same source as Home and the arrangement popup.
+  const { wallet: goldWallet } = useGoldWallet(user?.id);
   const [soundOn] = useSound();
   useLandscapeLock();
 
@@ -388,7 +390,8 @@ export default function Practice() {
       setRound(r.data);
       setMatch((x) => (x ? { ...x, current: r.data, next_round: null, next_banker: null, next_banker_name: null } : x));
       setPhase('arranging');
-      if (r.data.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
+      // The deal reserved Gold: every wallet display reloads from the server.
+      window.dispatchEvent(new Event('pusoy:wallet'));
       // Play the shuffle-and-deal animation once per round (never again for the same round, e.g. on
       // a resume); manual arrangement opens only when it has finished (dealDone).
       if (firstShowing(r.data.id)) setDealing(r.data.id);
@@ -431,7 +434,8 @@ export default function Practice() {
     const plan = show && !reducedNow() && firstReveal(r.id) ? revealPlan(r.players, r.banker) : null;
     if (plan) setReveal({ id: r.id, plan });
     else resultSound(r);
-    if (r.wagering) window.dispatchEvent(new Event('pusoy:wallet'));
+    // The round settled: every wallet display reloads from the server.
+    window.dispatchEvent(new Event('pusoy:wallet'));
     if (!match) return;
     try {
       const m = await api<{ data: MatchState }>(`/practice/matches/${match.id}`);
@@ -611,7 +615,6 @@ export default function Practice() {
   const canBet = !!tier && tier.eligible && !revealing && (phase === 'betting' || (revealed && !matchOver));
   // Who banks the round the chips (or Deal) are for.
   const nextBanker = revealed ? bankerFor(roundNo + 1) : banker;
-  const gold = gd !== undefined ? Math.floor(Number(gd)) : undefined;
   const result = round?.result;
   const outcomeText = (() => {
     if (!result || !round) return '';
@@ -676,6 +679,9 @@ export default function Practice() {
           <MiniCrest />
         </div>
 
+        {/* Your Gold wallet: Total Amount + Gold Points (live from the server) */}
+        <GoldWalletHud wallet={goldWallet} className="absolute right-[365px] top-[12px] z-20" />
+
         {/* Bet pill + round / banker + match gold */}
         <div className="lx-gold absolute right-[20px] top-[18px] z-20 h-[76px] w-[330px] rounded-[24px] p-[5px] shadow-[0_6px_0_#7a3e00]">
           <div className="flex h-full items-center gap-2 rounded-[19px] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-3">
@@ -691,7 +697,7 @@ export default function Practice() {
           </span>
           {match && (
             <span className="rounded-full bg-black/45 px-4 py-0.5 text-[18px] text-white/90" aria-label="Match gold">
-              {tier?.name} · Match <span className={tone(match.gold)}>{signed(match.gold)}</span> · Gold {gold !== undefined ? fmt(gold) : '…'}
+              {tier?.name} · Match <span className={tone(match.gold)}>{signed(match.gold)}</span>
             </span>
           )}
         </div>
@@ -948,7 +954,7 @@ export default function Practice() {
             tierName={`${round.tier.name} · R${round.round} · ${banksText(round.banker)}`}
             bet={round.bet}
             betLabel={round.banker === 1 ? `Covering ${fmt(round.covered ?? 0)}` : undefined}
-            gold={gold}
+            wallet={goldWallet}
             seats={{ left: { name: BOTS[2] }, right: { name: BOTS[4] } }}
             declaring={declaring}
             onDeclare={declareLuck}

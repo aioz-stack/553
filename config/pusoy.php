@@ -59,8 +59,8 @@ return [
     | Settlement follows the 'banker' section below. Every round moves Gold (GD,
     | free-play, never cash) automatically: App\Services\Game\GoldService.
     | out_of_gold_reward: free Gold Points claimed when the player is Out of Gold.
-    | strong_bots (0-3): how many of the 3 bots arrange with BotArranger (best
-    | balanced valid arrangement); the others arrange casually (non-fouled).
+    | Every bot arranges with App\Game\BotArranger (exhaustive search for the best
+    | expected Round Bank result; calibrate with `php artisan pusoy:calibrate-bots`).
     */
     'practice' => [
         'rounds' => (int) env('SINGLE_PLAYER_ROUNDS', 12),
@@ -68,10 +68,10 @@ return [
         // Banker advantage: an identical lane goes to the banker (no ties).
         'banker_wins_ties' => true,
         'tiers' => [
-            'beginner' => ['name' => 'Beginner', 'stars' => 1, 'crown' => false, 'min_gold' => 1_000, 'bets' => [50, 100, 500], 'strong_bots' => 0],
-            'intermediate' => ['name' => 'Intermediate', 'stars' => 2, 'crown' => false, 'min_gold' => 10_000, 'bets' => [500, 1_000, 5_000], 'strong_bots' => 1],
-            'advanced' => ['name' => 'Advance', 'stars' => 3, 'crown' => false, 'min_gold' => 100_000, 'bets' => [5_000, 10_000, 50_000], 'strong_bots' => 2],
-            'mastery' => ['name' => 'Mastery', 'stars' => 3, 'crown' => true, 'min_gold' => 1_000_000, 'bets' => [50_000, 100_000, 500_000], 'strong_bots' => 3],
+            'beginner' => ['name' => 'Beginner', 'stars' => 1, 'crown' => false, 'min_gold' => 1_000, 'bets' => [50, 100, 500]],
+            'intermediate' => ['name' => 'Intermediate', 'stars' => 2, 'crown' => false, 'min_gold' => 10_000, 'bets' => [500, 1_000, 5_000]],
+            'advanced' => ['name' => 'Advance', 'stars' => 3, 'crown' => false, 'min_gold' => 100_000, 'bets' => [5_000, 10_000, 50_000]],
+            'mastery' => ['name' => 'Mastery', 'stars' => 3, 'crown' => true, 'min_gold' => 1_000_000, 'bets' => [50_000, 100_000, 500_000]],
         ],
     ],
 

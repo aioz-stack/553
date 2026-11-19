@@ -363,10 +363,16 @@ test('the fixed test hands are not Lucky Hands', function () {
     expect(LuckyHand::detect(PAIRS))->toBeNull()->and(LuckyHand::detect(PAIRS_COPY))->toBeNull();
 });
 
-test('casual bots never foul', function () {
-    $hands = Deck::deal(Deck::shuffled(Deck::newSeed()));
-    foreach (range(1, 20) as $_) {
-        expect(PracticeService::casualArrange($hands[2])->isFoul())->toBeFalse();
+test('every bot at every level arranges with the strategy: the stored arrangement is BotArranger\'s', function () {
+    $me = practicePlayer(10_000_000);
+
+    foreach (['beginner', 'mastery'] as $tier) {
+        $match = spStartMatch($this, $me, $tier);
+        $game = PracticeGame::query()->findOrFail(spDealRound($this, $me, $match)->json('data.id'));
+        foreach ([2, 3, 4] as $seat) {
+            $best = \App\Game\BotArranger::arrange($game->hands[$seat]);
+            expect($game->arrangements[$seat])->toBe(['front' => $best->front, 'middle' => $best->middle, 'back' => $best->back]);
+        }
     }
 });
 

@@ -111,9 +111,19 @@ class GoldService
         $out = $this->isOutOfGold($user);
         $points = $this->pointsMinor($user);
         $amount = self::claimAmount();
+        $gold = $this->goldMinor($user);
+        // Gold held for the round you are playing (returned or settled when it ends).
+        $reserved = (int) PracticeGame::query()->where('practice_games.user_id', $user->id)
+            ->where('practice_games.status', PracticeGame::ARRANGING)->where('practice_games.reserve_status', 'held')
+            ->join('practice_matches', 'practice_matches.id', '=', 'practice_games.practice_match_id')
+            ->where('practice_matches.currency', Currency::GD->value)
+            ->sum('practice_games.player_reserve');
 
         return [
-            'gold' => Points::decimal($this->goldMinor($user)),
+            // Spendable Gold, the Gold reserved in your open round, and the Total Amount (both).
+            'gold' => Points::decimal($gold),
+            'reserved' => Points::decimal($reserved),
+            'total' => Points::decimal($gold + $reserved),
             'gold_points' => Points::decimal($points),
             'out_of_gold' => $out,
             'claim_amount' => $amount,

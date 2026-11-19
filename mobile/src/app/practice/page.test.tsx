@@ -402,8 +402,44 @@ describe('Single Player — Round Bank table', () => {
       await Promise.resolve();
     });
     expect(replace).toHaveBeenCalledWith('/home/?single=1');
-    expect(apiMock).not.toHaveBeenCalled();
+    // Only the wallet display is loaded: no tiers, match or deal requests.
+    expect(apiMock.mock.calls.map(([p]) => p).filter((p) => p !== '/practice/gold')).toEqual([]);
   });
+
+  it('Total Amount and Gold Points come from the server wallet, stay visible while arranging, and refresh after each round', async () => {
+    let call = 0;
+    const wallets = [
+      { gold: '10000.00', reserved: '0.00', total: '10000.00', gold_points: '250.00' },
+      { gold: '9400.00', reserved: '600.00', total: '10000.00', gold_points: '250.00' },
+      { gold: '10600.00', reserved: '0.00', total: '10600.00', gold_points: '250.00' },
+    ];
+    routes({});
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((path: string, ...rest: unknown[]) => {
+      if (path === '/practice/gold') {
+        const w = wallets[Math.min(call++, wallets.length - 1)];
+        return Promise.resolve({ data: { ...w, out_of_gold: false, can_claim: false, claim_amount: 1000, minimum_to_start: 1000 } });
+      }
+      return base(path, ...rest);
+    });
+
+    render(<Practice />);
+    const hud = await screen.findByRole('group', { name: 'Gold wallet' });
+    await waitFor(() => expect(within(hud).getByLabelText('Total Amount')).toHaveTextContent('10,000'));
+    expect(within(hud).getByLabelText('Gold Points')).toHaveTextContent('250');
+
+    // Dealing reserves your worst case: the Total Amount stays 10,000 and shows what is in play.
+    fireEvent.click(await screen.findByRole('button', { name: 'Deal' }));
+    const popup = await screen.findByRole('dialog', { name: 'Declared Luck' });
+    const inPopup = within(popup).getByRole('group', { name: 'Gold wallet' });
+    await waitFor(() => expect(inPopup).toHaveTextContent('600 in play'));
+    expect(within(inPopup).getByLabelText('Total Amount')).toHaveTextContent('10,000');
+
+    // The round settles (+600): every display shows the server's new total.
+    fireEvent.click(within(popup).getByRole('button', { name: 'SUBMIT' }));
+    await waitFor(() => expect(within(screen.getByRole('group', { name: 'Gold wallet' })).getByLabelText('Total Amount')).toHaveTextContent('10,600'));
+    expect(call).toBeGreaterThanOrEqual(3);
+  }, 15000);
 });
 
 describe('Declared Luck', () => {

@@ -437,11 +437,17 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   saved `PracticeService::assertFullDeal` checks 52 distinct cards, 13 per seat, nothing missing or
   duplicated; nothing (seed, order, hands) carries over between rounds (rounds are `practice_games` rows:
   `round_number`, `banker` = seat).
-- **Bots:** arranged by the server at deal time; the first `strong_bots` bots of the tier (0 Beginner …
-  3 Mastery) use **`App\Game\BotArranger`**, which searches many valid arrangements (top Backs × every Middle
-  of the rest) and keeps the best-balanced one by an estimated lane-win score — never fouls and is never
-  worse than the greedy `AutoArranger`; the others play a random non-fouled hand. Bots declare their own
-  Lucky Hands. Their cards stay hidden until settlement.
+- **Bots:** arranged by the server at deal time. **Every bot at every level** uses **`App\Game\BotArranger`**
+  (no random play): it evaluates all 1,287 five-card and 286 three-card hands of its 13 cards once, encodes each
+  as one integer strength (category, then tie-break ranks — the exact `HandValue` order, Front vs Middle
+  included), and searches **every** valid split (~72,000; fouls skipped) for the highest expected Round Bank
+  result: lane win chances × the settlement table (3-0 = +2, 2-1 = +1, 1-2 = −1, 0-3 = −2), ties to the
+  stronger Back/Middle/Front. ~50 ms per hand. Lane win chances come from **measured percentiles of real bot
+  arrangements** (`App\Game\BotStrength` reading the generated `BotStrengthTable`): re-run
+  `php artisan pusoy:calibrate-bots` (self-play, `--deals`, `--passes`) after changing the arranger or hand
+  rules. Same cards played both ways over 300 deals: +1.84 bets per pairing vs random valid play, +0.63 vs the
+  greedy `AutoArranger`, +0.07 vs the previous BotArranger. Bots declare their own Lucky Hands (checked
+  before the arrangement is used). Their cards stay hidden until settlement.
 - **Shuffle-and-deal animation** (`mobile/src/components/table/DealAnimation.tsx`): after a deal, the table
   plays GATHER → FORM DECK → SPLIT → RIFFLE SHUFFLE → MERGE & SQUARE → DECK READY → DEAL CLOCKWISE →
   DISTRIBUTION COMPLETE (~5.5 s: the shuffle runs at `SHUFFLE_SPEED` 0.275 of its design pace, ~2 s; then a card leaves the deck
@@ -507,7 +513,8 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   **between matches** it is below the lowest tier minimum (Beginner, 1,000). Zero and negative always count; a
   held reserve never does. When a settled round leaves you Out of Gold the server ends the match at once
   (`practice_matches.status = out_of_gold`, audit `practice.out_of_gold`); deal and new match answer 409
-  `out_of_gold`. The tier minimum applies when a match **starts**; mid-match a deal only needs its reserve.
+  `out_of_gold`. The tier minimum applies when a match **starts**; mid-match a deal only needs its reserve, and
+  `GET practice/tiers` keeps the tier of a match in progress `eligible` while your Gold covers its next round.
 - **Free 1,000 Gold Points:** a separate **Gold Points (`GP`)** wallet. `POST practice/gold/claim` credits
   `pusoy.practice.out_of_gold_reward` (1,000, env `SINGLE_PLAYER_GOLD_REWARD`) only while you are Out of Gold
   and have no unconverted claim (`GOLD_POINTS_REWARD`, key `gold-points-claim:{user}:{n}`, serialised on
@@ -517,6 +524,14 @@ player cannot afford shows a "Not enough gold" notification. Bets are informatio
   issue GD; keys `gold-convert:{user}:{request_id}:out|in`), so a retried request converts once.
   `GET practice/gold` → `{gold, gold_points, out_of_gold, can_claim, claim_amount, minimum_to_start}`; the
   same object is in `GET practice/tiers` (`meta.gold_wallet`) and every match (`gold_wallet`, `out_of_gold`).
+- **Total Amount & Gold Points in game:** `GET practice/gold` also returns `reserved` (Gold held for your open
+  round) and `total` (spendable + reserved). `mobile/src/lib/useGoldWallet.ts` is the one source for every
+  display: it loads that endpoint and reloads it (never computes) on `wallet.updated` for GD/GP on the private
+  `user.{id}` channel, on the `pusoy:wallet` window event (fired after every deal, settlement, claim and
+  conversion) and when the app returns to the foreground; one request at a time, plus one follow-up for changes
+  that arrive meanwhile. `components/table/GoldWalletHud.tsx` (Total Amount, "N in play", Gold Points; fixed size,
+  flashes on change) sits on the table header and inside the arrangement popup beside SUBMIT, clear of the cards.
+  Home's Gold pill shows the same Total Amount, with a Gold Points badge under it.
 - **Mobile:** Home's coin pill is your Gold. When a round leaves you Out of Gold the table shows the result,
   then an "Out of Gold!" banner, and once the reveal is over (or skipped) returns you to `/home/?gold=out`.
   Home then opens `OutOfGoldPopup` (title, message, CLAIM 1,000 GOLD POINTS → "Convert to Gold & Play").

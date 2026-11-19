@@ -72,4 +72,11 @@ describe('Home — Single Player Out of Gold', () => {
     // The Gold balance is shown (the coin HUD); no Gold Points popup without leaving Single Player.
     expect(screen.getByLabelText('Gold balance')).toBeInTheDocument();
   });
+
+  it('shows the server Total Amount in the Gold pill and the Gold Points balance under it', async () => {
+    routes(gold({ gold: '4500.00', total: '5100.00', reserved: '600.00', gold_points: '1000.00', out_of_gold: false, can_claim: false }));
+    render(<Home />);
+    expect(await screen.findByRole('link', { name: 'Gold Points 1,000' })).toHaveAttribute('href', expect.stringContaining('/wallet'));
+    await waitFor(() => expect(screen.getByLabelText('Gold balance')).toHaveTextContent('5,100'));
+  });
 });

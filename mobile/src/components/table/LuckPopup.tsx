@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { GoldCoins } from '@/components/HomeArt';
 import PlayingCard from '@/components/PlayingCard';
 import { api } from '@/lib/api';
+import type { GoldWallet } from '@/lib/gold';
 import { play } from '@/lib/sound';
+import GoldWalletHud from './GoldWalletHud';
 import { CardBack553, Clover, MiniCrest } from './TableArt';
 import { useCardDrag } from './useCardDrag';
 
@@ -104,7 +105,7 @@ export default function LuckPopup({
   tierName,
   bet,
   betLabel,
-  gold,
+  wallet,
   seats,
   declaring,
   onDeclare,
@@ -120,7 +121,8 @@ export default function LuckPopup({
   bet: number;
   /** Replaces "Bet: N" (e.g. "Covering 450" when you are the banker). */
   betLabel?: string;
-  gold?: number;
+  /** Your Gold wallet (Total Amount + Gold Points), kept live by the page (useGoldWallet). */
+  wallet?: GoldWallet | null;
   /** Opponents whose card fans sit left and right of your rows. */
   seats: { left: { name: string }; right: { name: string } };
   declaring: boolean;
@@ -307,15 +309,8 @@ export default function LuckPopup({
           </button>
         </div>
 
-        {/* gold balance */}
-        <div className="lx-gold absolute left-[1090px] top-[700px] z-10 h-[60px] w-[300px] rounded-full p-[4px]">
-          <div className="flex h-full items-center gap-3 rounded-full bg-gradient-to-b from-[#5a0609] to-[#2a0204] px-3">
-            <GoldCoins size={50} />
-            <span className="flex-1 text-center font-display text-[30px] font-black text-white" aria-label="Gold balance">
-              {gold !== undefined ? fmt(gold) : '…'}
-            </span>
-          </div>
-        </div>
+        {/* Your Gold wallet: Total Amount and Gold Points, updated live while you arrange */}
+        <GoldWalletHud wallet={wallet ?? null} className="absolute left-[1080px] top-[668px] z-10" />
 
         {/* decorative 553 chips */}
         <svg width="230" height="170" viewBox="0 0 230 170" className="pointer-events-none absolute bottom-[10px] left-[10px]" aria-hidden="true">

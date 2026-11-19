@@ -8,7 +8,12 @@ import { api, idempotencyKey } from './api';
  * on the server; the app only displays it.
  */
 export interface GoldWallet {
+  /** Spendable Gold. */
   gold: string;
+  /** Gold held for the round you are playing. */
+  reserved?: string;
+  /** Total Amount: spendable + reserved Gold. */
+  total?: string;
   gold_points: string;
   /** Gold can no longer cover the next round (mid-match) or the Beginner minimum. */
   out_of_gold: boolean;
