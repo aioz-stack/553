@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RegisterRequest;
-use App\Services\Users\UserManagementService;
+use App\Services\Users\ReferralService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,20 +22,23 @@ use Inertia\Response;
  */
 class Register extends Controller
 {
-    public function show(Request $request): Response
+    /** /register, /register/player?ref=CODE and /register/agent?ref=CODE (permanent referral links). */
+    public function show(Request $request, ?string $type = null): Response
     {
-        return Inertia::render('Auth/Register', ['referral' => $request->query('ref')]);
+        return Inertia::render('Auth/Register', ['referral' => $request->query('ref'), 'accountType' => $type === 'agent' ? 'agent' : 'player']);
     }
 
-    public function store(RegisterRequest $request, UserManagementService $users): RedirectResponse
+    /** The new account waits for administrator approval: no sign-in until then. */
+    public function store(RegisterRequest $request, ReferralService $referrals): RedirectResponse
     {
         $data = $request->validated();
-        $user = $users->create(null, Role::Player, collect($data)->only(['name', 'username', 'email', 'phone', 'password'])->all(), $data['referral_code'] ?? null);
+        $referrals->register(
+            collect($data)->only(['name', 'username', 'email', 'phone', 'password'])->all(),
+            $data['referral_code'] ?? null,
+            $data['account_type'] ?? 'player',
+        );
 
-        Auth::login($user);
-        $request->session()->regenerate();
-
-        return redirect()->route('dashboard')->with('success', 'Welcome to Pusoy 13! Claim your free daily VC in the wallet.');
+        return redirect()->route('login')->with('success', 'Registration received. You can sign in once an administrator approves your account.');
     }
 
     public function forgot(): Response

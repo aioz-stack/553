@@ -22,6 +22,7 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [Login::class, 'login'])->middleware('throttle:auth')->name('login.submit');
 
     Route::get('/register', [Register::class, 'show'])->name('register');
+    Route::get('/register/{type}', [Register::class, 'show'])->whereIn('type', ['player', 'agent'])->name('register.link');
     Route::post('/register', [Register::class, 'store'])->middleware('throttle:auth')->name('register.submit');
     Route::get('/forgot-password', [Register::class, 'forgot'])->name('password.request');
     Route::post('/forgot-password', [Register::class, 'sendResetLink'])->middleware('throttle:auth')->name('password.email');
@@ -67,7 +68,16 @@ Route::middleware('auth')->group(function () {
 
     // Super Admin / Administrator dashboard (page access; each API call re-checks abilities).
     Route::prefix('admin')->name('admin.')->middleware('can:staff')->group(function () {
-        Route::inertia('/', 'Admin/Overview')->name('overview');
+        // Admin Panel (premium dashboard; every number and action comes from the API).
+        Route::inertia('/', 'AdminPanel/Overview')->name('overview');
+        Route::inertia('/load-logs', 'AdminPanel/LoadLogs')->name('load-logs');
+        Route::inertia('/commission-logs', 'AdminPanel/CommissionLogs')->name('commission-logs');
+        Route::inertia('/commission-withdrawals', 'AdminPanel/Withdrawals')->name('commission-withdrawals');
+        foreach (['agents' => 'agents', 'active-players' => 'players', 'pending-users' => 'pending', 'ban-users' => 'banned', 'archive' => 'archived'] as $path => $kind) {
+            Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
+        }
+        Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
+        Route::inertia('/platform', 'Admin/Overview')->name('platform');
         Route::inertia('/administrators', 'Admin/Users', ['role' => 'admin'])->middleware('can:super-admin')->name('administrators');
         Route::inertia('/agents', 'Admin/Users', ['role' => 'agent'])->middleware('can:manage_agents')->name('agents');
         Route::inertia('/players', 'Admin/Users', ['role' => 'player'])->middleware('can:manage_players')->name('players');

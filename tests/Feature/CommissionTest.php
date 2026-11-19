@@ -66,11 +66,11 @@ test('commissions are a percentage of the platform fee collected from the agent 
 
     $commissions = AgentCommission::query()->where('game_session_id', $session->id)->get();
 
-    // Fee 1000 attributed 250 per player; 40% = 100 each → 400 total (spec example: 10 VC fee → 4 VC).
+    // Fee 1000 attributed 250 per player; an Agent's level rate is 50% = 125 each → 500 total.
     expect($session->platform_fee)->toBe(1000)
         ->and($commissions)->toHaveCount(4)
-        ->and($commissions->sum('amount'))->toBe(400)
-        ->and($commissions->first()->rate_bps)->toBe(4000)
+        ->and($commissions->sum('amount'))->toBe(500)
+        ->and($commissions->first()->rate_bps)->toBe(5000)
         ->and($commissions->first()->fee_basis)->toBe(250)
         ->and($commissions->every(fn ($c) => $c->status === CommissionStatus::Pending))->toBeTrue();
 });

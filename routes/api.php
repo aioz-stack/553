@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\GameController;
 use App\Http\Controllers\Api\V1\LobbyController;
+use App\Http\Controllers\Api\V1\AgentPanelController;
+use App\Http\Controllers\Api\V1\Admin\PanelController;
 use App\Http\Controllers\Api\V1\PayoutController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\PracticeController;
@@ -31,6 +33,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->middleware('throttle:api')->group(function () {
     Route::prefix('auth')->middleware('throttle:auth')->group(function () {
         Route::post('register', [AuthController::class, 'register']);
+        Route::get('referral/{code}', [AuthController::class, 'referral'])->where('code', '[A-Za-z0-9-]{3,24}');
         Route::post('login', [AuthController::class, 'login']);
         Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
         Route::post('reset-password', [AuthController::class, 'resetPassword']);
@@ -134,6 +137,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::get('activity', [AgentController::class, 'activity']);
             Route::get('payout-requests', [PayoutController::class, 'index']);
             Route::post('payout-requests', [PayoutController::class, 'store'])->middleware('throttle:wallet-actions');
+            // Referral links, balances, downline; Chips requests to the Administrator.
+            Route::get('panel', [AgentPanelController::class, 'panel']);
+            Route::post('chip-requests', [AgentPanelController::class, 'requestChips'])->middleware('throttle:wallet-actions');
             Route::get('reports', [AgentController::class, 'dashboard']);
         });
 
@@ -176,6 +182,30 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('commissions/{commission}/reject', [AdminCommissionController::class, 'reject']);
             Route::post('commissions/{commission}/reverse', [AdminCommissionController::class, 'reverse']);
             Route::get('commission-rules', [AdminCommissionController::class, 'rules']);
+            // Admin Panel (dashboard, logs, accounts, Chips and commission actions).
+            Route::prefix('panel')->group(function () {
+                Route::get('overview', [PanelController::class, 'overview']);
+                Route::post('issue', [PanelController::class, 'issue'])->middleware('throttle:wallet-actions');
+                Route::get('load-logs', [PanelController::class, 'loadLogs']);
+                Route::get('load-logs/{chipLoad}', [PanelController::class, 'loadLog']);
+                Route::post('load-logs/{chipLoad}/approve', [PanelController::class, 'approveLoad'])->middleware('throttle:wallet-actions');
+                Route::post('load-logs/{chipLoad}/reject', [PanelController::class, 'rejectLoad']);
+                Route::get('commission-logs', [PanelController::class, 'commissionLogs']);
+                Route::put('commission-rates', [PanelController::class, 'setRates']);
+                Route::get('withdrawals', [PanelController::class, 'withdrawals']);
+                Route::post('withdrawals/{payout}/approve', [PanelController::class, 'approveWithdrawal'])->middleware('throttle:wallet-actions');
+                Route::post('withdrawals/{payout}/reject', [PanelController::class, 'rejectWithdrawal']);
+                Route::get('accounts', [PanelController::class, 'accounts']);
+                Route::get('accounts/{user}', [PanelController::class, 'account']);
+                Route::post('accounts/{user}/load', [PanelController::class, 'load'])->middleware('throttle:wallet-actions');
+                Route::post('accounts/{user}/withdraw', [PanelController::class, 'withdraw'])->middleware('throttle:wallet-actions');
+                Route::post('accounts/{user}/withdraw-commission', [PanelController::class, 'withdrawCommission'])->middleware('throttle:wallet-actions');
+                Route::put('accounts/{user}/commission-rate', [PanelController::class, 'setAccountRate']);
+                Route::post('accounts/{user}/approve', [PanelController::class, 'approve']);
+                Route::delete('accounts/{user}', [PanelController::class, 'destroy']);
+                Route::post('accounts/{user}/status', [PanelController::class, 'setStatus']);
+            });
+
             Route::get('payout-requests', [PayoutController::class, 'index']);
             Route::post('payout-requests/{payout}/approve', [PayoutController::class, 'approve']);
             Route::post('payout-requests/{payout}/reject', [PayoutController::class, 'reject']);

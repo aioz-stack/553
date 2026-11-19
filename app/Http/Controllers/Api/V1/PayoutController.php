@@ -12,8 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * Agent commission payout requests (cash). Disabled unless the cash feature
- * flags are enabled after regulatory approval.
+ * Agent commission withdrawals: an agent asks to move commission into its own Chips;
+ * staff approve or reject (see PayoutService).
  */
 class PayoutController extends Controller
 {
@@ -39,14 +39,15 @@ class PayoutController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'currency' => ['required', Rule::enum(Currency::class)->only(Currency::multiplayer())],
+            'currency' => ['nullable', Rule::enum(Currency::class)->only(Currency::multiplayer())],
+            'note' => ['nullable', 'string', 'max:255'],
             'amount' => ['required', 'regex:/^\d{1,13}(\.\d{1,2})?$/'],
         ]);
 
         abort_unless($request->user()->isAgent() && $request->user()->agent, 403);
-        $payout = $this->payouts->request($request->user()->agent, Currency::from($data['currency']), Points::toMinor($data['amount']));
+        $payout = $this->payouts->request($request->user()->agent, Currency::from($data['currency'] ?? Currency::CH->value), Points::toMinor($data['amount']), $request->user(), $data['note'] ?? null);
 
-        return response()->json(['data' => $this->present($payout)], 201);
+        return response()->json(['message' => 'Withdrawal request sent for approval.', 'data' => $this->present($payout)], 201);
     }
 
     public function approve(Request $request, AgentPayoutRequest $payout): JsonResponse
@@ -69,7 +70,7 @@ class PayoutController extends Controller
             'agent' => $r->agent?->user?->only(['id', 'name', 'username']),
             'currency' => $r->currency->value,
             'amount' => Points::decimal($r->amount),
-            'status' => $r->status,
+            'status' => $r->status === 'paid' ? 'approved' : $r->status,
             'created_at' => $r->created_at?->toIso8601String(),
         ];
     }

@@ -36,7 +36,7 @@ class Login extends Controller
             if (! $user->isActive()) {
                 Auth::logout();
 
-                throw ValidationException::withMessages(['username' => 'This account is suspended.']);
+                throw ValidationException::withMessages(['username' => $user->status->blockedMessage()]);
             }
 
             $request->session()->regenerate();

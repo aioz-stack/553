@@ -8,6 +8,8 @@ use App\Http\Requests\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Models\UserDevice;
+use App\Exceptions\BusinessRuleException;
+use App\Services\Users\ReferralService;
 use App\Services\Users\UserManagementService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
@@ -25,12 +27,32 @@ use Illuminate\Validation\ValidationException;
  */
 class AuthController extends Controller
 {
-    public function register(RegisterRequest $request, UserManagementService $users): JsonResponse
+    /**
+     * Public registration (optionally through a referral link). The account is PENDING until an
+     * administrator approves it, so no token is issued; the sponsor is fixed now and never changes.
+     */
+    public function register(RegisterRequest $request, ReferralService $referrals): JsonResponse
     {
         $data = $request->validated();
-        $user = $users->create(null, Role::Player, collect($data)->only(['name', 'username', 'email', 'phone', 'password'])->all(), $data['referral_code'] ?? null);
+        $user = $referrals->register(
+            collect($data)->only(['name', 'username', 'email', 'phone', 'password'])->all(),
+            $data['referral_code'] ?? null,
+            $data['account_type'] ?? 'player',
+        );
 
-        return $this->tokenResponse($request, $user, 201);
+        return response()->json([
+            'message' => 'Registration received. Your account is waiting for administrator approval.',
+            'data' => ['status' => $user->status->value, 'username' => $user->username, 'account_type' => $user->registered_as, 'sponsor' => $user->sponsor?->username],
+        ], 201);
+    }
+
+    /** Who a referral link belongs to and what it registers (shown on the registration page). */
+    public function referral(Request $request, ReferralService $referrals, string $code): JsonResponse
+    {
+        $type = $request->query('type', 'player') === 'agent' ? 'agent' : 'player';
+        $r = $referrals->resolve($code, $type);
+
+        return response()->json(['data' => ['sponsor' => $r['sponsor']->username, 'sponsor_name' => $r['sponsor']->name, 'type' => $type, 'level' => $r['level']?->label() ?? 'Player']]);
     }
 
     public function login(Request $request): JsonResponse
@@ -49,7 +71,8 @@ class AuthController extends Controller
         }
 
         if (! $user->isActive()) {
-            throw ValidationException::withMessages(['username' => 'This account is suspended.']);
+            // Pending (waiting for approval), suspended, banned or archived: no session.
+            throw new BusinessRuleException($user->status->blockedMessage(), 403, $user->status->blockedCode());
         }
 
         return $this->tokenResponse($request, $user);

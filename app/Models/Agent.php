@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AgentLevel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,6 +11,40 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Agent extends Model
 {
     protected $guarded = ['id'];
+
+    protected function casts(): array
+    {
+        return ['level' => AgentLevel::class];
+    }
+
+    /** The upline agent (null = directly under the Administrator). */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_agent_id');
+    }
+
+    /** Agents directly below this one. */
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_agent_id');
+    }
+
+    /**
+     * This agent and every upline agent, nearest first (Silver → Master → Agent).
+     *
+     * @return list<self>
+     */
+    public function chain(): array
+    {
+        $chain = [];
+        $seen = [];
+        for ($a = $this; $a !== null && ! isset($seen[$a->id]); $a = $a->parent) {
+            $seen[$a->id] = true;
+            $chain[] = $a;
+        }
+
+        return $chain;
+    }
 
     public function user(): BelongsTo
     {

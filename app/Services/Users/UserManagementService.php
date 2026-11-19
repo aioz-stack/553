@@ -41,6 +41,11 @@ class UserManagementService
                 'role' => $role,
                 'status' => UserStatus::Active,
                 'created_by' => $actor?->id,
+                // Accounts created by staff or an agent are active at once; the creator is the permanent sponsor.
+                'sponsor_id' => $actor?->id,
+                'referral_code' => ReferralService::newCode($data['username']),
+                'approved_at' => now(),
+                'approved_by' => $actor?->id,
             ])->save();
 
             $this->wallets->provision($user);
@@ -83,10 +88,13 @@ class UserManagementService
             throw new BusinessRuleException('Only players can be assigned to agents.');
         }
 
-        $link = AgentPlayer::query()->updateOrCreate(
-            ['player_id' => $player->id],
-            ['agent_id' => $agent->id, 'assigned_by' => $actor->id, 'assigned_at' => now()],
-        );
+        // The referral relationship is permanent: a player with an agent (or a sponsor agent) keeps it.
+        if (AgentPlayer::query()->where('player_id', $player->id)->exists() || $player->sponsor?->isAgent()) {
+            throw new BusinessRuleException('This player already has a sponsor; referral relationships cannot be changed.', 409, 'sponsor_locked');
+        }
+
+        $link = AgentPlayer::query()->create(['player_id' => $player->id, 'agent_id' => $agent->id, 'assigned_by' => $actor->id, 'assigned_at' => now()]);
+        $player->forceFill(['sponsor_id' => $agent->user_id])->save();
 
         AuditLogger::log($actor, 'agent.assign_player', $link, null, ['agent_id' => $agent->id, 'player_id' => $player->id]);
 

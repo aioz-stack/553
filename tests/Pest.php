@@ -7,7 +7,10 @@ use App\Models\GameSession;
 use App\Models\GameTable;
 use App\Models\User;
 use App\Services\Game\TableService;
+use App\Enums\TransactionType;
 use App\Services\Wallet\AllocationService;
+use App\Services\Wallet\LedgerService;
+use App\Services\Wallet\TransferRequest;
 use App\Services\Wallet\WalletService;
 use Tests\TestCase;
 
@@ -19,20 +22,35 @@ pest()->extend(TestCase::class)->in('Feature');
 |--------------------------------------------------------------------------
 */
 
+/** A Super Admin with a float of 1,000,000 Chips issued into their own wallet (loads draw on it). */
 function superAdmin(): User
 {
-    return User::factory()->superAdmin()->create();
+    $user = User::factory()->superAdmin()->create();
+    app(AllocationService::class)->issue($user, 1_000_000_00, 'test float');
+
+    return $user;
 }
 
 /**
- * Credit a wallet through the real allocation workflow (Super Admin issuance).
+ * Credit a wallet the real way: Chips are issued to a Super Admin and loaded through the
+ * allocation workflow (Load Logs and all); Gold (Single Player only, never loaded) is
+ * credited straight through the ledger.
  */
 function fund(User $user, int $minor, Currency $currency = Currency::CH): void
 {
+    if ($currency === Currency::GD) {
+        $wallets = app(WalletService::class);
+        app(LedgerService::class)->transfer(new TransferRequest(TransactionType::ManualAdjustment, Currency::GD, null, $wallets->for($user, Currency::GD), $minor, 'test funding'));
+
+        return;
+    }
+
     $issuer = User::query()->where('role', 'super_admin')->where('username', 'test-issuer')->first()
         ?? User::factory()->superAdmin()->create(['username' => 'test-issuer']);
 
-    app(AllocationService::class)->allocate($issuer, $user, $currency, $minor, 'test funding');
+    $allocations = app(AllocationService::class);
+    $allocations->issue($issuer, $minor, 'test issuance');
+    $allocations->allocate($issuer, $user, $currency, $minor, 'test funding');
 }
 
 function balance(User $user, Currency $currency = Currency::CH, WalletType $type = WalletType::Player): int

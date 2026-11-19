@@ -12,11 +12,21 @@ class AgentPayoutRequest extends Model
 
     protected function casts(): array
     {
-        return ['currency' => Currency::class, 'amount' => 'integer'];
+        return ['currency' => Currency::class, 'amount' => 'integer', 'reviewed_at' => 'datetime'];
     }
 
     public function agent(): BelongsTo
     {
         return $this->belongsTo(Agent::class);
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function requester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by');
     }
 }

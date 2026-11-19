@@ -11,6 +11,7 @@ use App\Enums\WalletType;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -60,6 +61,9 @@ class User extends Authenticatable
             'role' => Role::class,
             'status' => UserStatus::class,
             'preferences' => 'array',
+            'approved_at' => 'datetime',
+            'status_changed_at' => 'datetime',
+            'archived_at' => 'datetime',
         ];
     }
 
@@ -143,6 +147,39 @@ class User extends Authenticatable
     public function gameResults(): HasMany
     {
         return $this->hasMany(GameResult::class);
+    }
+
+    /** The account that referred this one (permanent; null = no referral). */
+    public function sponsor(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'sponsor_id');
+    }
+
+    /**
+     * The account type shown in the Admin Panel: admin, agent, master, silver or player.
+     */
+    public function accountType(): string
+    {
+        if ($this->isPlayer()) {
+            return 'player';
+        }
+
+        if ($this->isAgent()) {
+            return $this->agent?->level?->value ?? 'agent';
+        }
+
+        return 'admin';
+    }
+
+    public function accountTypeLabel(): string
+    {
+        return match ($this->accountType()) {
+            'player' => 'Player',
+            'agent' => 'Agent',
+            'master' => 'Master Agent',
+            'silver' => 'Silver Agent',
+            default => $this->role->label(),
+        };
     }
 
     public function scopeRole(Builder $query, Role $role): Builder

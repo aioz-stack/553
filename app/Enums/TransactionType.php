@@ -15,6 +15,10 @@ enum TransactionType: string
     case CommissionPayment = 'COMMISSION_PAYMENT';
     case CommissionPayout = 'COMMISSION_PAYOUT';
     case ManualAdjustment = 'MANUAL_ADJUSTMENT';
+    /** Admin Panel: Chips taken back from an account into the staff member's own Chips. */
+    case ChipWithdrawal = 'CHIP_WITHDRAWAL';
+    /** An agent's commission moved into its own Chips (approved commission withdrawal). */
+    case CommissionWithdrawal = 'COMMISSION_WITHDRAWAL';
     case DailyReward = 'DAILY_REWARD';
     case LuckyBonus = 'LUCKY_BONUS';
     /** Out of Gold: the free 1,000 Gold claim (Single Player). */

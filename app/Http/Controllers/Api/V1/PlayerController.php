@@ -82,12 +82,21 @@ class PlayerController extends Controller
             'bgm' => ['sometimes', 'boolean'],
             'sfx' => ['sometimes', 'boolean'],
             'motion' => ['sometimes', 'string', 'in:'.implode(',', User::MOTION_LEVELS)],
+            // Web dashboard / Admin Panel colour theme.
+            'theme' => ['sometimes', 'string', 'in:light,dark'],
         ]);
 
         $user = $request->user();
-        $user->forceFill(['preferences' => array_merge($user->gamePreferences(), array_map(fn ($v) => is_string($v) ? $v : (bool) $v, $data))])->save();
+        $theme = $data['theme'] ?? null;
+        unset($data['theme']);
+        $raw = is_array($user->preferences) ? $user->preferences : [];
+        $saved = array_merge($raw, $user->gamePreferences(), array_map(fn ($v) => is_string($v) ? $v : (bool) $v, $data));
+        if ($theme !== null) {
+            $saved['theme'] = $theme;
+        }
+        $user->forceFill(['preferences' => $saved])->save();
 
-        return response()->json(['data' => $user->gamePreferences()]);
+        return response()->json(['data' => $user->gamePreferences() + (isset($saved['theme']) ? ['theme' => $saved['theme']] : [])]);
     }
 
     /**

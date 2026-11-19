@@ -1,3 +1,4 @@
+import AgentNetworkCard from '../../Components/AdminPanel/AgentNetworkCard';
 import PageShell from '../../Components/PageShell';
 import { IconCoins, IconTrophy, IconUser, IconWallet } from '../../Components/PlatformIcons';
 import { Alert, Card, LinkButton, StatCard } from '../../Components/ui';
@@ -21,6 +22,7 @@ export default function Overview() {
 
   return (
     <PageShell title="Agent Overview">
+      <AgentNetworkCard />
       {d?.allocation_frozen && <Alert tone="warning">Your allocation balance is frozen by an administrator. You cannot distribute points until it is unfrozen.</Alert>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
         <StatCard icon={<IconUser />} label="My players" value={d?.players ?? 0} hint={`${d?.active_players_7d ?? 0} active in 7 days`} />

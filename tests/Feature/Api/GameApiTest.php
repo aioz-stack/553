@@ -23,7 +23,12 @@ test('a player registers, logs in with a bearer token and reads their wallet', f
         'password' => 'secret123',
         'password_confirmation' => 'secret123',
         'device_name' => 'Pixel 8',
-    ])->assertCreated()->assertJsonStructure(['data' => ['token', 'user' => ['id', 'role']]]);
+    ])->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonMissingPath('data.token');
+
+    // Waiting for approval: no sign-in yet.
+    $this->postJson('/api/v1/auth/login', ['username' => 'mobileplayer', 'password' => 'secret123'])
+        ->assertForbidden()->assertJsonPath('error', 'account_pending');
+    app(\App\Services\Users\ReferralService::class)->approve(superAdmin(), User::query()->where('username', 'mobileplayer')->firstOrFail());
 
     $token = $this->postJson('/api/v1/auth/login', ['username' => 'mobileplayer', 'password' => 'secret123', 'device_name' => 'Pixel 8', 'platform' => 'android'])
         ->assertOk()->json('data.token');

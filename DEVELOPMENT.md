@@ -654,11 +654,67 @@ bet, declare Lucky when they can, and submit the server's auto-arrangement until
 
 ### Commissions
 
-`commission = floor(fee_attributed_to_player × rate_bps / 10000)` for each player who belongs to an
-agent, generated only after a completed, settled game. Unique `(agent, session, player)` prevents
-duplicates; rate and fee basis are snapshotted. Rate resolution: agent+currency rule → agent rule →
-platform default (seeded 40%). Status: pending → approved → paid (Chips paid platform → agent
-commission wallet; Chips are never paid out — payout requests are always refused), or rejected / reversed.
+Generated only after a completed, settled game, up the hierarchy of each player
+(`App\Services\Agent\CommissionService`):
+
+- **Rates** (percent of the platform fee attributed to the player): an agent's own rule (`agent_commission_rules.agent_id`),
+  else its **level default** — Agent **50%**, Master Agent **40%**, Silver Agent **30%** (`agent_commission_rules.level`,
+  set in Admin Panel → Commission Logs) — else the platform default.
+- **Differential overrides:** the player's direct sponsor earns its rate; each upline agent earns the difference between its
+  rate and the highest rate already paid below it (never negative). Under a Silver Agent: Silver 30%, Master 40−30 = 10%,
+  Agent 50−40 = 10% — the chain never takes more than the top rate; the platform keeps the rest. A player directly under
+  the Administrator earns nobody a commission; inactive agents are skipped (their share stays with the platform).
+- `commission = floor(fee × share_bps / 10000)`; one row per `(agent, session, player)` (no duplicates on retries); the share,
+  fee basis and `note` (`direct` / `override`) are snapshotted. Status: pending → approved → paid (Chips from the platform into
+  the agent's commission wallet), or rejected / reversed.
+- **Withdrawals** (`App\Services\Agent\PayoutService`, `agent_payout_requests`): an agent requests an amount (pending requests
+  reserve the balance); staff with `manage_commissions` approve — the Chips move from the commission wallet into the agent's
+  **own Chips wallet** (`COMMISSION_WITHDRAWAL`, key `commission-withdrawal:{id}`, once) — or reject. Staff can also withdraw
+  directly from an agent's row. Nothing leaves the platform; no cash.
+
+### Admin Panel (web `/admin`, API `/api/v1/admin/panel/*`)
+
+Premium dashboard for the Super Admin and Administrators (`resources/js/Layouts/AdminPanelLayout.tsx`,
+`resources/js/Pages/AdminPanel/*`, kit in `resources/js/Components/AdminPanel/kit.tsx`; API
+`App\Http\Controllers\Api\V1\Admin\PanelController`). Every number is read from the database and every action goes
+through a service (validation, row locks, ledger, idempotency keys, audit log). Tests: `tests/Feature/AdminPanelTest.php`.
+
+- **Hierarchy:** Administrator → **Agent** → **Master Agent** → **Silver Agent**; Players can sit under any of them.
+  `agents.level` (`App\Enums\AgentLevel`) and `agents.parent_agent_id`; `users.sponsor_id` is the permanent referrer.
+  The old `admin/users/{id}/assign-agent` only assigns players that have no sponsor yet (409 `sponsor_locked` otherwise).
+- **Permanent referral links:** every account has one code (`users.referral_code`) and two links,
+  `{APP_URL}/register/player?ref=CODE` and `{APP_URL}/register/agent?ref=CODE` (Administrator → Agents, Agent → Master
+  Agents, Master → Silver Agents; Silver Agents have no Agent link). `GET auth/referral/{code}?type=` shows who invites and
+  what is created; the server resolves sponsor and level (`App\Services\Users\ReferralService`). Older agent codes still
+  register players.
+- **Approval:** every registration (`POST auth/register` with `referral_code` + `account_type`, or the web form) is
+  **pending**: no token, sign-in refused (`account_pending`), every request refused (`EnsureActiveAccount`). Pending Users →
+  Approve activates it and builds the hierarchy (agent row with level + upline, or the player's link to its agent);
+  Delete removes a pending registration (never one with ledger history).
+- **Statuses:** `UserStatus` = active, pending, suspended, banned, archived. Ban / suspend (reason required), reactivate,
+  archive, restore (`App\Services\Users\AccountStatusService`): blocked accounts are signed out at once (tokens + sessions)
+  and refused; nothing is deleted — wallets, ledger, commissions and referral relationships stay.
+- **Chips:** an account's Chips are its player wallet (players) or allocation wallet (agents, administrators). The
+  **Super Admin issues** new Chips into their own wallet (Overview → Issue Chips; the platform's only issuance); every
+  **Load Chips** (row icon, `accounts/{id}/load`) draws on the loader's own Chips (`AllocationService::allocate`), and
+  **Withdraw Chips** (`accounts/{id}/withdraw`) moves them back into the staff member's wallet (`CHIP_WITHDRAWAL`). Agents
+  can **Request Chips** (`POST agent/chip-requests`, Pending in the Load Logs); staff approve (loaded from their own Chips) or
+  reject. All are recorded in `chip_loads` (reference, sender, account, account type, amount, status, administrator,
+  ledger transaction).
+- **Sections:** Overview (My Total Chips, active agents by level, active players, both links with copy buttons, recent
+  Load / Commission / Withdrawal transactions); Load Logs (search, status / type / account filters, details with ledger
+  balances, approve / reject requests); Commission Logs (breakdown and rate per level, editable rates, search / level /
+  status filters); Commission Withdrawal (available, withdrawn, pending; approve / reject); Agents (Load, Withdraw, Withdraw
+  Commission, view, ban, archive, own commission rate), Active Players (Load, Withdraw, view, ban, archive), Pending Users
+  (Approve / Delete), Ban Users (reactivate), Archive (details with transaction history, restore); Change Password
+  (`PUT profile/password`); Logout. The existing tools (rooms, tables, sessions, wallets, ledger, reports, audit logs,
+  administrators, settings) sit under **Platform** in the same shell.
+- **Light / Dark:** header toggle; saved in the browser and on the account (`PUT profile/preferences {theme}`, shared to
+  Inertia as `auth.user.theme`), so it survives refreshes and new sign-ins. Every component has light and dark colours.
+- **Agent side:** Agent Overview → My Network (`GET agent/panel`): level, upline, both links, Chips, commission available /
+  withdrawn, downline, Request Chips, Withdraw Commission (`POST agent/payout-requests`).
+- Migration `2026_11_19_190000_admin_panel_hierarchy` backfills a code for every account, players' sponsors from their
+  agents, and the level rates. Tests use a `superAdmin()` helper that issues the Super Admin a 1,000,000-Chip float.
 
 ---
 
@@ -704,7 +760,8 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}`, `POST practice/matches/{id}/leave`, `GET practice/gold`, `POST practice/gold/claim` (`request_id`) — Round Bank, you + 3 bots; plays for Gold only |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
-| Agent | `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
+| Agent | `agent/panel` (links, level, Chips, commission, downline), `agent/chip-requests` (POST), `agent/payout-requests` (GET/POST commission withdrawals), `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
+| Admin Panel | `admin/panel/overview`, `admin/panel/issue` (Super Admin), `admin/panel/load-logs` (+`/{id}`, `/approve`, `/reject`), `admin/panel/commission-logs`, `admin/panel/commission-rates` (PUT), `admin/panel/withdrawals` (+approve/reject), `admin/panel/accounts?kind=agents|players|pending|banned|archived`, `admin/panel/accounts/{id}` (GET, DELETE pending), `.../load`, `.../withdraw`, `.../withdraw-commission`, `.../commission-rate` (PUT), `.../approve`, `.../status` (`ban|suspend|reactivate|archive|restore`) |
 | Admin | `admin/users|players|agents|administrators` (GET/POST), `admin/users/{id}` (GET/PATCH, status, assign-agent, permissions, limits), `admin/rooms`, `admin/tables` (+close), `admin/games` (+cancel, retry), `admin/wallets` (+freeze), `admin/wallets/summary` (total points per currency × wallet type), `admin/transactions` (+reverse), `admin/adjustments` (Super Admin point deposit/withdraw by `wallet_id` or `user_id`+`currency`), `admin/reconcile`, `admin/commissions` (+approve/reject/reverse), `admin/commission-rules`, `admin/reports/overview`, `admin/audit-logs`, `admin/settings` |
 
 ---
@@ -814,3 +871,14 @@ Not done / not verified:
 - Verified: 241 Pest, 11 web Vitest and 91 mobile Vitest tests; live on demo11 — Home / Lobby / Choose Your
   Seat / Profile / Wallet show the same Gold (600, incl. 100 in play) and Chips (1,000, allocated by the
   super admin for the check); Leave returned both 100-Gold reserves; ledger reconciles.
+
+### 2026-11-19 — Admin Panel
+
+- New Admin Panel (see §6 "Admin Panel"): hierarchy Administrator → Agent → Master Agent → Silver Agent with permanent
+  referral links, approval of every registration, bans / archive, Chips load / withdraw / requests with Load Logs,
+  hierarchical commissions (50 / 40 / 30% with differential overrides) and in-platform commission withdrawals, light / dark.
+- Behaviour changes: registration no longer signs in (pending until approved, web and mobile); the Super Admin's loads
+  come from their own Chips (Issue Chips first); commission withdrawals are back on (into the agent's own Chips).
+- Verified: 259 Pest, 11 web Vitest, 91 mobile Vitest; live as superadmin — Issue Chips (5,000,000), an Agent registered
+  through the admin's Agent link, approved from Pending Users, loaded 50,000 Chips; dark mode across panel pages and the
+  existing Platform tools; theme saved on the account; agent overview shows its Player and Master Agent links.

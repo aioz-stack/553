@@ -11,7 +11,8 @@ interface AuthState {
   user: User | null;
   ready: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (data: Record<string, string>) => Promise<void>;
+  /** Registers a PENDING account (no sign-in until an administrator approves it); resolves to the server message. */
+  register: (data: Record<string, string>) => Promise<string>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -70,9 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (form: Record<string, string>) => {
-    const { data } = await api<{ data: { token: string; user: User } }>('/auth/register', { method: 'POST', body: { ...form, ...(await deviceInfo()) } });
-    await setToken(data.token);
-    setUser(data.user);
+    const r = await api<{ message: string }>('/auth/register', { method: 'POST', body: { ...form, ...(await deviceInfo()) } });
+    return r.message;
   };
 
   const logout = async () => {

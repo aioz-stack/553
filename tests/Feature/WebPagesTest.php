@@ -42,7 +42,14 @@ dataset('agent pages', [
 ]);
 
 dataset('admin pages', [
-    ['/admin', 'Admin/Overview'],
+    ['/admin', 'AdminPanel/Overview'],
+    ['/admin/load-logs', 'AdminPanel/LoadLogs'],
+    ['/admin/commission-logs', 'AdminPanel/CommissionLogs'],
+    ['/admin/commission-withdrawals', 'AdminPanel/Withdrawals'],
+    ['/admin/accounts/agents', 'AdminPanel/Accounts'],
+    ['/admin/accounts/pending-users', 'AdminPanel/Accounts'],
+    ['/admin/accounts/archive', 'AdminPanel/Accounts'],
+    ['/admin/change-password', 'AdminPanel/ChangePassword'],
     ['/admin/administrators', 'Admin/Users'],
     ['/admin/agents', 'Admin/Users'],
     ['/admin/players', 'Admin/Users'],
@@ -99,7 +106,7 @@ test('players can open the table page and staff cannot play', function () {
     $this->actingAs(superAdmin())->get('/lobby')->assertForbidden();
 });
 
-test('web registration creates a player and an optional agent link', function () {
+test('web registration (with an older agent code) waits for approval, then links the player to the agent', function () {
     $agent = User::factory()->agent()->create();
     $code = app(UserManagementService::class)->createReferralCode($agent->agent);
 
@@ -110,12 +117,16 @@ test('web registration creates a player and an optional agent link', function ()
         'password' => 'secret123',
         'password_confirmation' => 'secret123',
         'referral_code' => $code->code,
-    ])->assertRedirect('/dashboard');
+    ])->assertRedirect('/');
 
     $player = User::query()->where('username', 'webplayer')->firstOrFail();
     expect($player->isPlayer())->toBeTrue()
-        ->and($player->agentLink->agent_id)->toBe($agent->agent->id)
-        ->and($code->fresh()->uses)->toBe(1);
+        ->and($player->status->value)->toBe('pending')
+        ->and($player->sponsor_id)->toBe($agent->id)
+        ->and($player->agentLink)->toBeNull();
+
+    app(\App\Services\Users\ReferralService::class)->approve(superAdmin(), $player);
+    expect($player->fresh()->agentLink->agent_id)->toBe($agent->agent->id);
 });
 
 test('suspended users cannot log in on the web', function () {

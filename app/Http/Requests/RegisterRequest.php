@@ -23,7 +23,10 @@ class RegisterRequest extends FormRequest
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:32'],
             'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
-            'referral_code' => ['nullable', 'string', 'max:24'],
+            // A referral code (the ?ref= of a registration link; older agent codes are accepted too).
+            'referral_code' => ['nullable', 'string', 'max:24', 'required_if:account_type,agent'],
+            // player (default) or agent (Agent Registration Link: the level comes from the sponsor).
+            'account_type' => ['nullable', 'in:player,agent'],
             'device_name' => ['nullable', 'string', 'max:100'],
         ];
     }

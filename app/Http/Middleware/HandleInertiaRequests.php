@@ -38,6 +38,10 @@ class HandleInertiaRequests extends Middleware
                     'role_label' => $user->role->label(),
                     'abilities' => $user->abilityKeys(),
                     'profile_picture' => $user->profile_picture,
+                    // player | agent | master | silver | admin, and the saved web theme (light | dark | null).
+                    'account_type' => $user->accountType(),
+                    'account_type_label' => $user->accountTypeLabel(),
+                    'theme' => is_array($user->preferences) ? ($user->preferences['theme'] ?? null) : null,
                 ] : null,
             ],
             'flash' => [

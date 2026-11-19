@@ -8,6 +8,7 @@ use App\Enums\TransactionType;
 use App\Enums\WalletType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\AdministratorLimit;
+use App\Models\ChipLoad;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletAdjustment;
@@ -18,13 +19,14 @@ use App\Services\Audit\AuditLogger;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Controlled point allocation down the hierarchy:
+ * Controlled Chips loading down the hierarchy:
  *
- *   Super Admin  --issues-->  Administrator / Agent allocation wallet, or a player wallet
- *   Administrator --from own allocation wallet--> Agent allocation wallet or player wallet
- *   Agent        --from own allocation wallet--> wallets of the agent's OWN players only
+ *   Super Admin   --issues (issue())--> own Chips wallet (the only way Chips are created)
+ *   Super Admin / Administrator --from own Chips wallet--> agent Chips wallet or player wallet
+ *   Agent         --from own Chips wallet--> wallets of the agent's OWN players only
  *
- * Players can never credit themselves. Nobody but Super Admin creates points.
+ * Players can never credit themselves. Every Chips load also writes a Load Logs row
+ * (chip_loads) pointing at its ledger transaction.
  */
 class AllocationService
 {
@@ -86,10 +88,63 @@ class AllocationService
                 ]);
 
                 $recipient->notify((new PointsReceived($transaction))->afterCommit());
+
+                if ($currency === Currency::CH) {
+                    self::logLoad(ChipLoad::LOAD, $actor, $recipient, $amount, $transaction, $actor, $reason);
+                }
             }
 
             return $transaction;
         });
+    }
+
+    /**
+     * Super Admin creates new Chips into their own Chips wallet (the platform's only issuance
+     * of Chips; every load then draws on a real balance).
+     */
+    public function issue(User $actor, int $amount, ?string $reason = null, ?string $idempotencyKey = null): WalletTransaction
+    {
+        if (! $actor->isSuperAdmin()) {
+            throw new BusinessRuleException('Only a Super Admin can issue new Chips.', 403, 'forbidden');
+        }
+
+        return DB::transaction(function () use ($actor, $amount, $reason, $idempotencyKey) {
+            $transaction = $this->ledger->transfer(new TransferRequest(
+                type: TransactionType::AdminAllocation,
+                currency: Currency::CH,
+                source: null,
+                destination: $this->wallets->for($actor, Currency::CH, WalletType::Allocation),
+                amount: $amount,
+                reason: $reason ?? 'Chips issued',
+                actor: $actor,
+                idempotencyKey: $idempotencyKey ? "issue:{$actor->id}:{$idempotencyKey}" : null,
+                approvedBy: $actor->id,
+            ));
+
+            if ($transaction->wasRecentlyCreated) {
+                self::logLoad(ChipLoad::LOAD, null, $actor, $amount, $transaction, $actor, $reason ?? 'Chips issued');
+                AuditLogger::log($actor, 'wallet.issue', $transaction, null, ['amount' => $amount]);
+            }
+
+            return $transaction;
+        });
+    }
+
+    /** One Load Logs row for a completed Chips movement. */
+    public static function logLoad(string $direction, ?User $sender, User $account, int $amount, WalletTransaction $transaction, User $processedBy, ?string $note): ChipLoad
+    {
+        return ChipLoad::query()->firstOrCreate(['wallet_transaction_id' => $transaction->id], [
+            'reference' => 'LD'.strtoupper((string) \Illuminate\Support\Str::ulid()),
+            'direction' => $direction,
+            'sender_id' => $sender?->id,
+            'account_id' => $account->id,
+            'account_type' => $account->accountType(),
+            'amount' => $amount,
+            'status' => ChipLoad::COMPLETED,
+            'processed_by' => $processedBy->id,
+            'note' => $note ? mb_substr($note, 0, 255) : null,
+            'processed_at' => now(),
+        ]);
     }
 
     /**
@@ -168,7 +223,8 @@ class AllocationService
                 throw new BusinessRuleException('Allocations to Super Admin accounts are not allowed.', 403, 'forbidden');
             }
 
-            return [$recipient->isPlayer() ? TransactionType::PlayerCredit : TransactionType::AdminAllocation, null, $targetType];
+            // Loads draw on the Super Admin's own Chips (created with issue()); never from nothing.
+            return [$recipient->isPlayer() ? TransactionType::PlayerCredit : TransactionType::AdminAllocation, $this->wallets->for($actor, $currency, WalletType::Allocation), $targetType];
         }
 
         if ($actor->isAdministrator()) {
