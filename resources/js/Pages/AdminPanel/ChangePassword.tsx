@@ -44,7 +44,7 @@ export default function ChangePassword() {
   );
 
   return (
-    <AdminPanelLayout title="Change Password" subtitle="Keep your administrator account secure">
+    <AdminPanelLayout title="Change Password" subtitle="Keep your account secure">
       <Panel title="Change Password" icon={<I.lock className="h-6 w-6" />} className="max-w-xl">
         <form onSubmit={submit} className="space-y-4 px-5 py-5">
           {field('current_password', 'Current Password', 'current-password')}

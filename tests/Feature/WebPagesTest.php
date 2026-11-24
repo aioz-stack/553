@@ -29,7 +29,14 @@ dataset('player pages', [
 ]);
 
 dataset('agent pages', [
-    ['/agent', 'Agent/Overview'],
+    ['/agent', 'AdminPanel/Overview'],
+    ['/agent/load-logs', 'AdminPanel/LoadLogs'],
+    ['/agent/commission-logs', 'AdminPanel/CommissionLogs'],
+    ['/agent/commission-withdrawals', 'AdminPanel/Withdrawals'],
+    ['/agent/accounts/agents', 'AdminPanel/Accounts'],
+    ['/agent/accounts/active-players', 'AdminPanel/Accounts'],
+    ['/agent/accounts/pending-users', 'AdminPanel/Accounts'],
+    ['/agent/change-password', 'AdminPanel/ChangePassword'],
     ['/agent/players', 'Agent/Players'],
     ['/agent/players/create', 'Agent/RegisterPlayer'],
     ['/agent/referral-codes', 'Agent/ReferralCodes'],

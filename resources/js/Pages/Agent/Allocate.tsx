@@ -3,7 +3,7 @@ import PageShell from '../../Components/PageShell';
 import { Card, StatCard } from '../../Components/ui';
 import { points } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
-import type { AgentOverviewData } from './Overview';
+import type { AgentOverviewData } from './types';
 
 export default function Allocate() {
   const players = useApi<{ data: Recipient[] }>('/agent/players', { per_page: 100 });

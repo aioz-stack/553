@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import { ChipStack, CopyLink, Dialog, Details, I, Note, Panel, Segments, StatTile, StatusPill, Table, Toast, TypePill, AmountDialog, fmt, when, type AmountAction, type Column } from '../../Components/AdminPanel/kit';
+import { usePanel, usePanelRefresh } from '../../lib/panel';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { useApi } from '../../lib/useApi';
 import TeamSections from '../../Components/AdminPanel/TeamSections';
@@ -9,6 +10,14 @@ import { Eye, Signed, TxLabel, commissionRows, loadRows, withdrawalRows } from '
 
 interface OverviewData {
   me: { username: string; is_super_admin: boolean };
+  /** Agent Panel only. */
+  level?: 'agent' | 'master' | 'silver';
+  level_label?: string;
+  upline?: { username: string } | null;
+  allocation_frozen?: boolean;
+  my_players?: number;
+  pending_chip_requests?: number;
+  chip_requests?: Array<{ reference: string; amount: string; status: string; note: string | null; created_at: string }>;
   my_chips: string;
   active_agents: { total: number; agent: number; master: number; silver: number };
   active_players: number;
@@ -19,10 +28,17 @@ interface OverviewData {
 
 type Tab = 'load' | 'commission' | 'withdrawal';
 
-/** Admin Panel → Overview: live platform summary, permanent referral links and recent transactions. */
+/**
+ * Overview of the Admin Panel (whole platform) and of the Agent / Master Agent / Silver Agent
+ * Panel (the agent's own downline): summary tiles, permanent referral links, Convert
+ * Commission to Wallet, Team Overview and recent transactions — all live from the API.
+ */
 export default function Overview() {
-  const { data, reload } = useApi<{ data: OverviewData }>('/admin/panel/overview');
+  const panel = usePanel();
+  const { data, reload } = useApi<{ data: OverviewData }>(`${panel.api}/overview`);
+  usePanelRefresh(reload);
   const d = data?.data;
+  const agent = panel.isAgent;
   const [tab, setTab] = useState<Tab>('load');
   const [detail, setDetail] = useState<{ title: string; rows: Array<[string, React.ReactNode]> } | null>(null);
   const [issue, setIssue] = useState<AmountAction | null>(null);
@@ -59,10 +75,12 @@ export default function Overview() {
     { key: 'act', label: 'Action', className: 'text-center', render: (r) => <Eye onClick={() => setDetail({ title: `Withdrawal ${r.reference}`, rows: withdrawalRows(r) })} /> },
   ];
 
-  const viewAll = { load: '/admin/load-logs', commission: '/admin/commission-logs', withdrawal: '/admin/commission-withdrawals' }[tab];
+  const viewAll = { load: `${panel.base}/load-logs`, commission: `${panel.base}/commission-logs`, withdrawal: `${panel.base}/commission-withdrawals` }[tab];
+  const requestChips = () => setIssue({ title: 'Request Chips', verb: 'Request', target: 'from the Administrator', path: '/agent/chip-requests', variant: 'gold' });
 
   return (
-    <AdminPanelLayout title="Overview" subtitle="Platform Summary and Management">
+    <AdminPanelLayout title="Overview" subtitle={agent ? `${d?.level_label ?? 'Agent'} summary${d?.upline ? ` · Upline: ${d.upline.username}` : ''}` : 'Platform Summary and Management'}>
+      {d?.allocation_frozen && <Note tone="warn"><b>Your Chips wallet is frozen</b> by an administrator. You cannot load Chips to players until it is unfrozen.</Note>}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         <StatTile
           tone="purple"
@@ -71,7 +89,11 @@ export default function Overview() {
           value={d ? fmt(d.my_chips) : '…'}
           label="My Total Chips Amount"
           footer={
-            d?.me.is_super_admin ? (
+            agent ? (
+              <button type="button" onClick={requestChips} className="rounded-lg bg-white/15 px-3 py-1 font-bold text-white ring-1 ring-white/25 hover:bg-white/25">
+                + Request Chips{d?.pending_chip_requests ? ` · ${d.pending_chip_requests} pending` : ''}
+              </button>
+            ) : d?.me.is_super_admin ? (
               <button type="button" onClick={() => setIssue({ title: 'Issue Chips', verb: 'Issue', target: 'into your Chips wallet', path: '/admin/panel/issue', variant: 'gold' })} className="rounded-lg bg-white/15 px-3 py-1 font-bold text-white ring-1 ring-white/25 hover:bg-white/25">
                 + Issue Chips
               </button>
@@ -82,30 +104,30 @@ export default function Overview() {
         />
         <StatTile
           tone="blue"
-          title="Total Active Agents"
-          subtitle="Agents + Master Agents + Silver Agents"
+          title={agent ? 'My Downline Agents' : 'Total Active Agents'}
+          subtitle={agent ? (d?.level === 'silver' ? 'Silver Agents recruit players only' : 'Active agents below you') : 'Agents + Master Agents + Silver Agents'}
           icon={<I.users className="h-10 w-10" />}
           value={d ? fmt(d.active_agents.total) : '…'}
-          label="Total Active Agents"
-          footer={d && `Agents ${fmt(d.active_agents.agent)} · Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}`}
+          label={agent ? 'My Downline Agents' : 'Total Active Agents'}
+          footer={d && (agent ? `Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}` : `Agents ${fmt(d.active_agents.agent)} · Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}`)}
         />
         <StatTile
           tone="green"
-          title="Total Active Players"
-          subtitle="All Agents' and Platform Players"
+          title={agent ? 'My Active Players' : 'Total Active Players'}
+          subtitle={agent ? `Your downline${d?.my_players !== undefined ? ` · ${fmt(d.my_players)} registered directly to you` : ''}` : "All Agents' and Platform Players"}
           icon={<I.users className="h-10 w-10" />}
           value={d ? fmt(d.active_players) : '…'}
-          label="Total Active Players"
-          footer={d && (d.pending_users > 0 ? <Link href="/admin/accounts/pending-users" className="underline">{d.pending_users} waiting for approval →</Link> : 'No registrations waiting')}
+          label={agent ? 'My Active Players' : 'Total Active Players'}
+          footer={d && (d.pending_users > 0 ? <Link href={`${panel.base}/accounts/pending-users`} className="underline">{d.pending_users} waiting for approval →</Link> : 'No registrations waiting')}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <CopyLink title="Agent Registration Link" url={d?.links.agent ?? null} icon={<I.userPlus className="h-7 w-7" />} hint={d?.links.agent_level ? `Registers ${d.links.agent_level}s under your account` : undefined} />
+        <CopyLink title={d?.links.agent_level ? `${d.links.agent_level} Registration Link` : 'Agent Registration Link'} url={d?.links.agent ?? null} icon={<I.userPlus className="h-7 w-7" />} hint={d?.links.agent_level ? `Registers ${d.links.agent_level}s under your account` : agent ? 'Silver Agents cannot recruit agents' : undefined} />
         <CopyLink title="Player Registration Link" url={d?.links.player ?? null} icon={<I.users className="h-7 w-7" />} hint="Registers Players under your account" />
       </div>
       <Note>
-        <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved.
+        <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved{agent ? ' by the Administrator' : ''}.
       </Note>
 
       <TeamSections onChanged={reload} />
@@ -126,6 +148,21 @@ export default function Overview() {
         {tab === 'commission' && <Table label="Recent commission logs" columns={commissionCols} rows={d?.recent.commission_logs} loading={!d} rowKey={(r) => r.id} empty="No commissions yet." />}
         {tab === 'withdrawal' && <Table label="Recent commission withdrawals" columns={withdrawalCols} rows={d?.recent.withdrawals} loading={!d} rowKey={(r) => r.id} empty="No withdrawals yet." />}
       </Panel>
+
+      {agent && d?.chip_requests && d.chip_requests.length > 0 && (
+        <Panel title="My Chips Requests" icon={<I.clock className="h-6 w-6" />} actions={<Link href={`${panel.base}/load-logs`} className="text-sm font-bold text-[#6d28d9] hover:underline dark:text-[#c4b5fd]">View in Load Logs</Link>}>
+          <ul className="divide-y divide-[#f0ecf9] text-sm dark:divide-white/[0.06]">
+            {d.chip_requests.map((r) => (
+              <li key={r.reference} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                <span className="font-mono text-xs">{r.reference}</span>
+                <span className="text-[#857d9c] dark:text-white/45">{when(r.created_at)}</span>
+                <span className="ml-auto font-black">{fmt(r.amount, 2)} Chips</span>
+                <StatusPill status={r.status} />
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
 
       <Dialog open={!!detail} title={detail?.title ?? ''} onClose={() => setDetail(null)}>
         {detail && <Details rows={detail.rows} />}

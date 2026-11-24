@@ -2,7 +2,7 @@ import PageShell from '../../Components/PageShell';
 import { Card, StatCard } from '../../Components/ui';
 import { points, titleCase } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
-import type { AgentOverviewData } from './Overview';
+import type { AgentOverviewData } from './types';
 
 export default function Reports() {
   const { data } = useApi<{ data: AgentOverviewData }>('/agent/reports');

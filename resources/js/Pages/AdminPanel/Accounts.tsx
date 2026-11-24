@@ -27,9 +27,16 @@ import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api, errorMessage } from '../../lib/api';
 import type { SharedProps } from '../../lib/types';
 import { useApi } from '../../lib/useApi';
+import { usePanel, usePanelRefresh } from '../../lib/panel';
 import type { Account, PageMeta } from './types';
 
 type Kind = 'agents' | 'players' | 'pending' | 'banned' | 'archived';
+
+const AGENT_PAGE: Partial<Record<Kind, { title: string; subtitle: string; empty: string }>> = {
+  agents: { title: 'My Agents', subtitle: 'Master and Silver Agents in your downline', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
+  players: { title: 'My Players', subtitle: 'Active players in your downline — load Chips to the players registered to you', empty: 'No active players yet. Share your Player Registration Link.' },
+  pending: { title: 'Pending Users', subtitle: 'Registrations through your links, waiting for the Administrator’s approval', empty: 'No registrations are waiting.' },
+};
 
 const PAGE: Record<Kind, { title: string; subtitle: string; empty: string }> = {
   agents: { title: 'Agents', subtitle: 'Agents, Master Agents and Silver Agents', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
@@ -47,18 +54,24 @@ interface AccountDetail extends Account {
   commissions_total: string;
 }
 
-/** Admin Panel → Agents / Players (Agents, Active Players, Pending Users, Ban Users) and Archive. */
+/**
+ * Agents / Players (Agents, Active Players, Pending Users, Ban Users) and Archive. Administrators
+ * manage every account; an agent sees only its own downline and can load Chips to the players
+ * registered to it — approvals, bans, archiving, withdrawals and rates stay with the Administrators.
+ */
 export default function Accounts({ kind }: { kind: Kind }) {
   const { auth } = usePage<SharedProps>().props;
+  const panel = usePanel();
+  const agent = panel.isAgent;
   const abilities = new Set(auth.user?.abilities ?? []);
   const isSuper = auth.user?.role === 'super_admin';
-  const canChips = isSuper || abilities.has('allocate_points');
-  const canCommission = isSuper || abilities.has('manage_commissions');
+  const canChips = !agent && (isSuper || abilities.has('allocate_points'));
+  const canCommission = !agent && (isSuper || abilities.has('manage_commissions'));
   const [q, setQ] = useState('');
   const [level, setLevel] = useState<'' | 'agent' | 'master' | 'silver'>('');
   const [type, setType] = useState<'' | 'player' | 'agent'>('');
   const [page, setPage] = useState(1);
-  const { data, loading, reload } = useApi<{ data: Account[]; meta: PageMeta }>('/admin/panel/accounts', {
+  const { data, loading, reload } = useApi<{ data: Account[]; meta: PageMeta }>(`${panel.api}/accounts`, {
     kind,
     q: q.trim() || undefined,
     level: kind === 'agents' && level ? level : undefined,
@@ -70,7 +83,8 @@ export default function Accounts({ kind }: { kind: Kind }) {
   const [detail, setDetail] = useState<AccountDetail | null>(null);
   const [rate, setRate] = useState('');
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-  const info = PAGE[kind];
+  usePanelRefresh(reload);
+  const info = (agent && AGENT_PAGE[kind]) || PAGE[kind];
 
   const done = (text: string) => {
     setAmount(null);
@@ -99,7 +113,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
 
   const openDetail = async (a: Account) => {
     try {
-      const r = await api.get<{ data: AccountDetail }>(`/admin/panel/accounts/${a.id}`);
+      const r = await api.get<{ data: AccountDetail }>(`${panel.api}/accounts/${a.id}`);
       setDetail(r.data.data);
       setRate(r.data.data.commission_rate !== null ? String(r.data.data.commission_rate) : '');
     } catch (e) {
@@ -118,7 +132,13 @@ export default function Accounts({ kind }: { kind: Kind }) {
   };
 
   const chipsActions = (a: Account) =>
-    canChips && (
+    agent ? (
+      a.can_load && (
+        <ActionIcon label={`Load Chips to ${a.username}`} tone="green" onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target: `to ${a.username} from your Chips`, path: `${panel.api}/accounts/${a.id}/load`, variant: 'success' })}>
+          <I.plus className="h-5 w-5" />
+        </ActionIcon>
+      )
+    ) : canChips && (
       <>
         <ActionIcon label={`Load Chips to ${a.username}`} tone="green" onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target: `to ${a.username}`, path: `/admin/panel/accounts/${a.id}/load`, variant: 'success' })}>
           <I.plus className="h-5 w-5" />
@@ -134,12 +154,12 @@ export default function Accounts({ kind }: { kind: Kind }) {
       <ActionIcon label={`View ${a.username}`} onClick={() => openDetail(a)}>
         <I.eye className="h-5 w-5" />
       </ActionIcon>
-      {a.status === 'active' && (
+      {a.status === 'active' && !agent && (
         <ActionIcon label={`Ban ${a.username}`} tone="red" onClick={() => status(a, 'ban')}>
           <I.ban className="h-5 w-5" />
         </ActionIcon>
       )}
-      {a.status === 'active' && (
+      {a.status === 'active' && !agent && (
         <ActionIcon label={`Archive ${a.username}`} onClick={() => status(a, 'archive')}>
           <I.archive className="h-5 w-5" />
         </ActionIcon>
@@ -186,7 +206,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
               </ActionIcon>
             )}
             {more(a)}
-            {a.status !== 'active' && (
+            {a.status !== 'active' && !agent && (
               <ActionIcon label={`Reactivate ${a.username}`} tone="green" onClick={() => status(a, 'reactivate')}>
                 <I.restore className="h-5 w-5" />
               </ActionIcon>
@@ -212,7 +232,9 @@ export default function Accounts({ kind }: { kind: Kind }) {
       {
         key: 'act',
         label: 'Actions',
-        render: (a: Account) => (
+        render: (a: Account) => agent ? (
+          <span className="inline-flex items-center gap-2 text-sm text-[#6b6385] dark:text-white/55"><I.clock className="h-4 w-4" /> Waiting for the Administrator</span>
+        ) : (
           <span className="flex flex-wrap gap-2">
             <Btn size="sm" variant="success" onClick={() => setConfirm({ title: `Approve ${a.username}`, message: <>Approve <b>{a.username}</b> as {a.requested_level ?? 'Player'}{a.sponsor ? <> under <b>{a.sponsor.username}</b></> : null}? The account becomes active and joins the hierarchy.</>, confirm: 'Approve', variant: 'success', run: async () => (await api.post<{ message: string }>(`/admin/panel/accounts/${a.id}/approve`)).data.message })}>
               <I.check className="h-4 w-4" /> Approve

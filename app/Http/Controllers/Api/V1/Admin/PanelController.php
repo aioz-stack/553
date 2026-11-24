@@ -40,11 +40,11 @@ use Illuminate\Support\Collection;
 class PanelController extends Controller
 {
     public function __construct(
-        private readonly ReferralService $referrals,
-        private readonly ChipLoadService $chips,
-        private readonly PayoutService $withdrawals,
-        private readonly CommissionService $commissions,
-        private readonly AccountStatusService $statuses,
+        protected readonly ReferralService $referrals,
+        protected readonly ChipLoadService $chips,
+        protected readonly PayoutService $withdrawals,
+        protected readonly CommissionService $commissions,
+        protected readonly AccountStatusService $statuses,
     ) {}
 
     // ------------------------------------------------------------------ overview
@@ -101,7 +101,7 @@ class PanelController extends Controller
             'account_type' => ['nullable', 'in:player,agent,master,silver,admin'],
         ]);
 
-        $page = ChipLoad::query()->with(['sender', 'account', 'processor', 'transaction'])
+        $page = $this->scopeLoads(ChipLoad::query())->with(['sender', 'account', 'processor', 'transaction'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
             ->when($request->filled('direction'), fn ($q) => $q->where('direction', $request->input('direction')))
             ->when($request->filled('account_type'), fn ($q) => $q->where('account_type', $request->input('account_type')))
@@ -113,7 +113,7 @@ class PanelController extends Controller
             })
             ->latest('id')->paginate($this->perPage($request));
 
-        $counts = ChipLoad::query()->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
+        $counts = $this->scopeLoads(ChipLoad::query())->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
 
         return $this->paged($page, fn (ChipLoad $l) => $this->presentLoad($l), ['counts' => [
             'completed' => (int) ($counts['completed'] ?? 0), 'pending' => (int) ($counts['pending'] ?? 0), 'rejected' => (int) ($counts['rejected'] ?? 0),
@@ -122,6 +122,7 @@ class PanelController extends Controller
 
     public function loadLog(ChipLoad $chipLoad): JsonResponse
     {
+        abort_unless($this->scopeLoads(ChipLoad::query())->whereKey($chipLoad->id)->exists(), 404);
         $chipLoad->load(['sender', 'account', 'processor', 'transaction']);
         $tx = $chipLoad->transaction;
 
@@ -160,7 +161,7 @@ class PanelController extends Controller
             'level' => ['nullable', 'in:agent,master,silver'],
         ]);
 
-        $base = AgentCommission::query()
+        $base = $this->scopeCommissions(AgentCommission::query())
             ->when($request->filled('status'), fn ($q) => $q->where('agent_commissions.status', $request->input('status')))
             ->when($request->filled('level'), fn ($q) => $q->whereHas('agent', fn ($a) => $a->where('level', $request->input('level'))))
             ->when($request->filled('q'), function ($q) use ($request) {
@@ -217,20 +218,26 @@ class PanelController extends Controller
     {
         $request->validate(['status' => ['nullable', 'in:pending,approved,rejected'], 'q' => ['nullable', 'string', 'max:64']]);
 
-        $page = AgentPayoutRequest::query()->with(['agent.user', 'reviewer'])
+        $page = $this->scopeWithdrawals(AgentPayoutRequest::query())->with(['agent.user', 'reviewer'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
             ->when($request->filled('q'), fn ($q) => $q->whereHas('agent.user', fn ($u) => $u->where('username', 'like', '%'.$request->input('q').'%')))
             ->latest('id')->paginate($this->perPage($request));
 
+        return $this->paged($page, fn (AgentPayoutRequest $r) => $this->presentWithdrawal($r), ['summary' => $this->withdrawalSummary($request->user())]);
+    }
+
+    /** @return array<string, mixed> */
+    protected function withdrawalSummary(User $me): array
+    {
         $commissionWallets = (int) Wallet::query()->where('currency', Currency::CH->value)->where('type', WalletType::Commission->value)->sum('balance');
         $pending = (int) AgentPayoutRequest::query()->where('status', 'pending')->sum('amount');
 
-        return $this->paged($page, fn (AgentPayoutRequest $r) => $this->presentWithdrawal($r), ['summary' => [
+        return [
             'available' => Points::decimal(max(0, $commissionWallets - $pending)),
             'pending' => Points::decimal($pending),
             'pending_count' => AgentPayoutRequest::query()->where('status', 'pending')->count(),
             'withdrawn' => Points::decimal((int) AgentPayoutRequest::query()->where('status', 'approved')->sum('amount')),
-        ]]);
+        ];
     }
 
     public function approveWithdrawal(Request $request, AgentPayoutRequest $payout): JsonResponse
@@ -257,7 +264,7 @@ class PanelController extends Controller
             'type' => ['nullable', 'in:player,agent'],
         ]);
 
-        $query = User::query()->with(['agent', 'sponsor.agent'])->whereIn('role', [Role::Agent->value, Role::Player->value]);
+        $query = $this->scopeAccounts(User::query())->with(['agent', 'sponsor.agent'])->whereIn('role', [Role::Agent->value, Role::Player->value]);
 
         match ($data['kind']) {
             'agents' => $query->where('role', Role::Agent->value)->whereIn('status', [UserStatus::Active->value, UserStatus::Suspended->value, UserStatus::Banned->value]),
@@ -283,6 +290,7 @@ class PanelController extends Controller
     /** One account with its recent transactions (Archive details, account drawer). */
     public function account(User $user): JsonResponse
     {
+        abort_unless($this->scopeAccounts(User::query())->whereKey($user->id)->exists(), 404);
         $user->load(['agent', 'sponsor.agent']);
         $walletIds = $user->wallets()->pluck('id')->all();
 
@@ -363,10 +371,47 @@ class PanelController extends Controller
         return response()->json(['message' => 'Account updated.', 'data' => $this->presentAccount($user->load(['agent', 'sponsor.agent']))]);
     }
 
+    // ------------------------------------------------------------------ scope (Administrators see everything)
+
+    /**
+     * Every list and detail goes through these, so a subclass (the agents' panel) can limit
+     * the same screens to its own downline without a second copy of the queries.
+     *
+     * @template T of Builder
+     *
+     * @param  T  $query
+     * @return T
+     */
+    protected function scopeLoads(Builder $query): Builder
+    {
+        return $query;
+    }
+
+    protected function scopeCommissions(Builder $query): Builder
+    {
+        return $query;
+    }
+
+    protected function scopeWithdrawals(Builder $query): Builder
+    {
+        return $query;
+    }
+
+    protected function scopeAccounts(Builder $query): Builder
+    {
+        return $query;
+    }
+
+    /** @return array<string, mixed> */
+    protected function accountExtras(User $u): array
+    {
+        return [];
+    }
+
     // ------------------------------------------------------------------ presentation
 
     /** @return array<string, mixed> */
-    private function presentLoad(ChipLoad $l): array
+    protected function presentLoad(ChipLoad $l): array
     {
         $signed = $l->direction === ChipLoad::WITHDRAW ? -$l->amount : $l->amount;
 
@@ -395,7 +440,7 @@ class PanelController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function presentCommission(AgentCommission $c): array
+    protected function presentCommission(AgentCommission $c): array
     {
         $agentUser = $c->agent?->user;
 
@@ -419,7 +464,7 @@ class PanelController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function presentWithdrawal(AgentPayoutRequest $r): array
+    protected function presentWithdrawal(AgentPayoutRequest $r): array
     {
         $agentUser = $r->agent?->user;
 
@@ -442,7 +487,7 @@ class PanelController extends Controller
      * @param  array<int, array{chips: int, commission: int}>|null  $balances
      * @return array<string, mixed>
      */
-    private function presentAccount(User $u, ?array $balances = null): array
+    protected function presentAccount(User $u, ?array $balances = null): array
     {
         $balances ??= $this->balancesFor(collect([$u]));
         $sponsor = $u->sponsor;
@@ -465,7 +510,7 @@ class PanelController extends Controller
             'registered_at' => $u->created_at?->toIso8601String(),
             'approved_at' => $u->approved_at?->toIso8601String(),
             'archived_at' => $u->archived_at?->toIso8601String(),
-        ];
+        ] + $this->accountExtras($u);
     }
 
     /**
@@ -474,7 +519,7 @@ class PanelController extends Controller
      * @param  Collection<int, User>  $users
      * @return array<int, array{chips: int, commission: int}>
      */
-    private function balancesFor(Collection $users): array
+    protected function balancesFor(Collection $users): array
     {
         $out = [];
         $rows = Wallet::query()->whereIn('user_id', $users->pluck('id'))->where('currency', Currency::CH->value)->get(['user_id', 'type', 'balance']);
@@ -491,7 +536,7 @@ class PanelController extends Controller
     }
 
     /** @return array{id: int, username: string, name: string, account_type: string, account_type_label: string} */
-    private function who(User $u): array
+    protected function who(User $u): array
     {
         return ['id' => $u->id, 'username' => $u->username, 'name' => $u->name, 'account_type' => $u->accountType(), 'account_type_label' => $u->accountTypeLabel()];
     }
@@ -508,7 +553,7 @@ class PanelController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function amountRequest(Request $request): array
+    protected function amountRequest(Request $request): array
     {
         return $request->validate([
             'amount' => ['required', 'regex:/^\d{1,13}(\.\d{1,2})?$/'],
@@ -517,7 +562,7 @@ class PanelController extends Controller
         ]);
     }
 
-    private function minor(string $amount): int
+    protected function minor(string $amount): int
     {
         $minor = Points::toMinor($amount);
         if ($minor <= 0) {
@@ -527,7 +572,7 @@ class PanelController extends Controller
         return $minor;
     }
 
-    private function perPage(Request $request): int
+    protected function perPage(Request $request): int
     {
         return max(5, min(100, (int) $request->integer('per_page', 15)));
     }
@@ -536,7 +581,7 @@ class PanelController extends Controller
      * @param  \Illuminate\Contracts\Pagination\LengthAwarePaginator  $page
      * @param  array<string, mixed>  $meta
      */
-    private function paged($page, callable $map, array $meta = []): JsonResponse
+    protected function paged($page, callable $map, array $meta = []): JsonResponse
     {
         return response()->json([
             'data' => collect($page->items())->map($map)->values(),

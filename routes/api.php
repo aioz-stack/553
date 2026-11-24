@@ -145,7 +145,18 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::get('payout-requests', [PayoutController::class, 'index']);
             Route::post('payout-requests', [PayoutController::class, 'store'])->middleware('throttle:wallet-actions');
             // Referral links, balances, downline; Chips requests to the Administrator.
-            Route::get('panel', [AgentPanelController::class, 'panel']);
+            // Agent Panel: the Admin Panel screens limited to this agent's own downline (read + own actions only).
+            Route::get('panel', [AgentPanelController::class, 'overview']);
+            Route::prefix('panel')->group(function () {
+                Route::get('overview', [AgentPanelController::class, 'overview']);
+                Route::get('load-logs', [AgentPanelController::class, 'loadLogs']);
+                Route::get('load-logs/{chipLoad}', [AgentPanelController::class, 'loadLog']);
+                Route::get('commission-logs', [AgentPanelController::class, 'commissionLogs']);
+                Route::get('withdrawals', [AgentPanelController::class, 'withdrawals']);
+                Route::get('accounts', [AgentPanelController::class, 'accounts']);
+                Route::get('accounts/{user}', [AgentPanelController::class, 'account']);
+                Route::post('accounts/{user}/load', [AgentPanelController::class, 'load'])->middleware('throttle:wallet-actions');
+            });
             Route::post('chip-requests', [AgentPanelController::class, 'requestChips'])->middleware('throttle:wallet-actions');
             Route::get('reports', [AgentController::class, 'dashboard']);
         });

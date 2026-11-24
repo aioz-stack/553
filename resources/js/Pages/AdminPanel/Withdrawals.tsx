@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ActionIcon, ConfirmDialog, Details, Dialog, Figure, I, Panel, Pager, SearchInput, Segments, StatusPill, Table, Toast, TypePill, fmt, when, type Column, type ConfirmAction } from '../../Components/AdminPanel/kit';
+import { ActionIcon, AmountDialog, Btn, ConfirmDialog, Details, Dialog, Figure, I, Panel, Pager, SearchInput, Segments, StatusPill, Table, Toast, TypePill, fmt, when, type AmountAction, type Column, type ConfirmAction } from '../../Components/AdminPanel/kit';
 import { Eye, withdrawalRows } from '../../Components/AdminPanel/rows';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
+import { usePanel, usePanelRefresh } from '../../lib/panel';
 import type { PageMeta, Withdrawal } from './types';
 
 type Status = '' | 'pending' | 'approved' | 'rejected';
@@ -13,14 +14,18 @@ type Status = '' | 'pending' | 'approved' | 'rejected';
  * their own Chips. Approve moves the Chips (once); reject leaves the balance as it was.
  */
 export default function Withdrawals() {
+  const panel = usePanel();
+  const agent = panel.isAgent;
+  const [request, setRequest] = useState<AmountAction | null>(null);
   const [status, setStatus] = useState<Status>('');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const { data, loading, reload } = useApi<{ data: Withdrawal[]; meta: PageMeta & { summary: { available: string; pending: string; pending_count: number; withdrawn: string } } }>('/admin/panel/withdrawals', {
+  const { data, loading, reload } = useApi<{ data: Withdrawal[]; meta: PageMeta & { summary: { available: string; pending: string; pending_count: number; withdrawn: string } } }>(`${panel.api}/withdrawals`, {
     status: status || undefined,
     q: q.trim() || undefined,
     page,
   });
+  usePanelRefresh(reload);
   const s = data?.meta.summary;
   const [detail, setDetail] = useState<Withdrawal | null>(null);
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
@@ -55,7 +60,7 @@ export default function Withdrawals() {
       render: (r) => (
         <span className="inline-flex gap-2">
           <Eye onClick={() => setDetail(r)} />
-          {r.status === 'pending' && (
+          {r.status === 'pending' && !agent && (
             <>
               <ActionIcon label={`Approve withdrawal ${r.reference}`} tone="green" onClick={() => review(r, true)}>
                 <I.check className="h-5 w-5" />
@@ -71,16 +76,25 @@ export default function Withdrawals() {
   ];
 
   return (
-    <AdminPanelLayout title="Commission Withdrawal" subtitle="Agents' commission moved into their own Chips">
+    <AdminPanelLayout title="Commission Withdrawal" subtitle={agent ? 'Your commission withdrawals (and your downline’s), approved by the Administrator' : "Agents' commission moved into their own Chips"}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Figure label="Available commission balance" value={s ? `${fmt(s.available, 2)} Chips` : '…'} tone="gold" hint="All agents' commission wallets, less pending requests" />
-        <Figure label="Total withdrawn" value={s ? `${fmt(s.withdrawn, 2)} Chips` : '…'} tone="good" hint="Approved withdrawals" />
-        <Figure label="Pending requests" value={s ? `${fmt(s.pending, 2)} Chips` : '…'} tone="warn" hint={s ? `${s.pending_count} waiting for review` : undefined} />
+        <Figure label={agent ? 'My available commission' : 'Available commission balance'} value={s ? `${fmt(s.available, 2)} Chips` : '…'} tone="gold" hint={agent ? 'Your commission wallet, less your pending requests' : "All agents' commission wallets, less pending requests"} />
+        <Figure label={agent ? 'My total withdrawn' : 'Total withdrawn'} value={s ? `${fmt(s.withdrawn, 2)} Chips` : '…'} tone="good" hint="Approved withdrawals" />
+        <Figure label={agent ? 'My pending requests' : 'Pending requests'} value={s ? `${fmt(s.pending, 2)} Chips` : '…'} tone="warn" hint={s ? `${s.pending_count} waiting for review` : undefined} />
       </div>
       <Panel
         title="Withdrawal Requests"
         icon={<I.wallet className="h-6 w-6" />}
-        actions={<Segments<Status> label="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={[['', 'All'], ['pending', 'Pending'], ['approved', 'Approved'], ['rejected', 'Rejected']]} />}
+        actions={
+          <>
+            {agent && (
+              <Btn variant="success" size="sm" disabled={!s || Number(s.available) <= 0} onClick={() => s && setRequest({ title: 'Withdraw Commission', verb: 'Withdraw', target: 'of commission into your own Chips (after approval)', path: '/agent/payout-requests', limit: s.available, limitLabel: 'Available commission', variant: 'success' })}>
+                <I.percent className="h-4 w-4" /> Withdraw Commission
+              </Btn>
+            )}
+            <Segments<Status> label="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={[['', 'All'], ['pending', 'Pending'], ['approved', 'Approved'], ['rejected', 'Rejected']]} />
+          </>
+        }
       >
         <div className="px-5 py-4">
           <SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search agent…" />
@@ -98,6 +112,15 @@ export default function Withdrawals() {
         onDone={(m) => {
           setConfirm(null);
           setToast({ ok: true, text: m });
+          reload();
+        }}
+      />
+      <AmountDialog
+        action={request}
+        onClose={() => setRequest(null)}
+        onDone={(m) => {
+          setRequest(null);
+          setToast({ ok: true, text: m || 'Withdrawal request sent for approval.' });
           reload();
         }}
       />

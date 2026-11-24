@@ -728,8 +728,27 @@ through a service (validation, row locks, ledger, idempotency keys, audit log). 
   administrators, settings) sit under **Platform** in the same shell.
 - **Light / Dark:** header toggle; saved in the browser and on the account (`PUT profile/preferences {theme}`, shared to
   Inertia as `auth.user.theme`), so it survives refreshes and new sign-ins. Every component has light and dark colours.
-- **Agent side:** Agent Overview → My Network (`GET agent/panel`): level, upline, both links, Chips, commission available /
-  withdrawn, downline, Request Chips, Withdraw Commission (`POST agent/payout-requests`).
+- **Agent Panel** (`/agent`, API `/api/v1/agent/panel/*`, `AgentPanelController`): Agents, Master Agents and Silver Agents
+  get the Admin Panel itself — same shell, pages and components (`resources/js/Pages/AdminPanel/*`), titled "Agent Panel",
+  "Master Agent Panel" or "Silver Agent Panel". `lib/panel.ts` (`usePanel`) picks the API base and hides Administrator-only
+  controls. `AgentPanelController` extends `PanelController` and overrides its scope hooks (`scopeLoads`,
+  `scopeCommissions`, `scopeWithdrawals`, `scopeAccounts`), so every list and detail covers only the agent and its
+  downline (`TeamService::downline`); anything else answers 404.
+  - Overview: My Total Chips (+ Request Chips), My Downline Agents, My Active Players, registration links, Convert
+    Commission to Wallet, Team Overview, recent transactions, My Chips Requests.
+  - Load Logs (own + downline, Request Chips), Commission Logs (own + downline agents; rates read-only), Commission
+    Withdrawal (own + downline; Withdraw Commission request), My Agents (not for Silver Agents), My Players (Load Chips
+    only to players registered to the agent: `POST agent/panel/accounts/{user}/load` — `ChipLoadService::load` allows
+    agents, `AllocationService` enforces ownership), Pending Users (read-only), Change Password.
+  - Agent Tools (the existing pages, now in the same shell through `PageShell`): Register Player, Load Chips, Referral
+    Codes, Transactions, Player Activity, Reports.
+  - Not available to agents (no routes; the services refuse them too): approving or rejecting registrations, Chips
+    requests and withdrawals, withdrawing Chips, ban / suspend / archive, commission rates, issuing Chips.
+- **Real time:** `PanelActivityObserver` (ChipLoad, AgentCommission, AgentPayoutRequest, User status) broadcasts
+  `PanelUpdated` (`panel.updated`, no data) after commit to the accounts concerned and their whole upline
+  (`private-user.{id}`) and to `private-staff` (Super Admin / Administrators). `AdminPanelLayout` listens and every
+  open panel page refetches (`usePanelRefresh`); returning to the browser tab refetches too. Needs Reverb and a queue
+  worker (the event is queued).
 - **Convert Commission to Wallet** (Admin Overview and Agent Overview, directly below the registration links;
   `TeamService`): shows total accumulated commission, available (balance − pending withdrawal requests) and converted
   so far. The modal (Commission Amount, Amount to Convert, Minimum Conversion, Cancel / Confirm Conversion) posts
@@ -936,3 +955,12 @@ Not done / not verified:
   not part of `DatabaseSeeder`). Creates `dummyagent` → `dummymaster` → `dummysilver` → `dummyplayer` (password
   "password") through the referral + approval flow, and gives each dummy agent 200 Chips of Paid commission (an
   issued `COMMISSION_PAYMENT` into its commission wallet plus a commission record with `game_session_id` 0). Safe to re-run.
+
+### 2026-11-24 — Agent / Master Agent / Silver Agent Panels
+
+- The agent dashboards now use the Admin Panel's design, layout and pages, limited to each agent's downline (see Admin
+  Panel → Agent Panel). Agents can load Chips to their own players from My Players; the old Agent Overview page and
+  `AgentNetworkCard` were replaced by the shared Overview (`GET agent/panel` still answers, now with the overview data).
+- Real-time `panel.updated` refresh for the Admin and Agent Panels.
+- Tests: `tests/Feature/AgentPanelTest.php` (scoping per level, own-player loads, no Administrator actions, real-time
+  event); WebPagesTest covers the new agent pages.

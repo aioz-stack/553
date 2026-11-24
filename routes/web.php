@@ -53,7 +53,15 @@ Route::middleware('auth')->group(function () {
 
     // Agent dashboard.
     Route::prefix('agent')->name('agent.')->middleware('can:agent')->group(function () {
-        Route::inertia('/', 'Agent/Overview')->name('overview');
+        // Agent Panel (same screens as the Admin Panel, limited to the agent's downline).
+        Route::inertia('/', 'AdminPanel/Overview')->name('overview');
+        Route::inertia('/load-logs', 'AdminPanel/LoadLogs')->name('load-logs');
+        Route::inertia('/commission-logs', 'AdminPanel/CommissionLogs')->name('commission-logs');
+        Route::inertia('/commission-withdrawals', 'AdminPanel/Withdrawals')->name('commission-withdrawals');
+        foreach (['agents' => 'agents', 'active-players' => 'players', 'pending-users' => 'pending'] as $path => $kind) {
+            Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
+        }
+        Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
         Route::inertia('/players', 'Agent/Players')->name('players');
         Route::inertia('/players/create', 'Agent/RegisterPlayer')->name('players.create');
         Route::get('/players/{player}', fn (User $player) => Inertia::render('Agent/PlayerDetail', ['playerId' => $player->id]))->name('players.show');

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage, newIdempotencyKey } from '../../lib/api';
+import { usePanelRefresh } from '../../lib/panel';
 import { useApi } from '../../lib/useApi';
 import { Btn, Dialog, Figure, I, Panel, Toast, fieldClass, fmt } from './kit';
 
@@ -28,6 +29,7 @@ interface TeamOverview {
 export default function TeamSections({ onChanged }: { onChanged?: () => void }) {
   const wallet = useApi<{ data: CommissionWallet }>('/commission/wallet');
   const team = useApi<{ data: TeamOverview }>('/team/overview');
+  usePanelRefresh(wallet.reload, team.reload);
   const c = wallet.data?.data;
   const t = team.data?.data;
   const [open, setOpen] = useState(false);

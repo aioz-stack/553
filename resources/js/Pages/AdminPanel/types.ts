@@ -73,6 +73,8 @@ export interface Account {
   registered_at: string;
   approved_at: string | null;
   archived_at: string | null;
+  /** Agent Panel: the agent may load Chips to this player (registered to it). */
+  can_load?: boolean;
 }
 
 export interface PageMeta {

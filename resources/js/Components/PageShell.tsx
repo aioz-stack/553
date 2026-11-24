@@ -9,11 +9,14 @@ import type { SharedProps } from '../lib/types';
 
 /**
  * Standard authenticated page: Baseplate layout + breadcrumb + flash messages. Pages under
- * /admin use the Admin Panel shell instead, so every staff tool shares one look and theme.
+ * /admin and /agent use the Admin / Agent Panel shell instead, so every staff and agent tool
+ * shares one look and theme.
  */
 export default function PageShell({ title, children, wide = true }: { title: string; children: ReactNode; wide?: boolean }) {
   const { flash } = usePage<SharedProps>().props;
-  const inAdmin = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  const inAgent = path.startsWith('/agent');
+  const inAdmin = path.startsWith('/admin') || inAgent;
 
   const body = (
     <>
@@ -25,7 +28,7 @@ export default function PageShell({ title, children, wide = true }: { title: str
 
   if (inAdmin) {
     return (
-      <AdminPanelLayout title={title} subtitle="Platform management">
+      <AdminPanelLayout title={title} subtitle={inAgent ? 'Agent tools' : 'Platform management'}>
         <div className={wide ? '' : 'max-w-4xl'}>{body}</div>
       </AdminPanelLayout>
     );

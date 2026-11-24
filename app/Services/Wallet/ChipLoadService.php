@@ -38,7 +38,9 @@ class ChipLoadService
 
     public function load(User $actor, User $account, int $amount, ?string $note = null, ?string $idempotencyKey = null): ChipLoad
     {
-        $this->authorize($actor, $account);
+        // Agents load only their own registered players (AllocationService enforces ownership);
+        // withdrawing and approving stay with the Administrators.
+        $this->authorize($actor, $account, allowAgents: true);
         $this->assertAmount($amount);
 
         try {
@@ -179,9 +181,11 @@ class ChipLoadService
         return $load;
     }
 
-    private function authorize(User $actor, User $account): void
+    private function authorize(User $actor, User $account, bool $allowAgents = false): void
     {
-        if (! $actor->isSuperAdmin() && ! ($actor->isAdministrator() && $actor->hasAbility(Ability::AllocatePoints))) {
+        $agentLoad = $allowAgents && $actor->isAgent() && $actor->isActive() && $account->isPlayer();
+
+        if (! $agentLoad && ! $actor->isSuperAdmin() && ! ($actor->isAdministrator() && $actor->hasAbility(Ability::AllocatePoints))) {
             throw new BusinessRuleException('You are not allowed to move Chips.', 403, 'forbidden');
         }
 

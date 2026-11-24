@@ -31,6 +31,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(GameSession::class, GameSessionPolicy::class);
 
+        // Real-time refresh of the Admin / Agent Panels.
+        foreach ([\App\Models\ChipLoad::class, \App\Models\AgentCommission::class, \App\Models\AgentPayoutRequest::class, User::class] as $model) {
+            $model::observe(\App\Observers\PanelActivityObserver::class);
+        }
+
         // One gate per configurable ability. Super Admin holds all of them
         // (see User::hasAbility); administrators only what was granted.
         foreach (Ability::cases() as $ability) {
