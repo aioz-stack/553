@@ -186,8 +186,6 @@ export default function Home() {
   const [picker, setPicker] = useState(false);
   const [settings, setSettings] = useState(false);
   const [panel, setPanel] = useState<'keys' | 'shop' | null>(null);
-  // Get Keys can also be opened from inside the Shop (its Keys "+"); the Shop stays open underneath.
-  const [keysOverShop, setKeysOverShop] = useState(false);
   const [avatarPicker, setAvatarPicker] = useState(false);
   const chipCount = useCountUp(chips !== undefined ? Math.floor(Number(chips)) : undefined);
   const keyCount = useCountUp(keys !== undefined ? Math.floor(Number(keys)) : undefined);
@@ -338,15 +336,7 @@ export default function Home() {
             onWallet={() => router.push('/wallet/')}
           />
         )}
-        {panel === 'shop' && <ShopModal onClose={() => setPanel(null)} onGetKeys={() => setKeysOverShop(true)} />}
-        {keysOverShop && (
-          <GetKeysPanel
-            keys={keyCount}
-            agentName={(user as { owning_agent?: { name?: string | null } | null } | null)?.owning_agent?.name ?? null}
-            onClose={() => setKeysOverShop(false)}
-            onWallet={() => router.push('/wallet/')}
-          />
-        )}
+        {panel === 'shop' && <ShopModal onClose={() => setPanel(null)} />}
         {avatarPicker && <AvatarPicker onClose={() => setAvatarPicker(false)} />}
         {/* Change avatar / nickname: the pencil badge on your portrait (the only clickable part of the profile). */}
         <button

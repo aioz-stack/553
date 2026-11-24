@@ -74,15 +74,26 @@ return [
     | seat before the match starts (never during the countdown).
     */
     /*
-    | Shop: Keys → Chips exchange packages (whole Keys → whole Chips). Final and non-refundable; Chips
-    | can never be turned back into Keys. Keyed by package id.
+    | Shop: players buy Keys with Chips at a fixed 5 Chips = 1 Key (packages keyed by id). Final and
+    | non-refundable; Keys are never turned back into Chips. The Chips paid are shared with the
+    | player's hierarchy by the player's direct upline (percent, totalling 100%), into each
+    | recipient's Chips wallet:
+    |   direct upline Admin        → Admin 100%
+    |   direct upline Incorporator → Admin 40%, Incorporator 60%
+    |   direct upline Master Agent → Admin 40%, Incorporator 10%, Master Agent 50%
     */
     'shop' => [
+        'chips_per_key' => 5,
         'key_packages' => [
             'k1' => ['keys' => 1, 'chips' => 5],
             'k2' => ['keys' => 2, 'chips' => 10],
             'k5' => ['keys' => 5, 'chips' => 25],
             'k10' => ['keys' => 10, 'chips' => 50],
+        ],
+        'revenue_shares' => [
+            'admin' => ['admin' => 100],
+            'incorporator' => ['admin' => 40, 'incorporator' => 60],
+            'master' => ['admin' => 40, 'incorporator' => 10, 'master' => 50],
         ],
     ],
 

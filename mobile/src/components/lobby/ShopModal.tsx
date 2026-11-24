@@ -8,11 +8,12 @@ import { when } from '@/lib/hooks';
 import { play } from '@/lib/sound';
 
 /**
- * Shop (Main Lobby pop-up, 80% × 80% of the screen): exchange Keys for Chips at the four fixed
- * packages. The server decides everything (GET /shop, POST /shop/key-exchanges): it checks your
- * Keys, takes them and adds the Chips in one transaction, refuses duplicates (idempotency key) and
- * logs the exchange. Each exchange needs an explicit confirmation that it is final and
- * non-refundable. Sizes use container units of the pop-up, so it scales with any screen.
+ * Shop (Main Lobby pop-up, 80% × 80% of the screen): buy Keys with Chips at 5 Chips = 1 Key (four
+ * fixed packages). The server decides everything (GET /shop, POST /shop/key-exchanges): it checks
+ * your Chips, takes them, credits the Keys and shares the Chips with your hierarchy in one
+ * transaction, refuses duplicates (idempotency key) and logs the exchange. Each exchange needs an
+ * explicit confirmation that it is final and non-refundable. Sizes use container units of the
+ * pop-up, so it scales with any screen.
  */
 interface Pack {
   id: string;
@@ -22,13 +23,15 @@ interface Pack {
 interface Exchange {
   id: number;
   package: string;
+  /** chips_to_keys (now) or keys_out (earlier exchanges that gave Keys for Gold / Chips). */
+  direction: string;
+  chips: string;
   keys: string;
-  amount: string;
-  /** CH (older exchanges may show GD: they paid Gold). */
-  currency: string;
+  paid_out: { amount: string; currency: string } | null;
   created_at: string;
 }
 interface ShopState {
+  chips_per_key?: number;
   packages: Pack[];
   balances: { keys: string; chips: string };
   history: Exchange[];
@@ -84,7 +87,7 @@ function KeyPile({ count }: { count: number }) {
   );
 }
 
-export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void; onGetKeys: () => void }) {
+export default function ShopModal({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<ShopState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Pack | null>(null);
@@ -116,13 +119,15 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
   }, [toast]);
 
   const keys = state ? n(state.balances.keys) : undefined;
+  const chips = state ? n(state.balances.chips) : undefined;
+  const rate = state?.chips_per_key ?? 5;
 
   const choose = (p: Pack) => {
     if (busy) return;
     play('tap');
-    if (keys !== undefined && keys < p.keys) {
+    if (chips !== undefined && chips < p.chips) {
       play('lose');
-      setToast({ ok: false, text: `Not enough Keys — this package needs ${plural(p.keys).toLowerCase()} and you have ${fmt(keys)}.` });
+      setToast({ ok: false, text: `Not enough Chips — this package costs ${fmt(p.chips)} Chips and you have ${fmt(chips)}.` });
       return;
     }
     requestKey.current = idempotencyKey(); // one key per confirmed exchange: a double tap can't repeat it
@@ -140,7 +145,7 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
       });
       play('win');
       setState((s) => (s ? { ...s, balances: r.data.balances } : s));
-      setToast({ ok: true, text: `Success! ${plural(confirm.keys).toLowerCase()} exchanged for ${fmt(confirm.chips)} Chips.` });
+      setToast({ ok: true, text: `Success! ${fmt(confirm.chips)} Chips exchanged for ${plural(confirm.keys).toLowerCase()}.` });
       setConfirm(null);
       window.dispatchEvent(new Event('pusoy:wallet'));
     } catch (e) {
@@ -176,23 +181,24 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                 SHOP
               </h2>
             </div>
-            <div className="absolute right-[12cqh] top-1/2 flex -translate-y-1/2 items-center gap-[1cqh] rounded-full border-[0.5cqh] border-[#ffd34d] bg-gradient-to-b from-[#3a0b7a] to-[#160330] py-[0.5cqh] pl-[0.8cqh] pr-[0.6cqh]" role="group" aria-label="Your Keys">
-              <KeyIcon size={0} className="!h-[6cqh] !w-[6cqh]" />
-              <span className="min-w-[14cqh] text-right font-display font-black tabular-nums" style={{ fontSize: h(4.4) }} aria-label="Keys balance">
-                {keys !== undefined ? fmt(keys) : '…'}
-              </span>
-              <button
-                type="button"
-                aria-label="Get Keys"
-                onClick={() => {
-                  play('tap');
-                  onGetKeys();
-                }}
-                className="lx-tile flex h-[6cqh] w-[6cqh] items-center justify-center rounded-full border-[0.4cqh] border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] font-display font-black text-white"
-                style={{ fontSize: h(4.4), lineHeight: 1 }}
-              >
-                +
-              </button>
+            <span className="absolute left-[2cqh] top-1/2 -translate-y-1/2 rounded-full bg-black/45 px-[2cqh] py-[0.6cqh] font-display font-black text-[#ffe14d]" style={{ fontSize: h(3.2) }} aria-label="Exchange rate">
+              {rate} Chips = 1 Key
+            </span>
+            <div className="absolute right-[12cqh] top-1/2 flex -translate-y-1/2 flex-col gap-[0.6cqh]">
+              <div className="flex items-center gap-[1cqh] rounded-full border-[0.4cqh] border-[#ffb3b3] bg-gradient-to-b from-[#7a0a12] to-[#2e0306] py-[0.3cqh] pl-[0.6cqh] pr-[1.4cqh]" role="group" aria-label="Your Chips">
+                <span className="inline-block [&>svg]:!h-full [&>svg]:!w-full" style={{ width: h(4.6), height: h(4.6) }}>
+                  <ChipIcon size={30} />
+                </span>
+                <span className="min-w-[13cqh] text-right font-display font-black tabular-nums" style={{ fontSize: h(3.4) }} aria-label="Chips balance">
+                  {chips !== undefined ? fmt(chips) : '…'}
+                </span>
+              </div>
+              <div className="flex items-center gap-[1cqh] rounded-full border-[0.4cqh] border-[#e2c4ff] bg-gradient-to-b from-[#3a0b7a] to-[#160330] py-[0.3cqh] pl-[0.6cqh] pr-[1.4cqh]" role="group" aria-label="Your Keys">
+                <KeyIcon size={0} className="!h-[4.6cqh] !w-[4.6cqh]" />
+                <span className="min-w-[13cqh] text-right font-display font-black tabular-nums" style={{ fontSize: h(3.4) }} aria-label="Keys balance">
+                  {keys !== undefined ? fmt(keys) : '…'}
+                </span>
+              </div>
             </div>
             <button
               type="button"
@@ -230,7 +236,15 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                 <ul className="mt-[0.6cqh] space-y-[0.6cqh]" aria-label="Exchange history">
                   {state?.history.map((x) => (
                     <li key={x.id} className="rounded-[1cqh] bg-white/5 px-[1cqh] py-[0.5cqh]" style={{ fontSize: h(2.4) }}>
-                      <span className="font-black">−{fmt(n(x.keys))} Keys</span> → <span className="font-black text-[#ffe14d]">+{fmt(n(x.amount))} {x.currency === 'GD' ? 'Gold' : 'Chips'}</span>
+                      {x.direction === 'chips_to_keys' ? (
+                        <>
+                          <span className="font-black">−{fmt(n(x.chips))} Chips</span> → <span className="font-black text-[#e2c4ff]">+{fmt(n(x.keys))} {n(x.keys) === 1 ? 'Key' : 'Keys'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-black">−{fmt(n(x.keys))} Keys</span> → <span className="font-black text-[#ffe14d]">+{fmt(n(x.paid_out?.amount))} {x.paid_out?.currency === 'GD' ? 'Gold' : 'Chips'}</span>
+                        </>
+                      )}
                       <span className="block text-white/50">{when(x.created_at)}</span>
                     </li>
                   ))}
@@ -250,7 +264,7 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
               )}
               <ul className="grid min-h-0 flex-1 grid-cols-4 gap-[1.6cqh]" aria-label="Exchange packages">
                 {(state?.packages ?? []).map((p) => {
-                  const short = keys !== undefined && keys < p.keys;
+                  const short = chips !== undefined && chips < p.chips;
                   return (
                     <li key={p.id} className="flex min-h-0 flex-col items-center justify-between rounded-[2cqh] border-[0.5cqh] border-[#e8b340] bg-[radial-gradient(90%_70%_at_50%_35%,#8a1418,#3a0507)] px-[1cqh] py-[1.4cqh] shadow-[inset_0_0_2cqh_rgb(0_0_0/0.6)]" aria-label={`${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.chips} Chips`}>
                       <span className="font-display font-black text-[#ffe9b0] drop-shadow-[0_0.4cqh_0_rgb(0_0_0/0.6)]" style={{ fontSize: h(5) }}>
@@ -273,12 +287,14 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                         type="button"
                         onClick={() => choose(p)}
                         disabled={busy || !state}
-                        aria-label={`Exchange ${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.chips} Chips`}
+                        aria-label={`Buy ${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.chips} Chips`}
                         className={`lx-tile mt-[0.8cqh] flex w-full items-center justify-center gap-[0.8cqh] rounded-full border-[0.5cqh] py-[0.9cqh] font-display font-black text-white shadow-[0_0.7cqh_0_rgb(0_0_0/0.45)] disabled:opacity-60 ${short ? 'border-white/30 bg-gradient-to-b from-[#6b6b6b] to-[#3a3a3a]' : 'border-[#ffd34d] bg-gradient-to-b from-[#ff4a4a] to-[#a50d14]'}`}
                         style={{ fontSize: h(3) }}
                       >
-                        <KeyIcon size={0} className="!h-[4.4cqh] !w-[4.4cqh]" />
-                        <span className="leading-tight">{short ? `NEED ${plural(p.keys)}` : `EXCHANGE ${plural(p.keys)}`}</span>
+                        <span className="inline-block shrink-0 [&>svg]:!h-full [&>svg]:!w-full" style={{ width: h(4.4), height: h(4.4) }}>
+                          <ChipIcon size={30} />
+                        </span>
+                        <span className="leading-tight">{short ? `NEED ${fmt(p.chips)} CHIPS` : `BUY · ${fmt(p.chips)} CHIPS`}</span>
                       </button>
                     </li>
                   );
@@ -290,8 +306,8 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                   IMPORTANT NOTICE
                 </p>
                 <ul className="grid grid-cols-2 gap-x-[3cqh] text-white/85" style={{ fontSize: h(2.4) }}>
-                  <li>• Keys used in an exchange are non-refundable.</li>
-                  <li>• Chips received cannot be converted back into Keys.</li>
+                  <li>• Chips spent in the Shop are non-refundable.</li>
+                  <li>• Keys bought cannot be converted back into Chips.</li>
                   <li>• All completed exchanges are final.</li>
                   <li>• Review and confirm each exchange before it is completed.</li>
                 </ul>
@@ -307,14 +323,14 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                   Confirm exchange
                 </p>
                 <p className="mt-[1cqh] font-display font-black" style={{ fontSize: h(4.2) }}>
-                  {plural(confirm.keys)} → {fmt(confirm.chips)} CHIPS
+                  Pay {fmt(confirm.chips)} CHIPS → get {plural(confirm.keys)}
                 </p>
                 <p className="mt-[0.6cqh] text-white/75" style={{ fontSize: h(2.8) }}>
-                  Keys after: {fmt((keys ?? 0) - confirm.keys)} · This exchange is final.
+                  Chips after: {fmt((chips ?? 0) - confirm.chips)} · Keys after: {fmt((keys ?? 0) + confirm.keys)} · This exchange is final.
                 </p>
                 <label className="mx-auto mt-[2cqh] flex max-w-[90%] cursor-pointer items-start gap-[1.4cqh] rounded-[1.4cqh] bg-black/35 p-[1.4cqh] text-left" style={{ fontSize: h(2.9) }}>
                   <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-[0.4cqh] h-[3.6cqh] w-[3.6cqh] shrink-0 accent-[#ffc531]" aria-label="I understand this exchange is final and non-refundable" />
-                  <span>I understand that the Keys are non-refundable, the Chips cannot be converted back into Keys, and this exchange is final.</span>
+                  <span>I understand that the {fmt(confirm.chips)} Chips are non-refundable, the Keys cannot be converted back into Chips, and this exchange is final.</span>
                 </label>
                 <div className="mt-[2.4cqh] flex justify-center gap-[2cqh]">
                   <button type="button" disabled={busy} onClick={() => setConfirm(null)} className="lx-tile rounded-full border-[0.5cqh] border-white/60 bg-black/35 px-[4cqh] py-[1.2cqh] font-display font-black disabled:opacity-50" style={{ fontSize: h(3.4) }}>

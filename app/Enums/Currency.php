@@ -8,9 +8,9 @@ namespace App\Enums;
  *  - GD — Gold: Single Player only (bets, winnings, losses, the Out of Gold reward).
  *  - CH — Chips: Multiplayer only (rooms, lobbies, entry, winnings, losses, platform
  *    fees, agent allocations and commissions).
- *  - KY — Keys: a player wallet of its own (Main Lobby). Loaded by a Super Admin through the
- *    audited wallet adjustment; never allocated, paid as commission or bet. The only way out is
- *    the Shop's one-way Keys → Chips exchange (KeyExchangeService; final, never Chips → Keys).
+ *  - KY — Keys: a player wallet of its own (Main Lobby). Bought in the Shop with Chips (5 Chips =
+ *    1 Key, KeyExchangeService; final, never Keys → Chips) or loaded by a Super Admin through the
+ *    audited wallet adjustment; never allocated, paid as commission or bet.
  *
  * None is cash: nothing can be deposited, withdrawn, redeemed or exchanged for money, and
  * they can never be mixed, transferred or used for each other (LedgerService

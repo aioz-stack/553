@@ -75,9 +75,9 @@ export function GetKeysPanel({ keys, agentName, onClose, onWallet }: { keys?: nu
         </span>
       </div>
       <p className="mt-3 text-[15px] leading-snug text-white/85">
-        Keys are loaded onto your account by the Pusoy553 team. Every Key added or removed is recorded in your wallet history. Keys can&apos;t be bought with cash or cashed out. In the Shop you can exchange Keys for Chips (final — Chips can&apos;t be turned back into Keys).
+        Buy Keys in the Shop with your Chips: 5 Chips = 1 Key. Keys can also be loaded onto your account by the Pusoy553 team. Every Key added or removed is recorded in your wallet history. Keys can&apos;t be bought with cash, cashed out, or turned back into Chips.
       </p>
-      <p className="mt-2 text-[15px] font-bold text-[#ffe14d]">{agentName ? `To get Keys, contact your agent ${agentName}.` : 'To get Keys, contact your agent or the Pusoy553 team.'}</p>
+      <p className="mt-2 text-[15px] font-bold text-[#ffe14d]">{agentName ? `Questions? Contact your agent ${agentName}.` : 'Questions? Contact your agent or the Pusoy553 team.'}</p>
 
       <h3 className="mt-4 font-display text-[16px] font-black uppercase tracking-wide text-white/70">Latest Keys activity</h3>
       {error && (

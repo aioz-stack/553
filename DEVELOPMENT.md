@@ -1350,3 +1350,46 @@ Not done / not verified:
 - `DummyAgentsSeeder` now builds dummyagent → dummymaster → dummyplayer.
 - Tests: `HierarchyTest` (no Silver anywhere, plus the migration keeps players, wallets and history),
   `AdminPanelTest`, `AgentPanelTest`, `TeamTest`, `PlatformAccessTest`, `LoaderAccountTest`.
+
+## Shop: players buy Keys with Chips (5 Chips = 1 Key) + hierarchy revenue sharing
+
+This replaces the earlier Keys → Gold / Keys → Chips direction (the sections above describe that history).
+
+- **Packages** (`config('pusoy.shop')`): 5 Chips → 1 Key, 10 → 2, 25 → 5, 50 → 10. The price is always Keys ×
+  `chips_per_key` (5).
+- **Revenue sharing** (`shop.revenue_shares`, by the player's direct upline, always 100% in total):
+
+  | Direct upline | Admin | Incorporator | Master Agent |
+  |---|---|---|---|
+  | Admin | 100% | – | – |
+  | Incorporator | 40% | 60% | – |
+  | Master Agent | 40% | 10% | 50% |
+
+  - "Admin" is the Super Admin or Administrator who sponsors the Incorporator (or the player, when the player sits
+    directly under an Admin).
+  - A missing recipient's share goes to the Admin; with no Admin, to the platform's Chips wallet.
+  - Any rounding remainder goes to the first recipient, so the shares always equal the Chips paid.
+  - Shares go into each recipient's **Chips wallet** (the Allocation / "My Chips" wallet staff and agents load from),
+    never a Keys wallet.
+- **Server** (`KeyExchangeService::exchange`), one DB transaction:
+  1. Lock the player and their Chips wallet; check the player, package, frozen wallet and balance (insufficient →
+     422 `insufficient_chips`, logged as rejected, nobody earns).
+  2. Snapshot the hierarchy, then move one ledger row per share (`KEY_EXCHANGE`) from the player's Chips wallet
+     into each recipient's Chips wallet.
+  3. Credit the Keys (`KEY_EXCHANGE`, KY).
+  4. Write `key_exchanges` (player id and username, Chips, Keys, direct upline, scenario, hierarchy path, status, time)
+     and one `key_exchange_shares` row per recipient (role, percent, amount, Chips wallet, ledger transaction).
+  5. Audit `shop.chips_to_keys`.
+
+  Idempotency keys stop double clicks and retries from moving anything twice (200 instead of 201). Any failure rolls
+  everything back. Balances can't go negative. Players only, and not during maintenance.
+- **Migration** `2026_11_25_170000_chips_to_keys_exchange` (new columns and the `key_exchange_shares` table).
+  Earlier exchanges are kept as `direction = keys_out` and still show in the history the old way.
+- **Pop-up:**
+  - It shows "5 Chips = 1 Key", your Chips and Keys, and cards with Keys to receive, "= N Chips" and "BUY · N CHIPS"
+    ("NEED N CHIPS" when short).
+  - The confirmation says "Pay N CHIPS → get M KEYS", with Chips after, Keys after and the final, non-refundable
+    acknowledgement.
+  - The notice says Chips spent are non-refundable and Keys can't go back into Chips.
+- Tests: `tests/Feature/ShopKeyExchangeTest.php` (all three scenarios, refusals, double clicks, maintenance,
+  reconciliation), `mobile/src/components/lobby/ShopModal.test.tsx`.

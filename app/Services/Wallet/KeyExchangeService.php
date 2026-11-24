@@ -2,13 +2,17 @@
 
 namespace App\Services\Wallet;
 
+use App\Enums\AgentLevel;
 use App\Enums\Currency;
 use App\Enums\TransactionType;
+use App\Enums\WalletType;
 use App\Events\Game\GameEvents;
 use App\Events\Game\UserEvent;
 use App\Exceptions\BusinessRuleException;
 use App\Exceptions\InsufficientBalanceException;
+use App\Models\Agent;
 use App\Models\KeyExchange;
+use App\Models\KeyExchangeShare;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Services\Audit\AuditLogger;
@@ -17,13 +21,21 @@ use App\Support\Points;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Shop: exchange Keys for Chips at the fixed packages in config('pusoy.shop.key_packages').
+ * Shop: players buy Keys with Chips at a fixed 5 Chips = 1 Key (config('pusoy.shop')).
  *
- * One database transaction does everything: the player's row and Keys wallet are locked, the Keys
- * balance is checked, the Keys leave the Keys wallet and the Chips enter the Chips wallet (two ledger
- * entries, KEY_EXCHANGE), and the exchange is logged. Any failure rolls all of it back — neither
- * wallet changes. A repeated request with the same idempotency key returns the first result and
- * never deducts twice. Exchanges are final: there is no refund and no Chips → Keys.
+ * One database transaction does everything, or nothing:
+ *  1. lock the player and their Chips wallet, check the package and the Chips balance;
+ *  2. work out the player's direct upline and hierarchy (snapshot kept on the exchange);
+ *  3. share the Chips paid by the direct-upline scenario (always 100% in total):
+ *       Admin → Admin 100% · Incorporator → Admin 40% / Incorporator 60% ·
+ *       Master Agent → Admin 40% / Incorporator 10% / Master Agent 50%
+ *     — each share is one ledger entry from the player's Chips wallet straight into the
+ *     recipient's Chips wallet (never a Keys wallet). A share whose recipient is missing from the
+ *     chain goes to the Admin, and to the platform's Chips wallet when there is no Admin;
+ *  4. credit the Keys to the player's Keys wallet;
+ *  5. log the exchange (key_exchanges) and every share (key_exchange_shares), and audit it.
+ * Same idempotency key = the first result, never a second deduction. Refused attempts (too few
+ * Chips) are logged with nothing moved and earn nobody anything. Exchanges are final.
  */
 class KeyExchangeService
 {
@@ -35,7 +47,15 @@ class KeyExchangeService
     /** @return array<string, array{keys: int, chips: int}> */
     public static function packages(): array
     {
-        return config('pusoy.shop.key_packages', []);
+        $rate = self::chipsPerKey();
+
+        // The price always follows the fixed rate (Chips = Keys × 5), whatever else is configured.
+        return collect(config('pusoy.shop.key_packages', []))->map(fn (array $p) => ['keys' => (int) $p['keys'], 'chips' => (int) $p['keys'] * $rate])->all();
+    }
+
+    public static function chipsPerKey(): int
+    {
+        return (int) config('pusoy.shop.chips_per_key', 5);
     }
 
     public function exchange(User $user, string $package, string $idempotencyKey): KeyExchange
@@ -45,8 +65,8 @@ class KeyExchangeService
         }
 
         $pack = self::packages()[$package] ?? throw new BusinessRuleException('Choose one of the Shop packages.', 422, 'invalid_package');
-        $keys = (int) $pack['keys'] * Points::SCALE;
-        $chips = (int) $pack['chips'] * Points::SCALE;
+        $keys = $pack['keys'] * Points::SCALE;
+        $chips = $pack['chips'] * Points::SCALE;
 
         if ($done = $this->previous($user, $idempotencyKey)) {
             return $done;
@@ -54,7 +74,6 @@ class KeyExchangeService
 
         try {
             $exchange = DB::transaction(function () use ($user, $package, $keys, $chips, $idempotencyKey) {
-                // One exchange at a time per player; re-check the key under the lock.
                 User::query()->whereKey($user->id)->lockForUpdate()->first();
                 if ($done = $this->previous($user, $idempotencyKey)) {
                     return $done;
@@ -62,63 +81,174 @@ class KeyExchangeService
 
                 app(MaintenanceService::class)->assertTransactionsAllowed($user, $user);
 
-                $keyWallet = Wallet::query()->whereKey($this->wallets->for($user, Currency::KY)->id)->lockForUpdate()->firstOrFail();
-                $chipsWallet = $this->wallets->for($user, Currency::CH);
-
-                if ($keyWallet->balance < $keys) {
+                $chipsWallet = Wallet::query()->whereKey($this->wallets->for($user, Currency::CH)->id)->lockForUpdate()->firstOrFail();
+                if ($chipsWallet->is_frozen) {
+                    throw new BusinessRuleException('Your Chips wallet is frozen.', 423, 'wallet_frozen');
+                }
+                if ($chipsWallet->balance < $chips) {
                     throw new InsufficientBalanceException;
                 }
 
-                $meta = ['package' => $package, 'keys' => $keys, 'chips' => $chips];
+                $tree = $this->hierarchy($user);
+                $plan = $this->shares($tree, $chips);
+
+                $exchange = KeyExchange::query()->updateOrCreate(['user_id' => $user->id, 'idempotency_key' => $idempotencyKey], [
+                    'package' => $package,
+                    'direction' => KeyExchange::CHIPS_TO_KEYS,
+                    'chips_amount' => $chips,
+                    'keys_amount' => $keys,
+                    'reward_amount' => $keys,
+                    'reward_currency' => Currency::KY->value,
+                    'player_username' => $user->username,
+                    'upline_user_id' => $tree['upline']?->id,
+                    'scenario' => $tree['scenario'],
+                    'hierarchy' => $tree['path'],
+                    'status' => KeyExchange::COMPLETED,
+                    'failure_reason' => null,
+                ]);
+
+                $meta = ['exchange_id' => $exchange->id, 'package' => $package, 'chips' => $chips, 'keys' => $keys, 'scenario' => $tree['scenario']];
+
+                foreach ($plan as $share) {
+                    $tx = $this->ledger->transfer(new TransferRequest(
+                        type: TransactionType::KeyExchange,
+                        currency: Currency::CH,
+                        source: $chipsWallet->fresh(),
+                        destination: $share['wallet'],
+                        amount: $share['amount'],
+                        reason: 'Shop: '.Points::decimal($keys).' Keys bought by '.$user->username.' — '.ucfirst($share['role']).' share '.($share['bps'] / 100).'%',
+                        actor: $user,
+                        idempotencyKey: "keyx:{$user->id}:{$idempotencyKey}:share:{$share['role']}",
+                        relatedPlayerId: $user->id,
+                        relatedAgentId: $share['user']?->agent?->id,
+                        metadata: $meta + ['role' => $share['role'], 'percent' => $share['bps'] / 100],
+                    ));
+                    KeyExchangeShare::query()->create([
+                        'key_exchange_id' => $exchange->id,
+                        'role' => $share['role'],
+                        'recipient_user_id' => $share['user']?->id,
+                        'percent_bps' => $share['bps'],
+                        'amount' => $share['amount'],
+                        'wallet_id' => $share['wallet']->id,
+                        'wallet_transaction_id' => $tx->id,
+                    ]);
+                }
+
                 $keysTx = $this->ledger->transfer(new TransferRequest(
                     type: TransactionType::KeyExchange,
                     currency: Currency::KY,
-                    source: $keyWallet,
-                    destination: null,
+                    source: null,
+                    destination: $this->wallets->for($user, Currency::KY),
                     amount: $keys,
-                    reason: 'Shop: '.Points::decimal($keys).' Keys exchanged for '.Points::decimal($chips).' Chips',
+                    reason: 'Shop: '.Points::decimal($keys).' Keys for '.Points::decimal($chips).' Chips',
                     actor: $user,
                     idempotencyKey: "keyx:{$user->id}:{$idempotencyKey}:keys",
                     relatedPlayerId: $user->id,
                     metadata: $meta,
                 ));
-                $chipsTx = $this->ledger->transfer(new TransferRequest(
-                    type: TransactionType::KeyExchange,
-                    currency: Currency::CH,
-                    source: null,
-                    destination: $chipsWallet,
-                    amount: $chips,
-                    reason: 'Shop: Chips from '.Points::decimal($keys).' Keys',
-                    actor: $user,
-                    idempotencyKey: "keyx:{$user->id}:{$idempotencyKey}:chips",
-                    relatedPlayerId: $user->id,
-                    metadata: $meta,
-                ));
+                $exchange->forceFill(['keys_transaction_id' => $keysTx->id])->save();
 
-                // (updateOrCreate: a retry of an attempt refused earlier for too few Keys reuses its row)
-                $exchange = KeyExchange::query()->updateOrCreate(['user_id' => $user->id, 'idempotency_key' => $idempotencyKey], [
-                    'package' => $package,
-                    'keys_amount' => $keys,
-                    'reward_amount' => $chips,
-                    'reward_currency' => Currency::CH->value,
-                    'status' => KeyExchange::COMPLETED,
-                    'failure_reason' => null,
-                    'keys_transaction_id' => $keysTx->id,
-                    'reward_transaction_id' => $chipsTx->id,
+                AuditLogger::log($user, 'shop.chips_to_keys', $exchange, null, $meta + [
+                    'upline' => $tree['upline']?->username,
+                    'shares' => array_map(fn ($s) => ['role' => $s['role'], 'user' => $s['user']?->username, 'percent' => $s['bps'] / 100, 'amount' => $s['amount']], $plan),
                 ]);
-                AuditLogger::log($user, 'shop.key_exchange', $exchange, null, $meta + ['keys_reference' => $keysTx->reference, 'chips_reference' => $chipsTx->reference]);
 
                 return $exchange;
             });
         } catch (InsufficientBalanceException) {
-            $this->reject($user, $package, $keys, $chips, $idempotencyKey, 'insufficient_keys');
+            $this->reject($user, $package, $keys, $chips, $idempotencyKey, 'insufficient_chips');
 
-            throw new BusinessRuleException('Not enough Keys for this package. You need '.Points::decimal($keys).' Keys.', 422, 'insufficient_keys');
+            throw new BusinessRuleException('Not enough Chips for this package. You need '.Points::decimal($chips).' Chips.', 422, 'insufficient_chips');
         }
 
-        $this->pushBalances($user);
+        // A repeat of an earlier request (same key) moved nothing: report it as such (200, not 201).
+        $isNew = $exchange->wasRecentlyCreated || $exchange->wasChanged('keys_transaction_id');
+        if ($isNew) {
+            $this->pushBalances($exchange);
+        }
 
-        return $exchange;
+        $fresh = $exchange->fresh(['shares.recipient']);
+        $fresh->wasRecentlyCreated = $isNew;
+
+        return $fresh;
+    }
+
+    /**
+     * The player's direct upline and the chain above it, as it is right now.
+     *
+     * @return array{scenario: string, upline: ?User, admin: ?User, incorporator: ?User, master: ?User, path: list<array{role: string, user_id: int, username: string}>}
+     */
+    public function hierarchy(User $player): array
+    {
+        $isAdmin = fn (?User $u) => $u && ($u->isSuperAdmin() || $u->isAdministrator());
+        $agent = $player->agentLink?->agent ?? ($player->sponsor?->isAgent() ? $player->sponsor->agent : null);
+
+        $master = $incorporator = $admin = null;
+        if ($agent instanceof Agent) {
+            if ($agent->level === AgentLevel::Master) {
+                $master = $agent->user;
+                $incorporator = $agent->parent?->level === AgentLevel::Agent ? $agent->parent->user : null;
+            } else {
+                $incorporator = $agent->user;
+            }
+            $top = $incorporator ?? $master;
+            $admin = $isAdmin($top?->sponsor) ? $top->sponsor : null;
+            $scenario = $master ? 'master' : 'incorporator';
+            $upline = $master ?? $incorporator;
+        } else {
+            $admin = $isAdmin($player->sponsor) ? $player->sponsor : null;
+            $scenario = 'admin';
+            $upline = $admin;
+        }
+
+        $path = [];
+        foreach (['master' => $master, 'incorporator' => $incorporator, 'admin' => $admin] as $role => $u) {
+            if ($u) {
+                $path[] = ['role' => $role, 'user_id' => $u->id, 'username' => $u->username];
+            }
+        }
+
+        return compact('scenario', 'upline', 'admin', 'incorporator', 'master', 'path');
+    }
+
+    /**
+     * The scenario's percentages (always 100% in total) turned into Chips amounts for real
+     * recipients: a missing role's share goes to the Admin, then to the platform.
+     *
+     * @return list<array{role: string, user: ?User, bps: int, amount: int, wallet: Wallet}>
+     */
+    private function shares(array $tree, int $chips): array
+    {
+        $percents = config("pusoy.shop.revenue_shares.{$tree['scenario']}");
+        if (! is_array($percents) || array_sum($percents) !== 100) {
+            throw new BusinessRuleException('The Shop revenue shares are misconfigured.', 500, 'shares_invalid');
+        }
+
+        // Move a missing recipient's share up to the Admin (or the platform).
+        $bps = [];
+        foreach ($percents as $role => $pct) {
+            $target = $tree[$role] ? $role : ($tree['admin'] ? 'admin' : 'platform');
+            $bps[$target] = ($bps[$target] ?? 0) + (int) $pct * 100;
+        }
+
+        $out = [];
+        $given = 0;
+        foreach ($bps as $role => $b) {
+            $amount = intdiv($chips * $b, 10000);
+            $given += $amount;
+            $user = $role === 'platform' ? null : $tree[$role];
+            $out[] = [
+                'role' => $role,
+                'user' => $user,
+                'bps' => $b,
+                'amount' => $amount,
+                'wallet' => $user ? $this->wallets->for($user, Currency::CH, WalletType::Allocation) : $this->wallets->platform(Currency::CH),
+            ];
+        }
+        // Any rounding remainder goes to the first recipient, so the shares add up to exactly the Chips paid.
+        $out[0]['amount'] += $chips - $given;
+
+        return array_values(array_filter($out, fn ($s) => $s['amount'] > 0));
     }
 
     private function previous(User $user, string $idempotencyKey): ?KeyExchange
@@ -126,21 +256,26 @@ class KeyExchangeService
         return KeyExchange::query()->where('user_id', $user->id)->where('idempotency_key', $idempotencyKey)->where('status', KeyExchange::COMPLETED)->first();
     }
 
-    /** Log a refused attempt (nothing moved). */
+    /** Log a refused attempt (nothing moved, nobody earns anything). */
     private function reject(User $user, string $package, int $keys, int $chips, string $idempotencyKey, string $reason): void
     {
         KeyExchange::query()->updateOrCreate(
             ['user_id' => $user->id, 'idempotency_key' => $idempotencyKey],
-            ['package' => $package, 'keys_amount' => $keys, 'reward_amount' => $chips, 'reward_currency' => Currency::CH->value, 'status' => KeyExchange::REJECTED, 'failure_reason' => $reason],
+            ['package' => $package, 'direction' => KeyExchange::CHIPS_TO_KEYS, 'chips_amount' => $chips, 'keys_amount' => $keys, 'reward_amount' => $keys, 'reward_currency' => Currency::KY->value, 'player_username' => $user->username, 'status' => KeyExchange::REJECTED, 'failure_reason' => $reason],
         );
     }
 
-    /** Push the new Keys and Chips balances to the player's private channel only. */
-    private function pushBalances(User $user): void
+    /** Live balances: the player's Chips and Keys, and each recipient's Chips (their own channels only). */
+    private function pushBalances(KeyExchange $exchange): void
     {
-        foreach ([Currency::KY, Currency::CH] as $currency) {
-            $balance = (int) Wallet::query()->where('user_id', $user->id)->where('currency', $currency->value)->where('type', 'player')->value('balance');
-            event(new UserEvent($user->id, GameEvents::WALLET_UPDATED, ['currency' => $currency->value, 'balance' => Points::decimal($balance)]));
+        $push = function (int $userId, Currency $currency, WalletType $type) {
+            $balance = (int) Wallet::query()->where('user_id', $userId)->where('currency', $currency->value)->where('type', $type->value)->value('balance');
+            event(new UserEvent($userId, GameEvents::WALLET_UPDATED, ['currency' => $currency->value, 'balance' => Points::decimal($balance), 'wallet_type' => $type->value]));
+        };
+        $push($exchange->user_id, Currency::CH, WalletType::Player);
+        $push($exchange->user_id, Currency::KY, WalletType::Player);
+        foreach ($exchange->shares()->whereNotNull('recipient_user_id')->pluck('recipient_user_id') as $id) {
+            $push($id, Currency::CH, WalletType::Allocation);
         }
     }
 }
