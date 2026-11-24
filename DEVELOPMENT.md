@@ -1420,3 +1420,23 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - A share is skipped with a warning if the old Admin no longer has those Chips.
 - Locally: `agent` and `agent2` were put under the Administrator `admin`. 5 shares (16 Chips) moved from
   `superadmin` to `admin`.
+
+## Overview: commission conversion removed; Share Amount feature retired
+
+- **"Convert Commission to Wallet" is gone** from the Overview of the Admin, Incorporator and Master Agent panels.
+  `Components/AdminPanel/TeamSections.tsx` renders only Team Overview and no longer calls `/commission/wallet`.
+- **The conversion API is disabled:** the `POST /commission/convert` route, `TeamController::convert` and
+  `TeamService::convert` are removed (404).
+  - `GET /commission/wallet` stays, read only.
+  - Commission records and balances, Commission Logs, Commission Withdrawal and revenue sharing are unchanged.
+  - Past `COMMISSION_CONVERSION` entries stay as history.
+- **"Convert to Chips" / Share Amount** (never committed) is retired; Shop revenue shares are paid into Chips wallets.
+  - Migration `2026_11_26_120000_retire_share_wallets` handles databases that ran it (local development only).
+  - It moves any Share wallet balance into the same person's Chips wallet through the ledger (audit
+    `share.retired_to_chips`), drops `share_conversions` and removes the deleted migration's record. Elsewhere it
+    does nothing.
+  - `WalletType::Share` and `TransactionType::ShareConversion` remain as history-only values so old rows still
+    load.
+  - Locally `admin` received 2.00 and `agent` 6.00 Chips.
+- Tests: `TeamSections.test.tsx`, `TeamTest` (route gone, commission untouched), `MaintenanceTest` (uses commission
+  withdrawal requests instead).

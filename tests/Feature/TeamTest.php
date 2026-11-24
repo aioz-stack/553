@@ -32,49 +32,35 @@ function tmCommission(User $agent, int $minor): void
     app(LedgerService::class)->transfer(new TransferRequest(TransactionType::CommissionPayment, Currency::CH, null, app(WalletService::class)->for($agent, Currency::CH, WalletType::Commission), $minor));
 }
 
-test('convert commission to wallet: minimum 10 Chips, never more than available, once per request, balances updated at once', function () {
+test('Convert Commission to Wallet is retired: no conversion route; commission stays in the commission wallet', function () {
     $agent = User::factory()->agent()->create();
     tmCommission($agent, 5000); // 50.00 Chips
 
+    expect($this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '30', 'request_id' => 'ok-1'])->status())->toBeIn([404, 405]);
+    expect(balance($agent, Currency::CH, WalletType::Commission))->toBe(5000)
+        ->and(balance($agent, Currency::CH, WalletType::Allocation))->toBe(0)
+        ->and(WalletTransaction::query()->where('type', TransactionType::CommissionConversion->value)->count())->toBe(0);
+
+    // The commission figures can still be read (Commission Withdrawal uses the same balance).
     $this->actingAs($agent)->getJson('/api/v1/commission/wallet')->assertOk()
-        ->assertJsonPath('data.balance', '50.00')->assertJsonPath('data.available', '50.00')->assertJsonPath('data.min_conversion', 10);
-
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '9.99', 'request_id' => 'a1'])->assertStatus(422)->assertJsonPath('error', 'below_minimum');
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '50.01', 'request_id' => 'a2'])->assertStatus(422)->assertJsonPath('error', 'insufficient_commission');
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '-5', 'request_id' => 'a3'])->assertStatus(422);
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '30'])->assertStatus(422)->assertJsonValidationErrors('request_id');
-
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '30', 'request_id' => 'ok-1'])->assertOk()
-        ->assertJsonPath('data.balance', '20.00')->assertJsonPath('data.converted_now', '30.00');
-    // Double click / retry with the same request: converted once.
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '30', 'request_id' => 'ok-1'])->assertOk()->assertJsonPath('data.balance', '20.00');
-
-    expect(balance($agent, Currency::CH, WalletType::Commission))->toBe(2000)
-        ->and(balance($agent, Currency::CH, WalletType::Allocation))->toBe(3000)
-        ->and(WalletTransaction::query()->where('type', TransactionType::CommissionConversion->value)->count())->toBe(1)
-        ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
+        ->assertJsonPath('data.balance', '50.00')->assertJsonPath('data.available', '50.00');
 });
 
-test('pending withdrawal requests are reserved: conversion only uses what is left', function () {
+test('pending withdrawal requests are reserved in the commission figures', function () {
     $agent = User::factory()->agent()->create();
     tmCommission($agent, 5000);
     $this->actingAs($agent)->postJson('/api/v1/agent/payout-requests', ['amount' => '35'])->assertCreated();
 
     $this->actingAs($agent)->getJson('/api/v1/commission/wallet')->assertJsonPath('data.available', '15.00')->assertJsonPath('data.pending', '35.00');
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '20', 'request_id' => 'r1'])->assertStatus(422);
-    $this->actingAs($agent)->postJson('/api/v1/commission/convert', ['amount' => '15', 'request_id' => 'r2'])->assertOk();
 });
 
-test('only administrators and agents can convert commission or see a team; players cannot', function () {
+test('only administrators and agents can see the commission wallet or a team; players cannot', function () {
     $player = User::factory()->player()->create();
     $this->actingAs($player)->getJson('/api/v1/commission/wallet')->assertForbidden();
-    $this->actingAs($player)->postJson('/api/v1/commission/convert', ['amount' => '10', 'request_id' => 'x'])->assertForbidden();
     $this->actingAs($player)->getJson('/api/v1/team/overview')->assertForbidden();
 
-    // Administrators can open it (no commission earned → nothing to convert).
     $admin = superAdmin();
     $this->actingAs($admin)->getJson('/api/v1/commission/wallet')->assertOk()->assertJsonPath('data.balance', '0.00');
-    $this->actingAs($admin)->postJson('/api/v1/commission/convert', ['amount' => '10', 'request_id' => 'y'])->assertStatus(422)->assertJsonPath('error', 'insufficient_commission');
 });
 
 test('team overview totals only the user\'s own downline, at every level', function () {

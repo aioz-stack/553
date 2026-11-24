@@ -31,8 +31,8 @@ type Tab = 'load' | 'commission' | 'withdrawal';
 
 /**
  * Overview of the Admin Panel (whole platform) and of the Incorporator / Master Agent
- * Panel (the agent's own downline): summary tiles, permanent referral links, Convert
- * Commission to Wallet, Team Overview and recent transactions — all live from the API.
+ * Panel (the agent's own downline): summary tiles, permanent referral links,
+ * Team Overview and recent transactions — all live from the API.
  */
 export default function Overview() {
   const panel = usePanel();
@@ -136,7 +136,7 @@ export default function Overview() {
         <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved{agent ? ' by the Administrator' : ''}.
       </Note>
 
-      <TeamSections onChanged={reload} txLocked={agent && txLocked} />
+      <TeamSections />
 
       <Panel
         title="Recent Transactions"

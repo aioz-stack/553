@@ -74,10 +74,10 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('shop/key-exchanges', [\App\Http\Controllers\Api\V1\ShopController::class, 'exchange'])->middleware('throttle:wallet-actions');
         Route::get('wallet/transactions', [WalletController::class, 'transactions']);
 
-        // Convert Commission to Wallet + Team Overview (Administrators and every agent level).
+        // Commission wallet (read only) + Team Overview (Administrators and every agent level).
+        // Convert Commission to Wallet was retired: there is no conversion route.
         Route::middleware('role:super_admin,admin,agent')->group(function () {
             Route::get('commission/wallet', [TeamController::class, 'commission']);
-            Route::post('commission/convert', [TeamController::class, 'convert'])->middleware('throttle:wallet-actions');
             Route::get('team/overview', [TeamController::class, 'overview']);
         });
 

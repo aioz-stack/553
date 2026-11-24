@@ -30,5 +30,7 @@ enum TransactionType: string
     case GoldConversion = 'GOLD_CONVERSION';
     /** Shop: Keys exchanged for Gold (Keys out of the Keys wallet, Gold into the Gold wallet; final). */
     case KeyExchange = 'KEY_EXCHANGE';
+    /** History only: the retired Share Amount → Chips conversion (and its leftover clean-up). */
+    case ShareConversion = 'SHARE_CONVERSION';
     case Reversal = 'REVERSAL';
 }

@@ -13,12 +13,9 @@ use App\Models\AgentPlayer;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
-use App\Services\Audit\AuditLogger;
 use App\Services\Wallet\LedgerService;
-use App\Services\Wallet\TransferRequest;
 use App\Services\Wallet\WalletService;
 use App\Support\Points;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Convert Commission to Wallet and Team Overview — Administrators (incl. Super Admin), Agents,
@@ -71,49 +68,6 @@ class TeamService
                 ->sum('amount')),
             'min_conversion' => self::MIN_CONVERSION,
         ];
-    }
-
-    /** Convert commission into the user's own Chips. Returns the converted amount (minor units). */
-    public function convert(User $user, int $amount, string $requestId): int
-    {
-        $this->authorize($user);
-        $key = "commission-convert:{$user->id}:{$requestId}";
-
-        return DB::transaction(function () use ($user, $amount, $key) {
-            User::query()->whereKey($user->id)->lockForUpdate()->first();
-            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($user);
-
-            if ($done = WalletTransaction::query()->where('idempotency_key', $key)->first()) {
-                return (int) $done->amount;
-            }
-
-            if ($amount < Points::toMinor(self::MIN_CONVERSION)) {
-                throw new BusinessRuleException('The minimum conversion is '.self::MIN_CONVERSION.' Chips.', 422, 'below_minimum');
-            }
-
-            $from = $this->wallets->for($user, Currency::CH, WalletType::Commission);
-            $available = (int) $from->balance - $this->pendingRequests($user);
-
-            if ($amount > $available) {
-                throw new BusinessRuleException('The amount exceeds your available commission.', 422, 'insufficient_commission');
-            }
-
-            $tx = $this->ledger->transfer(new TransferRequest(
-                type: TransactionType::CommissionConversion,
-                currency: Currency::CH,
-                source: $from,
-                destination: $this->wallets->for($user, Currency::CH, WalletType::Allocation),
-                amount: $amount,
-                reason: 'Commission converted to wallet',
-                actor: $user,
-                idempotencyKey: $key,
-                relatedAgentId: $user->isAgent() ? $user->id : null,
-            ));
-
-            AuditLogger::log($user, 'commission.converted', $user, null, ['amount' => Points::decimal($amount), 'reference' => $tx->reference]);
-
-            return $amount;
-        });
     }
 
     /**

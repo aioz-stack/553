@@ -90,7 +90,6 @@ test('Full Maintenance: the game and its sign-in in the app are closed; every ag
         [$w['agent'], 'post', "/api/v1/agent/panel/accounts/{$w['player']->id}/withdraw", ['amount' => '1']],
         [$w['agent'], 'post', '/api/v1/agent/chip-requests', ['amount' => '10']],
         [$w['agent'], 'post', '/api/v1/agent/payout-requests', ['amount' => '10']],
-        [$w['agent'], 'post', '/api/v1/commission/convert', ['amount' => '10', 'request_id' => 'm1']],
         [$w['super'], 'post', "/api/v1/admin/panel/accounts/{$w['agent']->id}/load", ['amount' => '1']],
         [$w['super'], 'post', "/api/v1/admin/panel/accounts/{$w['player']->id}/withdraw", ['amount' => '1']],
         [$w['super'], 'post', '/api/v1/wallet/allocate', ['recipient_id' => $w['player']->id, 'currency' => 'CH', 'amount' => '1']],
@@ -113,7 +112,7 @@ test('Mobile Game: only the game closes; panels keep every transaction', functio
 
     $this->actingAs($w['player'])->postJson('/api/v1/lobbies/quick-join')->assertStatus(503);
     $this->postJson('/api/v1/auth/login', ['username' => 'mtplayer', 'password' => 'secret123', 'platform' => 'ios'])->assertStatus(503);
-    $this->actingAs($w['agent'])->postJson('/api/v1/commission/convert', ['amount' => '10', 'request_id' => 'm2'])->assertOk();
+    $this->actingAs($w['agent'])->postJson('/api/v1/agent/payout-requests', ['amount' => '10'])->assertCreated();
     $this->actingAs($w['super'])->postJson("/api/v1/admin/panel/accounts/{$w['player']->id}/load", ['amount' => '3'])->assertCreated();
 });
 
@@ -123,11 +122,11 @@ test('Agents/Players: transactions close, the game keeps running', function () {
 
     $this->actingAs($w['player'])->getJson('/api/v1/lobbies')->assertOk();
     $this->postJson('/api/v1/auth/login', ['username' => 'mtplayer', 'password' => 'secret123', 'platform' => 'android'])->assertOk();
-    $this->actingAs($w['agent'])->postJson('/api/v1/commission/convert', ['amount' => '10', 'request_id' => 'm3'])->assertStatus(503);
+    $this->actingAs($w['agent'])->postJson('/api/v1/agent/payout-requests', ['amount' => '10'])->assertStatus(503);
 
     // OFF restores everything.
     mtSet($this, $w['super'], 'off')->assertOk();
-    $this->actingAs($w['agent'])->postJson('/api/v1/commission/convert', ['amount' => '10', 'request_id' => 'm4'])->assertOk();
+    $this->actingAs($w['agent'])->postJson('/api/v1/agent/payout-requests', ['amount' => '10'])->assertCreated();
 });
 
 test('the panels get the current mode on every page', function () {
