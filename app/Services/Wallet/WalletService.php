@@ -72,8 +72,8 @@ class WalletService
         foreach (Currency::cases() as $currency) {
             $this->for($user, $currency, WalletType::Player);
 
-            // Gold is a Single Player wallet only: never allocated or paid as commission.
-            if ($currency->isSinglePlayer()) {
+            // Gold (Single Player) and Keys are player wallets only: never allocated or paid as commission.
+            if (! $currency->hasAllocations()) {
                 continue;
             }
 

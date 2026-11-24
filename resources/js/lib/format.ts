@@ -1,5 +1,5 @@
 /** The game's two currencies: Gold (Single Player) and Chips (Multiplayer). */
-export const CURRENCY_LABEL: Record<string, string> = { GD: 'Gold', CH: 'Chips' };
+export const CURRENCY_LABEL: Record<string, string> = { GD: 'Gold', CH: 'Chips', KY: 'Keys' };
 
 export function points(value: string | number | null | undefined, currency?: string): string {
   const n = Number(value ?? 0);

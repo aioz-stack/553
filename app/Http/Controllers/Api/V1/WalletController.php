@@ -29,7 +29,7 @@ class WalletController extends Controller
     public function transactions(Request $request): AnonymousResourceCollection
     {
         $request->validate([
-            'currency' => ['nullable', 'in:GD,CH'],
+            'currency' => ['nullable', 'in:GD,CH,KY'],
             'type' => ['nullable', 'string', 'max:32'],
             'wallet_type' => ['nullable', 'in:player,allocation,commission'],
             'role' => ['nullable', 'in:banker,player'],

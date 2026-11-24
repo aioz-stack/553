@@ -1,6 +1,6 @@
 /** Shapes returned by the Laravel API (mirrors the web app's types). */
 /** The game's only two currencies: GD = Gold (Single Player only), CH = Chips (Multiplayer only). Never mixed. */
-export type Currency = 'GD' | 'CH';
+export type Currency = 'GD' | 'CH' | 'KY';
 
 export interface User {
   id: number;

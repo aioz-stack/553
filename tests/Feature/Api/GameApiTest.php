@@ -37,9 +37,9 @@ test('a player registers, logs in with a bearer token and reads their wallet', f
     $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk()->assertJsonPath('data.role', 'player');
     $this->withToken($token)->getJson('/api/v1/wallet')->assertOk()
         // Exactly two wallets: Gold (Single Player) and Chips (Multiplayer).
-        ->assertJsonCount(2, 'data')
+        ->assertJsonCount(3, 'data')
         ->assertJsonMissingPath('meta.cash_withdrawals_enabled');
-    expect(collect($this->withToken($token)->getJson('/api/v1/wallet')->json('data'))->pluck('currency')->sort()->values()->all())->toBe(['CH', 'GD']);
+    expect(collect($this->withToken($token)->getJson('/api/v1/wallet')->json('data'))->pluck('currency')->sort()->values()->all())->toBe(['CH', 'GD', 'KY']);
 
     $this->withToken($token)->postJson('/api/v1/auth/logout')->assertOk();
 });

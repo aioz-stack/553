@@ -18,6 +18,7 @@ const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean)
 /** A currency coin: Gold (GD) is a gold coin; Chips (CH) is a casino chip. */
 export function Coin({ currency = 'CH', size = 22, className }: { currency?: 'GD' | 'CH' | string; size?: number; className?: string }) {
   if (currency === 'CH') return <ChipIcon size={size} className={className} />;
+  if (currency === 'KY') return <KeyIcon size={size} className={className} />;
   const id = `coin-${currency}`;
   const springId = useId();
   const [a, b, c] = ['#fff3b0', '#ffc83a', '#c27a04'];
@@ -37,6 +38,36 @@ export function Coin({ currency = 'CH', size = 22, className }: { currency?: 'GD
       <text x="16" y="19.5" textAnchor="middle" fontSize="11" fontWeight="900" fill={c} fontFamily="system-ui">
         G
       </text>
+    </svg>
+  );
+}
+
+/** Keys wallet icon: a glossy golden key on a purple gem (Main Lobby). */
+export function KeyIcon({ size = 24, className }: { size?: number; className?: string }) {
+  const id = useId().replace(/:/g, '');
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" className={className} aria-hidden="true">
+      <defs>
+        <radialGradient id={`kg-${id}`} cx="35%" cy="30%" r="75%">
+          <stop offset="0" stopColor="#e9c8ff" />
+          <stop offset="0.55" stopColor="#9b3df0" />
+          <stop offset="1" stopColor="#4a0f9a" />
+        </radialGradient>
+        <linearGradient id={`kk-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff6c0" />
+          <stop offset="0.5" stopColor="#ffc531" />
+          <stop offset="1" stopColor="#c27a04" />
+        </linearGradient>
+      </defs>
+      <circle cx="20" cy="20" r="19" fill="#2a0660" />
+      <circle cx="20" cy="19" r="17.5" fill={`url(#kg-${id})`} stroke="#ffd34d" strokeWidth="1.6" />
+      <g transform="rotate(-40 20 20)" stroke="#7a3e00" strokeWidth="1.1" fill={`url(#kk-${id})`}>
+        <circle cx="12.5" cy="20" r="6" />
+        <rect x="17" y="18" width="16" height="4" rx="1.5" />
+        <rect x="27" y="21.5" width="3" height="5" rx="1" />
+        <rect x="22.5" y="21.5" width="3" height="4" rx="1" />
+      </g>
+      <circle cx="12" cy="20" r="2.3" fill="#4a0f9a" transform="rotate(-40 20 20)" />
     </svg>
   );
 }

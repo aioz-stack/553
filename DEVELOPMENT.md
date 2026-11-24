@@ -1252,3 +1252,25 @@ Not done / not verified:
   - Your submission, if any, stays locked: no duplicates.
 - Tests: `tests/Feature/ReconnectTest.php`, `mobile/src/app/home/page.test.tsx` (resume),
   `mobile/src/components/table/MultiplayerTable.test.tsx` (restore + save).
+
+## Main Lobby redesign — wallet stack, Keys, Shop
+
+- **Wallets (upper right, stacked):** Gold, Chips, Keys (`mobile/src/components/lobby/WalletStack.tsx`). Each is a
+  fixed-width card with its own theme (gold / red / purple) and a small icon. The balance uses comma formatting in
+  tabular figures, with room for 7 digits: 9,999,999 leaves ~44px spare, so the layout never shifts.
+  - Values are the player's server balances: Gold Total Amount (`useGoldWallet`), Chips and Keys (`useBalance`). They
+    update live through `wallet.updated` and `pusoy:wallet`, and count up or down with a green/red flash.
+  - Tapping a card opens the Wallet history. Keys (+), inside the Keys bar at its far right (bars are 356px wide), opens **Get Keys** (`LobbyPanels.tsx`): your Keys, how Keys are
+    given, your latest Keys ledger entries (`GET /wallet/transactions?currency=KY`) and a link to the wallet.
+- **Keys = third currency (`KY`, `App\Enums\Currency`):** a separate player wallet with no allocation or commission
+  wallet, never bet or exchanged, and never cash.
+  - Only a Super Admin loads or removes Keys, through the existing audited adjustment (`POST /admin/adjustments`,
+    currency `KY`; web Admin → Wallets → Keys tab). It is ledgered (MANUAL_ADJUSTMENT / PLAYER_DEBIT), idempotent and
+    cannot overdraw.
+  - Player wallets are created on demand (`WalletService::provision`), so existing players get one automatically.
+  - Test: `tests/Feature/KeysWalletTest.php`.
+- **Layout (1600×900 stage):**
+  - The bell sits beside the wallets. Single Player and Multiplayer keep their full 520×350 size, moved 6px lower to
+    clear the wallets.
+  - The bottom row is Shop, Settings and Logout. Sound moved into Settings, which already has the Sound Effects switch.
+  - Shop opens a "Coming soon" panel; nothing can be bought.

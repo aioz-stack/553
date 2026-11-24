@@ -118,26 +118,11 @@ describe('Home — Main Lobby top bar', () => {
     expect(container.querySelector('a[href="/leaderboard/"]')).toBeNull();
   });
 
-  it('the bell opens the notification pop-up with the announcement and your notifications; tapping one marks it read and acts', async () => {
-    notifications = {
-      data: [{ id: 'n1', type: 'App\\Notifications\\PointsReceived', data: { title: 'Points received', message: 'You received 100 Chips.' }, read_at: null, created_at: '2026-11-25T01:00:00Z' }],
-      meta: { unread: 1, announcement: 'Server update tonight at 11 PM.' },
-    };
+  it('has no notification bell on the Main Lobby', async () => {
     routes(gold({ out_of_gold: false }));
     render(<Home />);
-    const bell = await screen.findByRole('button', { name: 'Notifications — 1 unread' });
-    fireEvent.click(bell);
-    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
-    expect(await within(dialog).findByText('Points received')).toBeInTheDocument();
-    expect(within(dialog).getByText('You received 100 Chips.')).toBeInTheDocument();
-    expect(within(dialog).getByText('Server update tonight at 11 PM.')).toBeInTheDocument();
-    expect(within(dialog).getByText('Account')).toBeInTheDocument();
-    // Opening does not mark anything read; tapping the notification does, then opens the wallet.
-    expect(apiMock).not.toHaveBeenCalledWith('/notifications/read', expect.anything());
-    fireEvent.click(within(dialog).getByRole('button', { name: /Points received/ }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/notifications/n1/read', { method: 'POST' }));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/wallet/'));
-    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument();
+    await screen.findByRole('group', { name: 'Wallets' });
+    expect(screen.queryByRole('button', { name: /notifications/i })).toBeNull();
   });
 });
 

@@ -29,6 +29,7 @@ export default function TransactionsTable({ endpoint, staff = false, extraFilter
           <option value="">All currencies</option>
           <option value="CH">Chips</option>
           <option value="GD">Gold</option>
+          <option value="KY">Keys</option>
         </Select>
         <Select value={type} onChange={(e) => { setType(e.target.value); setPage(1); }} className="w-56">
           <option value="">All types</option>

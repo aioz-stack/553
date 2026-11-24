@@ -9,22 +9,20 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
-import NotificationsPanel from '@/components/NotificationsPanel';
-import { Avatar, ChipIcon } from '@/components/game';
-import { CandyText, CrownArt, ExitArt, GearArt, GoldCoins, LogoCrest, RoundBankArt, SpeakerArt } from '@/components/HomeArt';
-import { IconBell } from '@/components/icons';
+import WalletStack from '@/components/lobby/WalletStack';
+import { GetKeysPanel, ShopPanel } from '@/components/lobby/LobbyPanels';
+import { Avatar } from '@/components/game';
+import { CandyText, CrownArt, ExitArt, GearArt, LogoCrest, RoundBankArt } from '@/components/HomeArt';
 import LandscapeStage, { useToStage } from '@/components/LandscapeStage';
-import { Glitter, RimGlint } from '@/components/Sparkles';
+import { Glitter } from '@/components/Sparkles';
 import { springStyle } from '@/lib/spring';
 import { Screen } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFetch } from '@/lib/hooks';
-import { savePrefs } from '@/lib/prefs';
-import { play, useSound } from '@/lib/sound';
+import { play } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
-import { useUnreadNotifications } from '@/lib/useUnreadNotifications';
 import { useResumeMatch } from '@/lib/useResumeMatch';
 import { useGoldWallet } from '@/lib/useGoldWallet';
 import { fetchGold, type GoldWallet } from '@/lib/gold';
@@ -133,39 +131,19 @@ function Tile({ x, y, w, h, from, to, label, onClick, href, children, sweepDelay
   );
 }
 
-function SmallRound({ x, y, label, href, onClick, tone, children, dot, motion = '' }: { x: number; y: number; label: string; href?: string; onClick?: () => void; tone: string; children: ReactNode; dot?: boolean; motion?: string }) {
-  const cls = `lx-tile lx-gloss lx-spring absolute flex h-[76px] w-[76px] items-center justify-center rounded-full border-[5px] border-[#ffc531] bg-gradient-to-b ${tone} text-white shadow-[0_6px_0_#8a4a00,inset_0_-6px_10px_rgb(0_0_0/0.25)]`;
-  const inner = (
-    <>
-      <RimGlint width={5} delay={(x % 7) / 3} />
-      <span className={`relative z-[4] lx-glow ${motion}`}>{children}</span>
-      {dot && <span className="lx-pulse-dot absolute -right-1 -top-1 z-[5] h-6 w-6 rounded-full border-4 border-white bg-red-500" />}
-    </>
-  );
-  return href ? (
-    <Link href={href} aria-label={label} className={cls} style={{ ...springStyle(label, 2.6, 1.2), left: x, top: y }} onClick={() => play('tap')}>
-      {inner}
-    </Link>
-  ) : (
-    <button type="button" aria-label={label} className={cls} style={{ ...springStyle(label, 2.6, 1.2), left: x, top: y }} onClick={onClick}>
-      {inner}
-    </button>
-  );
-}
-
-/** Gold balance capsule (icon and live number). Display only — no top-up button on this screen. */
-function BalancePill({ x, w, label, value, icon, seed }: { x: number; w: number; label: string; value: number | undefined; icon: ReactNode; seed: number }) {
-  const text = value !== undefined ? value.toLocaleString() : '…';
+/** Shop tile art: a glossy shopping bag with a gold tag. */
+function ShopArt() {
   return (
-    <div style={{ ...springStyle(label, 4.2, 1), left: x, width: w }} className="lx-gold lx-spring-soft absolute top-[40px] flex h-[88px] items-center rounded-full p-[7px] shadow-[0_8px_0_#8a4a00]">
-      <div className="lx-gloss relative flex h-full w-full items-center rounded-full bg-gradient-to-b from-[#3a2a12] to-[#160d04] pl-1 pr-5 shadow-[inset_0_-8px_14px_rgb(0_0_0/0.4)]">
-        <span className="lx-glint relative z-[4] -ml-7 inline-block">{icon}</span>
-        <Glitter count={5} seed={seed} size={0.8} />
-        <span className={`lx-text-glow relative z-[4] flex-1 truncate text-center font-display font-black text-white ${text.length > 8 ? 'text-[32px]' : 'text-[40px]'}`} aria-label={label}>
-          {text}
-        </span>
-      </div>
-    </div>
+    <svg width="120" height="104" viewBox="0 0 120 104" aria-hidden="true" className="drop-shadow-[0_6px_6px_rgb(0_0_0/0.35)]">
+      <path d="M42 30 C42 10 78 10 78 30" fill="none" stroke="#7a3e00" strokeWidth="7" strokeLinecap="round" />
+      <path d="M42 30 C42 10 78 10 78 30" fill="none" stroke="#ffd34d" strokeWidth="4" strokeLinecap="round" />
+      <path d="M22 30 H98 L92 96 H28 Z" fill="#ff4a8a" stroke="#7a0a33" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M26 30 H94 L93 44 H27 Z" fill="#ff86b6" />
+      <circle cx="44" cy="44" r="4" fill="#7a0a33" />
+      <circle cx="76" cy="44" r="4" fill="#7a0a33" />
+      <rect x="44" y="58" width="32" height="24" rx="6" fill="#ffd34d" stroke="#7a3e00" strokeWidth="2.5" />
+      <text x="60" y="76" textAnchor="middle" fontSize="16" fontWeight="900" fill="#7a3e00" fontFamily="system-ui">553</text>
+    </svg>
   );
 }
 
@@ -199,18 +177,17 @@ function useCountUp(target: number | undefined): number | undefined {
 export default function Home() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const { chips } = useBalance(user?.id);
+  const { chips, keys } = useBalance(user?.id);
   // Single Player Gold wallet (Total Amount): the same server source as the game screens.
   const { wallet: goldWallet } = useGoldWallet(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
-  const { unread, setUnread, reload: reloadUnread } = useUnreadNotifications(user?.id);
-  const [notifications, setNotifications] = useState(false);
   const [seat, setSeat] = useState<TableState | null>(null);
-  const [soundOn] = useSound();
   const [picker, setPicker] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [panel, setPanel] = useState<'keys' | 'shop' | null>(null);
   const [avatarPicker, setAvatarPicker] = useState(false);
   const chipCount = useCountUp(chips !== undefined ? Math.floor(Number(chips)) : undefined);
+  const keyCount = useCountUp(keys !== undefined ? Math.floor(Number(keys)) : undefined);
   const coins = useCountUp(goldWallet ? Math.floor(Number(goldWallet.total ?? goldWallet.gold)) : undefined);
   // Single Player Out of Gold: the free Gold popup (never shown for Multiplayer).
   const [outOfGold, setOutOfGold] = useState<GoldWallet | null>(null);
@@ -295,25 +272,17 @@ export default function Home() {
           <LogoCrest title="Pusoy 553" />
         </div>
 
-        {/* Balances: gold coins = Gold (Single Player), chip = Chips (Multiplayer); never combined. Display only. */}
-        <BalancePill x={1046} w={260} label="Gold balance" value={coins} icon={<GoldCoins size={78} />} seed={7} />
-        <BalancePill x={1320} w={260} label="Chips balance" value={chipCount} icon={<ChipIcon size={74} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} />
+        {/* Wallets (upper right, top to bottom): Gold (Single Player), Chips (Multiplayer), Keys — three
+            separate server balances, live; tapping one opens the wallet history, Keys (+) shows how to get Keys. */}
+        <WalletStack
+          className="absolute right-[24px] top-[50px] z-10"
+          gold={coins}
+          chips={chipCount}
+          keys={keyCount}
+          onOpen={() => router.push('/wallet/')}
+          onGetKeys={() => setPanel('keys')}
+        />
 
-        {/* Notifications: the bell under the right end of the balances opens the notification pop-up. */}
-        <SmallRound
-          x={1500}
-          y={152}
-          label={unread > 0 ? `Notifications — ${unread} unread` : 'Notifications'}
-          onClick={() => {
-            play('tap');
-            setNotifications(true);
-          }}
-          tone="from-felt-400 to-felt-700"
-          dot={unread > 0}
-          motion={unread > 0 ? 'lx-ring inline-block' : ''}
-        >
-          <IconBell className="h-10 w-10" />
-        </SmallRound>
 
         {/* Friends */}
         <div className="absolute left-[25px] top-[215px] h-[660px] w-[440px]">
@@ -322,20 +291,20 @@ export default function Home() {
 
         {/* Return to an active seat */}
         {seat && (
-          <Link href={`/play/?table=${seat.id}`} className="absolute left-[560px] top-[222px] z-10 flex h-[46px] w-[930px] items-center justify-center gap-3 rounded-full border-4 border-[#4ee36b] bg-[#0f2a1c]/90 font-display text-[26px] font-black text-white">
+          <Link href={`/play/?table=${seat.id}`} className="absolute left-[495px] top-[228px] z-10 flex h-[46px] w-[640px] items-center justify-center gap-3 rounded-full border-4 border-[#4ee36b] bg-[#0f2a1c]/90 font-display text-[26px] font-black text-white">
             <span className="h-4 w-4 animate-ping rounded-full bg-[#4ee36b]" />
             You have a seat at {seat.room.name} — tap to return
           </Link>
         )}
 
         {/* Play: Single Player opens the difficulty picker (practice vs server bots, no coins move); Multiplayer = lobby (Classic, Round Bank, Banker Mode) */}
-        <Tile x={495} y={278} w={520} h={350} from="#c477ff" to="#5a14b8" label="Single Player" onClick={openPicker}>
+        <Tile x={495} y={284} w={520} h={350} from="#c477ff" to="#5a14b8" label="Single Player" onClick={openPicker}>
           <span className="mt-2">
             <RoundBankArt />
           </span>
           <CandyText text="Single Player" width={490} height={100} size={74} className="-mt-8" sweepDelay={0.4} />
         </Tile>
-        <Tile x={1040} y={278} w={520} h={350} from="#ff6b5c" to="#9c0a12" label="Multiplayer" href="/lobby/" sweepDelay={1.2}>
+        <Tile x={1040} y={284} w={520} h={350} from="#ff6b5c" to="#9c0a12" label="Multiplayer" href="/lobby/" sweepDelay={1.2}>
           <span className="mt-2">
             <CrownArt />
           </span>
@@ -343,14 +312,10 @@ export default function Home() {
         </Tile>
 
         {/* Controls */}
-        <Tile x={515} y={660} w={320} h={210} from="#c477ff" to="#6a1fc9" label={soundOn ? 'Sound on — tap to turn off' : 'Sound off — tap to turn on'} onClick={() => savePrefs({ sfx: !soundOn })} sweepDelay={2.0}>
-          <SpeakerArt on={soundOn} />
-          <CandyText text="Sound" width={300} height={56} size={46} stroke="#2b0a5c" fill={['#ffffff', '#ffffff', '#ece4ff']} className="-mt-1" sweepDelay={2.2} />
-          <span className="-mt-1 font-display text-[34px] font-black leading-none drop-shadow-[0_3px_0_rgb(0_0_0/0.5)]">
-            <span className={soundOn ? 'lx-text-glow text-[#ffe14d]' : 'text-white/40'}>ON</span>
-            <span className="text-white/70"> / </span>
-            <span className={soundOn ? 'text-white/40' : 'lx-text-glow text-[#ffe14d]'}>OFF</span>
-          </span>
+        {/* Shop (Sound is in Settings) */}
+        <Tile x={515} y={660} w={320} h={210} from="#5ef08a" to="#0f7a34" label="Shop" onClick={() => { play('tap'); setPanel('shop'); }} sweepDelay={2.0}>
+          <ShopArt />
+          <CandyText text="Shop" width={300} height={64} size={52} stroke="#0b4a20" fill={['#ffffff', '#ffffff', '#e4ffe9']} sweepDelay={2.2} />
         </Tile>
         <Tile x={858} y={660} w={320} h={210} from="#6fd4ff" to="#1560d0" label="Settings" onClick={() => setSettings(true)} sweepDelay={2.6}>
           <GearArt />
@@ -362,21 +327,15 @@ export default function Home() {
         </Tile>
 
         {settings && <SettingsPanel onClose={() => setSettings(false)} />}
-        {notifications && (
-          <NotificationsPanel
-            onUnread={setUnread}
-            onClose={() => {
-              setNotifications(false);
-              reloadUnread();
-            }}
-            onAction={(a) => {
-              setNotifications(false);
-              // Invitations open in the Multiplayer Lobby (it joins them); Friends is already on this screen.
-              if (a.kind === 'lobby') router.push(`/lobby/?join=${a.roomId}`);
-              if (a.kind === 'wallet') router.push('/wallet/');
-            }}
+        {panel === 'keys' && (
+          <GetKeysPanel
+            keys={keyCount}
+            agentName={(user as { owning_agent?: { name?: string | null } | null } | null)?.owning_agent?.name ?? null}
+            onClose={() => setPanel(null)}
+            onWallet={() => router.push('/wallet/')}
           />
         )}
+        {panel === 'shop' && <ShopPanel onClose={() => setPanel(null)} />}
         {avatarPicker && <AvatarPicker onClose={() => setAvatarPicker(false)} />}
         {/* Change avatar / nickname: the pencil badge on your portrait (the only clickable part of the profile). */}
         <button

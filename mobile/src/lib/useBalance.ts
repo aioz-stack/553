@@ -62,6 +62,6 @@ export function useBalance(userId: number | undefined) {
 
   const find = (c: string) => wallets?.find((w) => w.type === 'player' && w.currency === c)?.balance;
 
-  // Two separate wallets: Chips (Multiplayer) and Gold (Single Player). Never combined.
-  return { chips: find('CH'), gold: find('GD'), reload };
+  // Three separate wallets: Chips (Multiplayer), Gold (Single Player) and Keys. Never combined.
+  return { chips: find('CH'), gold: find('GD'), keys: find('KY'), reload };
 }

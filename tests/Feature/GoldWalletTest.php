@@ -147,7 +147,7 @@ test('claiming the free 1,000 Gold: only when Out of Gold, credited straight to 
 
     // Exactly two wallets, persisted: Gold and Chips.
     $wallets = collect($this->actingAs($me, 'sanctum')->getJson('/api/v1/wallet')->assertOk()->json('data'))->where('type', 'player');
-    expect($wallets->pluck('currency')->sort()->values()->all())->toBe(['CH', 'GD'])->and($wallets->firstWhere('currency', 'GD')['balance'])->toBe('1000.00');
+    expect($wallets->pluck('currency')->sort()->values()->all())->toBe(['CH', 'GD', 'KY'])->and($wallets->firstWhere('currency', 'GD')['balance'])->toBe('1000.00');
     expect(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 
     // Back in Single Player, and after the next bust the reward can be claimed again (claim #2).
