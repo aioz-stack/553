@@ -1020,3 +1020,12 @@ Not done / not verified:
   disabled. Existing accounts are unchanged.
 - Tests: `tests/Feature/HierarchyTest.php` (links per role, registration per role with tampered requests, approval
   re-check, direct creation matrix, staff API, existing data untouched).
+
+### 2026-11-24 — Player sign-in switched off
+
+- `PLAYER_LOGIN_ENABLED` (config `pusoy.features.player_login`, default **false**): while off, players cannot sign in on
+  the web or in the app (`403 player_login_disabled`, "Player sign-in is temporarily disabled"), and players already
+  signed in are refused on every request (web sessions are signed out; app tokens are kept, so phones work again once
+  it is back on). Admins and all agent levels are unaffected; registration still works (accounts wait for approval).
+  Re-enable: set `PLAYER_LOGIN_ENABLED=true` in `.env`, then `php artisan config:clear` (or `config:cache` on the server).
+- The test suite runs with it on (`phpunit.xml`); `tests/Feature/PlayerLoginSwitchTest.php` covers it off and on.

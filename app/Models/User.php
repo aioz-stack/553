@@ -192,6 +192,14 @@ class User extends Authenticatable
         return $this->role === Role::SuperAdmin;
     }
 
+    /** Players are shut out while player sign-in is switched off (config pusoy.features.player_login). */
+    public function signInBlocked(): bool
+    {
+        return $this->isPlayer() && ! config('pusoy.features.player_login');
+    }
+
+    public const SIGN_IN_DISABLED_MESSAGE = 'Player sign-in is temporarily disabled. Please try again later.';
+
     public function isAdministrator(): bool
     {
         return $this->role === Role::Administrator;

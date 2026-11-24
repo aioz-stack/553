@@ -75,6 +75,10 @@ class AuthController extends Controller
             throw new BusinessRuleException($user->status->blockedMessage(), 403, $user->status->blockedCode());
         }
 
+        if ($user->signInBlocked()) {
+            throw new BusinessRuleException(User::SIGN_IN_DISABLED_MESSAGE, 403, 'player_login_disabled');
+        }
+
         return $this->tokenResponse($request, $user);
     }
 

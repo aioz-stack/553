@@ -39,6 +39,12 @@ class Login extends Controller
                 throw ValidationException::withMessages(['username' => $user->status->blockedMessage()]);
             }
 
+            if ($user->signInBlocked()) {
+                Auth::logout();
+
+                throw ValidationException::withMessages(['username' => User::SIGN_IN_DISABLED_MESSAGE]);
+            }
+
             $request->session()->regenerate();
             $user->forceFill(['last_login_at' => now()])->save();
 

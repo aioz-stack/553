@@ -18,7 +18,11 @@ return [
     | (Multiplayer). Neither is cash — there are no deposits, withdrawals,
     | redemption or payouts of any kind.
     */
-    'features' => [],
+    'features' => [
+        // Players may sign in (web and app). Off for now: players are refused at sign-in and any
+        // existing player session or app token is refused too. Set PLAYER_LOGIN_ENABLED=true to reopen.
+        'player_login' => (bool) env('PLAYER_LOGIN_ENABLED', false),
+    ],
 
     // Player-created private rooms play for Chips, fee-free, and use this
     // platform-chosen payout mode (players never choose payout modes).
