@@ -59,6 +59,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::get('profile/preferences', [PlayerController::class, 'preferences']);
         Route::put('profile/preferences', [PlayerController::class, 'updatePreferences']);
         Route::put('profile/avatar', [PlayerController::class, 'updateAvatar'])->middleware('throttle:game-actions');
+        Route::put('profile/nickname', [PlayerController::class, 'updateNickname'])->middleware('throttle:game-actions');
         Route::get('profile/stats', [PlayerController::class, 'stats']);
         Route::get('profile/games', [PlayerController::class, 'history']);
         Route::get('leaderboard', [PlayerController::class, 'leaderboard']);

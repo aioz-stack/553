@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMock = vi.fn();
 const refresh = vi.fn(async () => undefined);
 vi.mock('@/lib/api', () => ({ api: (...args: unknown[]) => apiMock(...args), errorText: (e: Error) => e.message }));
-vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5, name: 'Pat Player', avatar: 'boy-02' }, refresh }) }));
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5, name: 'Pat Player', display_name: 'Lucky Pat', avatar: 'boy-02' }, refresh }) }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn() }));
 
 import AvatarPicker from './AvatarPicker';
@@ -87,5 +87,33 @@ describe('AvatarPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(close).toHaveBeenCalled();
     expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the current nickname below the picture; Change Nickname edits and saves it at once', async () => {
+    apiMock.mockResolvedValue({ data: { nickname: 'Ace Pat' } });
+    render(<AvatarPicker onClose={() => {}} />);
+    const field = screen.getByLabelText('Nickname');
+    expect(field).toHaveValue('Lucky Pat');
+    expect(field).toHaveAttribute('readonly');
+    fireEvent.click(screen.getByRole('button', { name: /Change Nickname/ }));
+    expect(field).not.toHaveAttribute('readonly');
+    fireEvent.change(field, { target: { value: 'Ace Pat' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Nickname/ }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/profile/nickname', { method: 'PUT', body: { nickname: 'Ace Pat' } }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(await screen.findByText('Nickname saved')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change Nickname' })).toBeInTheDocument();
+  });
+
+  it("shows the server's nickname error and keeps the popup open", async () => {
+    apiMock.mockRejectedValue(new Error('Use letters, numbers, spaces, "." "_" or "-" only.'));
+    const close = vi.fn();
+    render(<AvatarPicker onClose={close} />);
+    fireEvent.click(screen.getByRole('button', { name: /Change Nickname/ }));
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: '<bad>' } });
+    fireEvent.click(screen.getByRole('button', { name: '✓ Confirm' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use letters');
+    expect(close).not.toHaveBeenCalled();
+    expect(apiMock).not.toHaveBeenCalledWith('/profile/avatar', expect.anything());
   });
 });

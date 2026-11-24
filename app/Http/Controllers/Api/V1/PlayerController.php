@@ -7,6 +7,7 @@ use App\Http\Resources\GameSessionResource;
 use App\Http\Resources\UserResource;
 use App\Models\GameSession;
 use App\Models\PlayerProfile;
+use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\Audit\AuditLogger;
 use App\Events\Game\GameEvents;
@@ -67,6 +68,33 @@ class PlayerController extends Controller
         }
 
         return response()->json(['data' => ['avatar' => $user->avatarId()]]);
+    }
+
+    /**
+     * PUT /profile/nickname — your in-game nickname (player_profiles.display_name), shown on the
+     * Main Lobby, tables, friends and results. 2–20 letters, numbers, spaces, "." "_" or "-".
+     * Anyone at your table is told to refresh, so it changes everywhere at once.
+     */
+    public function updateNickname(Request $request, TableService $tables): JsonResponse
+    {
+        $request->merge(['nickname' => preg_replace('/\s+/u', ' ', trim((string) $request->input('nickname')))]);
+        $data = $request->validate(['nickname' => ['required', 'string', 'min:2', 'max:20', 'regex:/^[\pL\pN][\pL\pN ._-]*$/u']], [
+            'nickname.required' => 'Enter a nickname.',
+            'nickname.min' => 'Your nickname needs at least 2 characters.',
+            'nickname.max' => 'Your nickname can be at most 20 characters.',
+            'nickname.regex' => 'Use letters, numbers, spaces, "." "_" or "-" only.',
+        ]);
+
+        $user = $request->user();
+        $old = $user->profile?->display_name;
+        $user->profile()->updateOrCreate([], ['display_name' => $data['nickname']]);
+        AuditLogger::log($user, 'user.nickname_changed', $user, ['nickname' => $old], ['nickname' => $data['nickname']]);
+
+        if ($seat = $tables->activeSeat($user)) {
+            event(new TableEvent($seat->game_table_id, GameEvents::PLAYER_UPDATED, ['user_id' => $user->id, 'name' => $data['nickname']]));
+        }
+
+        return response()->json(['data' => ['nickname' => $data['nickname']]]);
     }
 
     /** Your saved game settings: { bgm: bool, sfx: bool, motion: low|medium|high }. */
@@ -162,7 +190,8 @@ class PlayerController extends Controller
     {
         $items = $request->user()->notifications()->latest()->limit(50)->get(['id', 'type', 'data', 'read_at', 'created_at']);
 
-        return response()->json(['data' => $items, 'meta' => ['unread' => $request->user()->unreadNotifications()->count()]]);
+        // System announcement (Admin → Settings → Lobby announcement) is shown pinned above the player's own notifications.
+        return response()->json(['data' => $items, 'meta' => ['unread' => $request->user()->unreadNotifications()->count(), 'announcement' => SystemSetting::get('lobby_announcement') ?: null]]);
     }
 
     public function markNotificationsRead(Request $request): JsonResponse

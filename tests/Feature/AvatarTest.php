@@ -51,3 +51,16 @@ test('other players see the avatar in lobbies, and a seated player\'s table is t
     $this->actingAs($guest, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.seats.0.avatar', 'girl-05');
     $this->actingAs($guest, 'sanctum')->getJson("/api/v1/tables/{$room['table_id']}")->assertOk();
 });
+
+test('a player changes their nickname: validated, saved on the profile, shown in /auth/me and audited', function () {
+    $me = User::factory()->player()->create();
+
+    $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/nickname', ['nickname' => '  Lucky   Ace  '])->assertOk()->assertJsonPath('data.nickname', 'Lucky Ace');
+    $this->actingAs($me, 'sanctum')->getJson('/api/v1/auth/me')->assertJsonPath('data.display_name', 'Lucky Ace');
+    expect(\App\Models\AuditLog::where('action', 'user.nickname_changed')->where('actor_id', $me->id)->exists())->toBeTrue();
+
+    foreach (['', 'a', str_repeat('x', 21), '<script>', '-dash'] as $bad) {
+        $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/nickname', ['nickname' => $bad])->assertUnprocessable()->assertJsonValidationErrors('nickname');
+    }
+    expect($me->fresh()->profile->display_name)->toBe('Lucky Ace');
+});

@@ -9,9 +9,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
+import NotificationsPanel from '@/components/NotificationsPanel';
 import { Avatar, ChipIcon } from '@/components/game';
 import { CandyText, CrownArt, ExitArt, GearArt, GoldCoins, LogoCrest, RoundBankArt, SpeakerArt } from '@/components/HomeArt';
-import { IconBell, IconPlus, IconTrophy } from '@/components/icons';
+import { IconBell } from '@/components/icons';
 import LandscapeStage, { useToStage } from '@/components/LandscapeStage';
 import { Glitter, RimGlint } from '@/components/Sparkles';
 import { springStyle } from '@/lib/spring';
@@ -23,6 +24,7 @@ import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
+import { useUnreadNotifications } from '@/lib/useUnreadNotifications';
 import { useGoldWallet } from '@/lib/useGoldWallet';
 import { fetchGold, type GoldWallet } from '@/lib/gold';
 import { practiceUrl } from '@/lib/singlePlayer';
@@ -150,21 +152,17 @@ function SmallRound({ x, y, label, href, onClick, tone, children, dot, motion = 
   );
 }
 
-/** Gold balance capsule (icon, live number, green "+" that opens the wallet). Display only. */
-function BalancePill({ x, w, label, value, icon, seed, delay }: { x: number; w: number; label: string; value: number | undefined; icon: ReactNode; seed: number; delay: number }) {
+/** Gold balance capsule (icon and live number). Display only — no top-up button on this screen. */
+function BalancePill({ x, w, label, value, icon, seed }: { x: number; w: number; label: string; value: number | undefined; icon: ReactNode; seed: number }) {
   const text = value !== undefined ? value.toLocaleString() : '…';
   return (
     <div style={{ ...springStyle(label, 4.2, 1), left: x, width: w }} className="lx-gold lx-spring-soft absolute top-[40px] flex h-[88px] items-center rounded-full p-[7px] shadow-[0_8px_0_#8a4a00]">
-      <div className="lx-gloss relative flex h-full w-full items-center rounded-full bg-gradient-to-b from-[#3a2a12] to-[#160d04] pl-1 pr-1 shadow-[inset_0_-8px_14px_rgb(0_0_0/0.4)]">
+      <div className="lx-gloss relative flex h-full w-full items-center rounded-full bg-gradient-to-b from-[#3a2a12] to-[#160d04] pl-1 pr-5 shadow-[inset_0_-8px_14px_rgb(0_0_0/0.4)]">
         <span className="lx-glint relative z-[4] -ml-7 inline-block">{icon}</span>
         <Glitter count={5} seed={seed} size={0.8} />
         <span className={`lx-text-glow relative z-[4] flex-1 truncate text-center font-display font-black text-white ${text.length > 8 ? 'text-[32px]' : 'text-[40px]'}`} aria-label={label}>
           {text}
         </span>
-        <Link href="/wallet/" aria-label={`Wallet — ${label}`} onClick={() => play('tap')} style={springStyle(`${label}-plus`, 2.4, 0.8)} className="lx-tile lx-spring relative z-[4] flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border-4 border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] text-white shadow-[0_4px_0_#0b6b2a,inset_0_3px_0_rgb(255_255_255/0.5)]">
-          <RimGlint width={4} delay={delay} />
-          <IconPlus className="h-10 w-10" />
-        </Link>
       </div>
     </div>
   );
@@ -204,7 +202,8 @@ export default function Home() {
   // Single Player Gold wallet (Total Amount): the same server source as the game screens.
   const { wallet: goldWallet } = useGoldWallet(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
-  const unread = useFetch<{ meta: { unread: number } }>(user ? '/notifications' : null).data?.meta.unread ?? 0;
+  const { unread, reload: reloadUnread, clear: clearUnread } = useUnreadNotifications(user?.id);
+  const [notifications, setNotifications] = useState(false);
   const [seat, setSeat] = useState<TableState | null>(null);
   const [soundOn] = useSound();
   const [picker, setPicker] = useState(false);
@@ -268,8 +267,8 @@ export default function Home() {
   return (
     <Screen title="Home" immersive>
       <LandscapeStage background={<BeachLandscape className="h-full w-full" />}>
-        {/* Profile */}
-        <Link href="/profile/" aria-label="Profile" className="absolute left-[40px] top-[22px] flex items-center gap-4" onClick={() => play('tap')}>
+        {/* Profile (display only — not clickable; the pencil badge opens Choose Your Avatar) */}
+        <div role="group" aria-label="Profile" className="absolute left-[40px] top-[22px] flex items-center gap-4">
           <span className="lx-gold lx-glow lx-spring-soft relative rounded-full p-[8px] shadow-[0_8px_0_#8a4a00]" style={springStyle('avatar', 4, 1)}>
             <span className="lx-gloss relative block rounded-full">
               <Avatar name={name} size={150} avatar={user?.avatar} userId={user?.id} />
@@ -286,22 +285,30 @@ export default function Home() {
               </span>
             </span>
           </span>
-        </Link>
+        </div>
 
         {/* Logo */}
         <div className="absolute left-[488px] top-[0px]">
           <LogoCrest title="Pusoy 553" />
         </div>
 
-        {/* Balances: gold coins = Gold (Single Player), chip = Chips (Multiplayer); never combined. "+" opens the wallet. */}
-        <BalancePill x={1046} w={260} label="Gold balance" value={coins} icon={<GoldCoins size={78} />} seed={7} delay={0.6} />
-        <BalancePill x={1320} w={260} label="Chips balance" value={chipCount} icon={<ChipIcon size={74} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} delay={1.5} />
+        {/* Balances: gold coins = Gold (Single Player), chip = Chips (Multiplayer); never combined. Display only. */}
+        <BalancePill x={1046} w={260} label="Gold balance" value={coins} icon={<GoldCoins size={78} />} seed={7} />
+        <BalancePill x={1320} w={260} label="Chips balance" value={chipCount} icon={<ChipIcon size={74} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} />
 
-        {/* Quick icons under the balance */}
-        <SmallRound x={1380} y={152} label="Leaderboard" href="/leaderboard/" tone="from-[#ffd75a] to-[#e89a00]" motion="lx-bob inline-block">
-          <IconTrophy className="h-10 w-10 text-[#5a2600]" />
-        </SmallRound>
-        <SmallRound x={1470} y={152} label="Notifications" href="/notifications/" tone="from-felt-400 to-felt-700" dot={unread > 0} motion={unread > 0 ? 'lx-ring inline-block' : ''}>
+        {/* Notifications: the bell under the right end of the balances opens the notification pop-up. */}
+        <SmallRound
+          x={1500}
+          y={152}
+          label={unread > 0 ? `Notifications — ${unread} unread` : 'Notifications'}
+          onClick={() => {
+            play('tap');
+            setNotifications(true);
+          }}
+          tone="from-felt-400 to-felt-700"
+          dot={unread > 0}
+          motion={unread > 0 ? 'lx-ring inline-block' : ''}
+        >
           <IconBell className="h-10 w-10" />
         </SmallRound>
 
@@ -352,8 +359,17 @@ export default function Home() {
         </Tile>
 
         {settings && <SettingsPanel onClose={() => setSettings(false)} />}
+        {notifications && (
+          <NotificationsPanel
+            onRead={clearUnread}
+            onClose={() => {
+              setNotifications(false);
+              reloadUnread();
+            }}
+          />
+        )}
         {avatarPicker && <AvatarPicker onClose={() => setAvatarPicker(false)} />}
-        {/* Change avatar: a pencil badge on your portrait (the portrait itself opens your profile). */}
+        {/* Change avatar / nickname: the pencil badge on your portrait (the only clickable part of the profile). */}
         <button
           type="button"
           aria-label="Change avatar"

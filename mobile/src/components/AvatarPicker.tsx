@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -11,7 +11,9 @@ import { play } from '@/lib/sound';
  * Avatar gallery: the 553 cartoon collection (Boys, Girls, Animals). Filter by category, tap to
  * preview, Confirm saves it to your account (PUT /profile/avatar) — it then shows everywhere
  * (home, lobby, Choose Your Seat, friends, profile, game table), and anyone at your table sees it
- * change. Rendered in a portal so it works from any screen (landscape stage or portrait).
+ * change. Below the current picture: your Nickname and a Change Nickname button (PUT
+ * /profile/nickname — the server validates it; Enter also saves); Confirm also saves a nickname you edited. Both
+ * apply at once (the signed-in user is refreshed), no logout or reload. Rendered in a portal so it works from any screen (landscape stage or portrait).
  */
 type Tab = 'all' | AvatarCategory;
 const TABS: Array<[Tab, string]> = [
@@ -30,9 +32,53 @@ export default function AvatarPicker({ onClose, onSaved }: { onClose: () => void
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const currentNick = user?.display_name ?? user?.name ?? '';
+  const [nick, setNick] = useState(currentNick);
+  const [editingNick, setEditingNick] = useState(false);
+  const [nickNote, setNickNote] = useState<string | null>(null);
+  const nickInput = useRef<HTMLInputElement>(null);
+  const nickChanged = nick.trim().replace(/s+/g, ' ') !== currentNick;
 
   const ids = tab === 'all' ? AVATAR_IDS : AVATAR_IDS.filter((id) => avatarCategory(id) === tab);
-  const changed = sel !== current;
+  const changed = sel !== current || nickChanged;
+
+  /** Saves the nickname (server-validated); returns false and shows the server's message on error. */
+  const saveNick = async (): Promise<boolean> => {
+    try {
+      const r = await api<{ data: { nickname: string } }>('/profile/nickname', { method: 'PUT', body: { nickname: nick } });
+      setNick(r.data.nickname);
+      return true;
+    } catch (e) {
+      setError(errorText(e));
+      setEditingNick(true);
+      play('lose');
+      return false;
+    }
+  };
+
+  const changeNick = async () => {
+    if (busy) return;
+    play('tap');
+    if (!editingNick) {
+      setEditingNick(true);
+      setNickNote(null);
+      setTimeout(() => nickInput.current?.select(), 0);
+      return;
+    }
+    if (!nickChanged) {
+      setEditingNick(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    if (await saveNick()) {
+      await refresh();
+      setEditingNick(false);
+      setNickNote('Nickname saved');
+      play('win');
+    }
+    setBusy(false);
+  };
 
   const confirm = async () => {
     if (busy) return;
@@ -43,10 +89,11 @@ export default function AvatarPicker({ onClose, onSaved }: { onClose: () => void
     setBusy(true);
     setError(null);
     try {
-      await api('/profile/avatar', { method: 'PUT', body: { avatar: sel } });
+      if (nickChanged && !(await saveNick())) return;
+      if (sel !== current) await api('/profile/avatar', { method: 'PUT', body: { avatar: sel } });
       await refresh();
       play('win');
-      onSaved?.(sel);
+      if (sel !== current) onSaved?.(sel);
       onClose();
     } catch (e) {
       setError(errorText(e));
@@ -69,7 +116,7 @@ export default function AvatarPicker({ onClose, onSaved }: { onClose: () => void
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[23px] bg-gradient-to-b from-[#7a0f16] via-[#55070c] to-[#2e0306] text-white">
           {/* header */}
-          <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
+          <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4 [@media(max-height:500px)]:pb-1 [@media(max-height:500px)]:pt-2">
             <h2 className="font-display text-[clamp(22px,3.4vw,34px)] font-black text-[#ffd34d] drop-shadow-[0_2px_0_#3a1300]">Choose Your Avatar</h2>
             <button
               type="button"
@@ -100,18 +147,66 @@ export default function AvatarPicker({ onClose, onSaved }: { onClose: () => void
             ))}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-4 p-5 sm:flex-row">
-            {/* preview */}
-            <div className="flex shrink-0 flex-row items-center gap-4 sm:w-[230px] sm:flex-col sm:justify-center">
-              <div key={sel} className="cs-pop overflow-hidden rounded-[28px] border-[5px] border-[#ffe14d] bg-white shadow-[0_0_30px_rgb(255_211_77/0.6)]">
-                {/* eslint-disable-next-line @next/next/no-img-element -- static export (Capacitor) */}
-                <img src={avatarUrl(sel)} alt={`Preview: ${avatarName(sel)}`} width={200} height={200} className="h-[clamp(110px,22vw,200px)] w-[clamp(110px,22vw,200px)] object-cover" />
+          <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 py-3 sm:flex-row [@media(max-height:500px)]:py-2">
+            {/* current / selected avatar, then the Nickname below it — compact enough for small landscape phones */}
+            <div className="flex min-h-0 shrink-0 flex-col gap-3 overflow-y-auto sm:w-[250px] [@media(max-height:500px)]:gap-1.5">
+              <div className="flex items-center gap-3 sm:flex-col sm:text-center [@media(max-height:500px)]:flex-row [@media(max-height:500px)]:text-left">
+                <div key={sel} className="cs-pop shrink-0 overflow-hidden rounded-[24px] border-[5px] border-[#ffe14d] bg-white shadow-[0_0_30px_rgb(255_211_77/0.6)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- static export (Capacitor) */}
+                  <img src={avatarUrl(sel)} alt={`Preview: ${avatarName(sel)}`} width={200} height={200} className="h-[clamp(64px,min(20vw,22vh),180px)] w-[clamp(64px,min(20vw,22vh),180px)] object-cover [@media(max-height:500px)]:h-[58px] [@media(max-height:500px)]:w-[58px]" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-display text-[clamp(17px,2.4vw,24px)] font-black leading-tight text-white" aria-live="polite">
+                    {avatarName(sel)}
+                  </p>
+                  <p className="text-[13px] font-bold text-white/60">{sel === current ? 'Your current avatar' : AVATAR_CATEGORY_LABEL[avatarCategory(sel)]}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className="font-display text-[clamp(18px,2.4vw,24px)] font-black text-white" aria-live="polite">
-                  {avatarName(sel)}
-                </p>
-                <p className="text-[14px] font-bold text-white/60">{sel === current ? 'Your current avatar' : AVATAR_CATEGORY_LABEL[avatarCategory(sel)]}</p>
+
+              {/* Nickname: below the current picture; the pencil (Change Nickname) edits it, ✓ saves it. */}
+              <div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <label htmlFor="nickname" className="font-display text-[13px] font-black uppercase tracking-wide text-[#ffd34d]">
+                    Nickname
+                  </label>
+                  <span role="status" className={`truncate text-[12px] font-bold ${nickNote ? 'text-[#9cf08a]' : 'text-white/50'}`}>
+                    {nickNote ?? (editingNick ? '2–20 characters' : '')}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <input
+                    id="nickname"
+                    ref={nickInput}
+                    value={nick}
+                    maxLength={20}
+                    readOnly={!editingNick}
+                    autoCapitalize="words"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    enterKeyHint="done"
+                    onChange={(e) => {
+                      setNick(e.target.value);
+                      setNickNote(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void changeNick();
+                      }
+                    }}
+                    className={`block h-11 min-w-0 flex-1 rounded-full border-[3px] px-4 font-display text-[17px] font-black text-white outline-none ${editingNick ? 'border-[#ffe14d] bg-[#1a0204]' : 'border-[#d9a441]/70 bg-black/30'}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={changeNick}
+                    disabled={busy}
+                    aria-label={editingNick ? 'Save Nickname' : 'Change Nickname'}
+                    title={editingNick ? 'Save Nickname' : 'Change Nickname'}
+                    className="lx-tile flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-[3px] border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] to-[#e08a00] text-[20px] font-black text-[#4a1d00] shadow-[0_4px_0_#8a4a00] disabled:opacity-60"
+                  >
+                    <span aria-hidden="true">{editingNick ? '✓' : '✎'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -151,15 +246,15 @@ export default function AvatarPicker({ onClose, onSaved }: { onClose: () => void
               {error}
             </p>
           )}
-          <div className="flex justify-center gap-4 px-5 pb-5">
-            <button type="button" onClick={onClose} className="lx-tile h-14 min-w-[150px] rounded-full border-4 border-[#d9a441] bg-gradient-to-b from-[#6a1218] to-[#33060a] px-6 font-display text-[20px] font-black text-[#ffe9b0] shadow-[0_5px_0_#1a0204]">
+          <div className="flex justify-center gap-4 px-5 pb-5 [@media(max-height:500px)]:pb-3">
+            <button type="button" onClick={onClose} className="lx-tile h-14 [@media(max-height:500px)]:h-11 min-w-[150px] rounded-full border-4 border-[#d9a441] bg-gradient-to-b from-[#6a1218] to-[#33060a] px-6 font-display text-[20px] font-black text-[#ffe9b0] shadow-[0_5px_0_#1a0204]">
               Cancel
             </button>
             <button
               type="button"
               onClick={confirm}
               disabled={busy}
-              className="lx-tile h-14 min-w-[200px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] via-[#ffc531] to-[#e08a00] px-6 font-display text-[22px] font-black text-[#4a1d00] shadow-[0_5px_0_#8a4a00] disabled:opacity-60"
+              className="lx-tile h-14 [@media(max-height:500px)]:h-11 min-w-[200px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] via-[#ffc531] to-[#e08a00] px-6 font-display text-[22px] font-black text-[#4a1d00] shadow-[0_5px_0_#8a4a00] disabled:opacity-60"
             >
               {busy ? 'Saving…' : changed ? '✓ Confirm' : 'Done'}
             </button>

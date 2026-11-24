@@ -1140,3 +1140,22 @@ Not done / not verified:
   (Agents / Players menu, Agent Panel, Agent Registration Link) is unchanged.
 - The Administrator's registration link, its invite banner ("registering as Incorporator"), pending approvals,
   account lists, sponsor labels and the Overview's active-agent breakdown all use the new name.
+
+## Main Lobby (mobile Home) — profile, balances, notifications
+
+- **Profile (upper left) is display only**: the avatar, nickname and level bar are no longer a link. Only the
+  pencil badge is clickable; it opens **Choose Your Avatar** (`components/AvatarPicker.tsx`).
+- **Choose Your Avatar** shows the current avatar and, below the picture, the **Nickname** field with a
+  **Change Nickname** button (tap → edit → Save Nickname, or Enter). Confirm saves the avatar and any edited
+  nickname. Both apply at once (`refresh()` of the signed-in user; table seats get `player.updated`).
+- **API:** `PUT /api/v1/profile/nickname` `{nickname}` → `player_profiles.display_name`. Whitespace is collapsed;
+  2–20 characters, starting with a letter/number, then letters, numbers, spaces, `.` `_` `-`. Audit log
+  `user.nickname_changed`. Test: `tests/Feature/AvatarTest.php`.
+- **Balances:** the green "+" (wallet) buttons beside Gold and Chips are gone; the pills only display balances.
+- **Leaderboard / Rankings** trophy button removed from the Home screen (the `/leaderboard` page itself still exists).
+- **Notifications:** the bell (now alone, under the right end of the Chips pill) opens `components/NotificationsPanel.tsx`,
+  a pop-up instead of navigating. It shows the **System announcement** (Admin → Settings → Lobby announcement, now
+  also returned as `meta.announcement` by `GET /notifications`) pinned on top, then the player's notifications with
+  a type badge (Account = Chips received, Game = room invitation, Friends, Alert = anything else). Opening it marks
+  everything read. The red dot updates live from broadcast notifications on `user.{id}`
+  (`lib/useUnreadNotifications.ts`). Tests: `src/app/home/page.test.tsx`, `src/components/AvatarPicker.test.tsx`.
