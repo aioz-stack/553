@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useMotionSync } from '@/lib/motion';
 import { useMusicPlayer } from '@/lib/music';
+import { initOrientation } from '@/lib/useLandscapeLock';
 
 /**
  * Native integration on device: status bar style, splash hide, keyboard
@@ -26,6 +27,8 @@ export default function NativeShell() {
         import('@capacitor/app'),
       ]);
 
+      // Portrait screens start in portrait (landscape screens lock landscape themselves).
+      void initOrientation();
       await StatusBar.setStyle({ style: Style.Dark }).catch(() => undefined);
 
       if (Capacitor.getPlatform() === 'android') {

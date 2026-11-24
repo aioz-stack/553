@@ -5,6 +5,7 @@ import NativeShell from '@/components/NativeShell';
 import PushRegistration from '@/components/PushRegistration';
 import { AuthProvider } from '@/lib/auth';
 import { MOTION_BOOT_SCRIPT } from '@/lib/motionBoot';
+import { NATIVE_ROUTE_BOOT_SCRIPT } from '@/lib/nativeBoot';
 import './globals.css';
 
 // Fonts are downloaded at build time and bundled into the static export.
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`} suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: NATIVE_ROUTE_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT_SCRIPT }} />
       </head>
       <body className="font-sans antialiased">

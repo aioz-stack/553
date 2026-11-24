@@ -88,15 +88,32 @@ Testing a full game alone: join a room as `player` in the browser, then
 
 ```bash
 cd mobile
-cp .env.example .env.local     # set NEXT_PUBLIC_REVERB_APP_KEY = backend REVERB_APP_KEY
+cp .env.example .env.local     # local backend for `npm run dev` (REVERB key = backend REVERB_APP_KEY)
 npm install
-npm run dev                    # http://localhost:3000 (browser preview)
-npm run build && npx cap sync  # static export to out/ and copy into android/ + ios/
-npx cap open android           # Android Studio (Windows/macOS/Linux)
+npm run dev                    # http://localhost:3000 (browser preview, uses .env.local)
+npm run assets && npm run cap:sync && npm run cap:android   # build the APK project
 npx cap open ios               # Xcode (macOS only)
 ```
 
-On a physical phone use your PC's LAN IP in `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_REVERB_HOST`.
+**Two env files, on purpose.** `npm run dev` uses `.env.local` (your local backend). The app
+build (`npm run cap:sync` → `npm run build:native`, `scripts/build-native.mjs`) uses **`.env.native`**
+(the public server, `https://test.asperioscents.com`), whatever `.env.local` says — inside the APK
+"localhost" is the phone itself. `build:native` refuses a localhost / `10.0.2.2` API unless you set
+`ALLOW_LOCAL_API=1` (emulator testing; plain http also needs `CAP_DEV_HTTP=1 npx cap sync`).
+
+**Static export inside Capacitor (Android).** Capacitor's local server answers every address
+without a file extension (`/lobby/`, `/practice/?tier=…`) with the ROOT `index.html`, so anything
+that makes the WebView load a page itself must not depend on the served HTML:
+- `scripts/fix-export.mjs` (runs after every `next build`): Next.js 16 writes page prefetch data as
+  `lobby/__next.lobby/__PAGE__.txt` but the router requests `lobby/__next.lobby.__PAGE__.txt`; the script
+  adds copies under the requested names so client-side navigation never falls back to a page load.
+- `src/lib/nativeBoot.ts` (inline head script): in the app, a page loaded on an inner address
+  (Android restoring the app, a reload) is remembered, the URL reset to `/`, and the Splash page
+  navigates back to it client-side.
+- `src/lib/useLandscapeLock.ts`: one shared orientation manager — landscape stays locked while any
+  landscape screen (Home, Lobby, Choose Your Seat, Single Player, Settings) is open, portrait returns
+  400 ms after the last one closes, lock calls run in order (no portrait/landscape flip between game
+  screens). Native start-up is portrait.
 Icons/splash: edit `mobile/assets/*.svg`, re-render the PNGs, then `npm run assets`.
 
 ### Tests
@@ -882,3 +899,12 @@ Not done / not verified:
 - Verified: 259 Pest, 11 web Vitest, 91 mobile Vitest; live as superadmin — Issue Chips (5,000,000), an Agent registered
   through the admin's Agent link, approved from Pending Users, loaded 50,000 Chips; dark mode across panel pages and the
   existing Platform tools; theme saved on the account; agent overview shows its Player and Master Agent links.
+
+### 2026-11-24 — APK fixes
+
+- The APK was built from `mobile/.env.local`, which points at the local backend (`http://localhost:8000`);
+  on a phone that is the phone itself. App builds now use `mobile/.env.native` (server) and refuse localhost.
+- Android static-export routing: missing Next 16 page data files added after each build; inner-page loads
+  restored client-side; orientation locking made race-free. Verified in an emulation of Capacitor's routing
+  (Splash → Onboarding → Login → Home → Lobby, Single Player with a query string, reload on an inner page:
+  all client-side, no 404s); 96 mobile tests.

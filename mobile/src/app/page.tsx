@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { CardFan } from '@/components/PlayingCard';
 import { useAuth } from '@/lib/auth';
+import { RESUME_KEY } from '@/lib/nativeBoot';
 import { storage } from '@/lib/storage';
 
 /**
@@ -15,6 +16,19 @@ export default function Splash() {
 
   useEffect(() => {
     if (!ready) {
+      return;
+    }
+
+    // The native app reloaded on an inner page (see lib/nativeBoot): go straight back to it.
+    let resume: string | null = null;
+    try {
+      resume = sessionStorage.getItem(RESUME_KEY);
+      sessionStorage.removeItem(RESUME_KEY);
+    } catch {
+      // storage unavailable
+    }
+    if (resume && user) {
+      router.replace(resume);
       return;
     }
 
