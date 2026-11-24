@@ -740,13 +740,30 @@ through a service (validation, row locks, ledger, idempotency keys, audit log). 
     Withdrawal (own + downline; Withdraw Commission request), My Agents (not for Silver Agents), My Players (Load Chips
     only to players registered to the agent: `POST agent/panel/accounts/{user}/load` — `ChipLoadService::load` allows
     agents, `AllocationService` enforces ownership), Pending Users (read-only), Change Password.
-  - Agent Tools (the existing pages, now in the same shell through `PageShell`): Register Player, Load Chips, Referral
-    Codes, Transactions, Player Activity, Reports.
+  - Agents have no Platform / Agent Tools panel: the old agent pages and APIs (dashboard, players, Register Player,
+    Referral Codes, allocate, balances, transactions, activity, commissions, reports) were removed (404), and
+    `wallet/allocate` is staff-only. My Players has **Load Chips** and **Withdraw Chips** for players registered to the
+    agent (`POST agent/panel/accounts/{user}/load|withdraw`; `ChipLoadService` checks ownership).
   - Not available to agents (no routes; the services refuse them too): approving or rejecting registrations, Chips
-    requests and withdrawals, withdrawing Chips, ban / suspend / archive, commission rates, issuing Chips.
-- **Real time:** `PanelActivityObserver` (ChipLoad, AgentCommission, AgentPayoutRequest, User status) broadcasts
-  `PanelUpdated` (`panel.updated`, no data) after commit to the accounts concerned and their whole upline
-  (`private-user.{id}`) and to `private-staff` (Super Admin / Administrators). `AdminPanelLayout` listens and every
+    requests and withdrawals, ban / suspend / archive, commission rates, issuing Chips, password resets.
+- **Row actions** (Agents, Active Players, Ban Users, Archive — Admin and Agent Panels) are labeled buttons (`ActionButton`:
+  icon + name), always in this order: Load Chips, Withdraw Chips, Withdraw Commission, View, Reset Password, Ban, Archive /
+  Reactivate — each shown only when the role may use it.
+- **Reset Password** (`/admin/reset-password`, Super Admin and Administrators): search every agent and player
+  (`GET admin/panel/accounts?kind=all&q=` — username, account ID, name, email), check the account, enter and confirm a new
+  password (8+ characters, letters and numbers), confirm. `PUT admin/panel/accounts/{user}/password` hashes it (model
+  cast), revokes the account's API tokens and database sessions, never returns or logs it, and writes
+  `user.password_reset` to the audit log (actor, target, time). Administrators and Super Admins cannot be reset there.
+- **Registration only through links:** `referral_code` is required for every registration (web, API, mobile);
+  only the permanent links (`users.referral_code`) work — the retired per-agent referral codes no longer register
+  anyone. `/register` without a link shows "invitation only" and no form. Staff cannot create players or agents
+  directly (`POST admin/users` with those roles → 422; `POST admin/players|agents` removed). The mobile app's Register
+  screen asks for the registration link (or its code) and sends its code and type.
+- **Real time:** `PanelActivityObserver` (ChipLoad, AgentCommission, AgentPayoutRequest, User status) and the
+  `LedgerService` (every Chips transfer) broadcast `PanelUpdated` (`panel.updated`, no data) after commit to the
+  accounts concerned and their whole upline — sponsor and agent chains, worked out in the queue worker —
+  (`private-user.{id}`) and to `private-staff` (Super Admin / Administrators). So Team Overview totals follow wallet
+  balance changes (game settlements included). `AdminPanelLayout` listens and every
   open panel page refetches (`usePanelRefresh`); returning to the browser tab refetches too. Needs Reverb and a queue
   worker (the event is queued).
 - **Convert Commission to Wallet** (Admin Overview and Agent Overview, directly below the registration links;
@@ -756,11 +773,12 @@ through a service (validation, row locks, ledger, idempotency keys, audit log). 
   commission wallet → own Chips wallet as one `COMMISSION_CONVERSION` ledger transfer. The idempotency key is
   `commission-convert:{user}:{request_id}` (one per opened modal), so a double click or retry converts once. Audit:
   `commission.converted`.
-- **Team Overview** (below it; `GET team/overview`): Total Player Wallets (Chips player wallets), Total Agent Wallets
-  (agents' Chips wallets) and Agents Commission (commissions earned by downline agents, excluding rejected/reversed),
-  computed live from the database over the user's own downline only: the `users.sponsor_id` tree, plus for agents the
-  `agents.parent_agent_id` tree and those agents' `agent_players`. The user is never counted; the Super Admin sees the
-  whole platform.
+- **Team Overview** (below it; `GET team/overview`): Total Player Wallets and Total Agent Wallets (Chips wallets),
+  computed live from the database over the user's whole downline: one walk over both trees until nothing new turns up —
+  `users.sponsor_id`, sub-agents (`agents.parent_agent_id`) and the `agent_players` of every agent reached — so an
+  Administrator's totals include the players of its agents, their Master and Silver Agents, at every level. Each account
+  counts once; the user never; the Super Admin sees the whole platform. (The "Converted So Far" and "Agents Commission"
+  cards were removed; commission records are unchanged.)
 - Migration `2026_11_19_190000_admin_panel_hierarchy` backfills a code for every account, players' sponsors from their
   agents, and the level rates. Tests use a `superAdmin()` helper that issues the Super Admin a 1,000,000-Chip float.
 
@@ -809,7 +827,7 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | Single Player | `GET practice/tiers`, `POST practice/matches` (`tier`), `GET practice/matches/current`, `GET practice/matches/{id}`, `POST practice/matches/{id}/deal` (`bet`, `request_id`), `GET practice/{round}`, `POST practice/{round}/{preview, suggest, lucky, submit}`, `POST practice/matches/{id}/leave`, `GET practice/gold`, `POST practice/gold/claim` (`request_id`) — Round Bank, you + 3 bots; plays for Gold only |
 | Friends | `GET/POST friends`, `POST friends/{id}/accept`, `DELETE friends/{id}`, `POST friends/{user}/invite` |
 | Push & payouts | `PUT auth/devices/push-token`; `agent/payout-requests` (GET/POST), `admin/payout-requests` (+approve/reject) — payouts disabled unless cash flags are on |
-| Agent | `agent/panel` (links, level, Chips, commission, downline), `agent/chip-requests` (POST), `agent/payout-requests` (GET/POST commission withdrawals), `agent/dashboard`, `agent/players` (GET/POST), `agent/players/{id}`, `agent/wallet`, `agent/transactions`, `agent/commissions`, `agent/referral-codes` (GET/POST), `agent/activity`, `agent/reports` |
+| Agent | `agent/panel/*` (overview, load-logs, commission-logs, withdrawals, accounts, accounts/{id}/load, accounts/{id}/withdraw — own downline only), `agent/chip-requests` (POST), `agent/payout-requests` (GET/POST commission withdrawals). The old agent tool endpoints were removed |
 | Admin Panel | `admin/panel/overview`, `admin/panel/issue` (Super Admin), `admin/panel/load-logs` (+`/{id}`, `/approve`, `/reject`), `admin/panel/commission-logs`, `admin/panel/commission-rates` (PUT), `admin/panel/withdrawals` (+approve/reject), `admin/panel/accounts?kind=agents|players|pending|banned|archived`, `admin/panel/accounts/{id}` (GET, DELETE pending), `.../load`, `.../withdraw`, `.../withdraw-commission`, `.../commission-rate` (PUT), `.../approve`, `.../status` (`ban|suspend|reactivate|archive|restore`) |
 | Admin | `admin/users|players|agents|administrators` (GET/POST), `admin/users/{id}` (GET/PATCH, status, assign-agent, permissions, limits), `admin/rooms`, `admin/tables` (+close), `admin/games` (+cancel, retry), `admin/wallets` (+freeze), `admin/wallets/summary` (total points per currency × wallet type), `admin/transactions` (+reverse), `admin/adjustments` (Super Admin point deposit/withdraw by `wallet_id` or `user_id`+`currency`), `admin/reconcile`, `admin/commissions` (+approve/reject/reverse), `admin/commission-rules`, `admin/reports/overview`, `admin/audit-logs`, `admin/settings` |
 
@@ -964,3 +982,15 @@ Not done / not verified:
 - Real-time `panel.updated` refresh for the Admin and Agent Panels.
 - Tests: `tests/Feature/AgentPanelTest.php` (scoping per level, own-player loads, no Administrator actions, real-time
   event); WebPagesTest covers the new agent pages.
+
+### 2026-11-24 — Wallet totals, Reset Password, link-only registration, labeled actions
+
+- Removed the "Converted So Far" and "Agents Commission" cards. Total Player / Agent Wallets cover the whole downline
+  through both trees, counted once, and refresh in real time on every Chips balance change.
+- Agents, Master Agents and Silver Agents lost the Platform (Agent Tools) panel; its pages and APIs are gone. Agents can
+  now Withdraw Chips from their own players.
+- Admin Panel → Reset Password (Super Admin + Administrators) with audit logging.
+- Registration only through registration links (Register Player and Referral Codes removed everywhere).
+- Agents / Players actions are labeled buttons; Withdraw Chips sits right after Load Chips for every role that has it.
+- Tests: AgentPanelTest (withdraw, reset password), TeamTest (multi-level totals), AccessControlTest, AdminPanelTest,
+  WebPagesTest; web navigation + TeamSections; mobile registration-link parser.

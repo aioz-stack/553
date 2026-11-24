@@ -86,14 +86,20 @@ test('referrals are validated on the server: bad codes, players\' codes and agen
     $this->postJson('/api/v1/auth/register', $base + ['username' => 'xthree', 'account_type' => 'agent'])->assertStatus(422)->assertJsonValidationErrors('referral_code');
     expect(User::query()->whereIn('username', ['xone', 'xtwo', 'xthree'])->count())->toBe(0);
 
-    // A Player may register without a link (no sponsor), still pending.
-    $this->postJson('/api/v1/auth/register', $base + ['username' => 'xfour'])->assertCreated();
-    expect(User::query()->where('username', 'xfour')->first()->status)->toBe(UserStatus::Pending);
+    // Players need a registration link too, and the retired per-agent referral codes no longer work.
+    $this->postJson('/api/v1/auth/register', $base + ['username' => 'xfour'])->assertStatus(422)->assertJsonValidationErrors('referral_code');
+    $agent = User::factory()->agent()->create();
+    $legacy = app(\App\Services\Users\UserManagementService::class)->createReferralCode($agent->agent);
+    $this->postJson('/api/v1/auth/register', $base + ['username' => 'xfive', 'referral_code' => $legacy->code])->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
+    $this->postJson('/api/v1/auth/register', $base + ['username' => 'xsix', 'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor($agent)])->assertCreated();
+    expect(User::query()->whereIn('username', ['xfour', 'xfive'])->count())->toBe(0)
+        ->and(User::query()->where('username', 'xsix')->first()->status)->toBe(UserStatus::Pending);
 });
 
 test('pending users cannot sign in or use anything until approved; approval and deletion are once only', function () {
     $admin = superAdmin();
-    $this->postJson('/api/v1/auth/register', ['name' => 'Pen', 'username' => 'penny', 'email' => 'p@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123'])->assertCreated();
+    $link = app(\App\Services\Users\ReferralService::class)->codeFor($admin);
+    $this->postJson('/api/v1/auth/register', ['name' => 'Pen', 'username' => 'penny', 'email' => 'p@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link])->assertCreated();
     $penny = User::query()->where('username', 'penny')->firstOrFail();
 
     $this->postJson('/api/v1/auth/login', ['username' => 'penny', 'password' => 'secret123'])->assertForbidden()->assertJsonPath('error', 'account_pending');
@@ -108,7 +114,7 @@ test('pending users cannot sign in or use anything until approved; approval and 
 
     // Delete is for pending registrations only.
     $this->actingAs($admin)->deleteJson("/api/v1/admin/panel/accounts/{$penny->id}")->assertStatus(409);
-    $this->postJson('/api/v1/auth/register', ['name' => 'Del', 'username' => 'delme', 'email' => 'd@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123'])->assertCreated();
+    $this->postJson('/api/v1/auth/register', ['name' => 'Del', 'username' => 'delme', 'email' => 'd@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link])->assertCreated();
     $del = User::query()->where('username', 'delme')->firstOrFail();
     $this->actingAs($admin)->deleteJson("/api/v1/admin/panel/accounts/{$del->id}")->assertOk();
     expect(User::query()->where('username', 'delme')->exists())->toBeFalse();
@@ -275,7 +281,7 @@ test('ban, suspend, reactivate, archive and restore: blocked accounts are signed
 
 test('administrators need the matching ability for account actions', function () {
     $admin = User::factory()->create(['role' => Role::Administrator]);
-    $this->postJson('/api/v1/auth/register', ['name' => 'Q', 'username' => 'queued', 'email' => 'q@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123'])->assertCreated();
+    $this->postJson('/api/v1/auth/register', ['name' => 'Q', 'username' => 'queued', 'email' => 'q@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor(superAdmin())])->assertCreated();
     $queued = User::query()->where('username', 'queued')->firstOrFail();
 
     $this->actingAs($admin)->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertForbidden();

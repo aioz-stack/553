@@ -105,12 +105,12 @@ test('team overview totals only the user\'s own downline, at every level', funct
     $this->actingAs($agent)->getJson('/api/v1/team/overview')->assertOk()
         ->assertJsonPath('data.total_player_wallets', '300.00')
         ->assertJsonPath('data.total_agent_wallets', '5000.00')
-        ->assertJsonPath('data.agents_commission', '110.00')
+        ->assertJsonMissingPath('data.agents_commission')
         ->assertJsonPath('data.agents', 2)->assertJsonPath('data.players', 2);
 
     // The Master: only the Silver Agent and the Silver's player.
     $this->actingAs($master)->getJson('/api/v1/team/overview')
-        ->assertJsonPath('data.total_player_wallets', '200.00')->assertJsonPath('data.total_agent_wallets', '3000.00')->assertJsonPath('data.agents_commission', '70.00');
+        ->assertJsonPath('data.total_player_wallets', '200.00')->assertJsonPath('data.total_agent_wallets', '3000.00');
 
     // The Silver Agent: its player only; no agents below it.
     $this->actingAs($silver)->getJson('/api/v1/team/overview')
@@ -121,7 +121,32 @@ test('team overview totals only the user\'s own downline, at every level', funct
 
     // The Super Admin sees the whole platform.
     $this->actingAs($super)->getJson('/api/v1/team/overview')->assertJsonPath('data.scope', 'platform')
-        ->assertJsonPath('data.total_player_wallets', '10299.00')->assertJsonPath('data.agents_commission', '610.00');
+        ->assertJsonPath('data.total_player_wallets', '10299.00');
+});
+
+test('an administrator\'s totals include players linked to agents below it, counted once, at every level', function () {
+    $super = superAdmin();
+    $admin = User::factory()->create(['role' => 'admin']);
+    app(ReferralService::class)->codeFor($admin);
+    $agent = tmJoin($super, $admin->referral_code, 'agent', 'lvlagent');
+    $master = tmJoin($super, $agent->referral_code, 'agent', 'lvlmaster');
+    $silver = tmJoin($super, $master->referral_code, 'agent', 'lvlsilver');
+    $direct = tmJoin($super, $admin->referral_code, 'player', 'lvldirect');
+    $deep = tmJoin($super, $silver->referral_code, 'player', 'lvldeep');
+    // A player sponsored elsewhere but linked to the Master Agent (agent_players) still counts — once.
+    $linked = User::factory()->player()->create();
+    \App\Models\AgentPlayer::create(['agent_id' => $master->agent->id, 'player_id' => $linked->id, 'assigned_at' => now()]);
+    \App\Models\AgentPlayer::query()->updateOrCreate(['player_id' => $deep->id], ['agent_id' => $silver->agent->id, 'assigned_at' => now()]);
+    foreach ([[$direct, 1_000], [$deep, 2_000], [$linked, 4_000], [$agent, 10_000], [$master, 20_000], [$silver, 40_000]] as [$u, $minor]) {
+        fund($u, $minor);
+    }
+
+    $this->actingAs($admin)->getJson('/api/v1/team/overview')->assertOk()
+        ->assertJsonPath('data.players', 3)->assertJsonPath('data.agents', 3)
+        ->assertJsonPath('data.total_player_wallets', '70.00')
+        ->assertJsonPath('data.total_agent_wallets', '700.00');
+    $this->actingAs($master)->getJson('/api/v1/team/overview')
+        ->assertJsonPath('data.total_player_wallets', '60.00')->assertJsonPath('data.total_agent_wallets', '400.00');
 });
 
 test('an administrator\'s team is everyone registered under them', function () {
@@ -151,7 +176,7 @@ test('the dummy agents seeder gives each dummy agent 200 Chips of convertible co
         $this->actingAs($u)->getJson('/api/v1/commission/wallet')->assertJsonPath('data.available', '200.00');
     }
     $this->actingAs(User::query()->where('username', 'dummyagent')->first())->getJson('/api/v1/team/overview')
-        ->assertJsonPath('data.agents', 2)->assertJsonPath('data.players', 1)->assertJsonPath('data.agents_commission', '400.00');
+        ->assertJsonPath('data.agents', 2)->assertJsonPath('data.players', 1);
     expect(AgentCommission::query()->count())->toBe(3)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });

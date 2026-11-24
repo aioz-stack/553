@@ -2,14 +2,12 @@
 
 namespace App\Services\Agent;
 
-use App\Enums\CommissionStatus;
 use App\Enums\Currency;
 use App\Enums\Role;
 use App\Enums\TransactionType;
 use App\Enums\WalletType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Agent;
-use App\Models\AgentCommission;
 use App\Models\AgentPayoutRequest;
 use App\Models\AgentPlayer;
 use App\Models\User;
@@ -31,12 +29,12 @@ use Illuminate\Support\Facades\DB;
  * (balance less any pending withdrawal requests), serialised on the user row and keyed by
  * the request id, so a double click or a retried request converts once.
  *
- * Team Overview totals the user's downline only:
+ * Team Overview totals the user's whole downline (Total Player Wallets, Total Agent Wallets):
  *  - Super Admin: every agent and player on the platform;
- *  - Administrator: everyone registered under them (the permanent sponsor tree, users.sponsor_id);
- *  - Agent / Master / Silver: their sponsor tree plus their agent structure (agents below them
- *    through agents.parent_agent_id and every player linked to those agents).
- * The user themself is never counted.
+ *  - Administrator, Agent, Master Agent, Silver Agent: everyone below them at every level, through
+ *    both trees — the permanent sponsor tree (users.sponsor_id) and the agent structure (sub-agents
+ *    through agents.parent_agent_id and the players linked to any agent in the downline).
+ * Each account is counted once; the user themself is never counted.
  */
 class TeamService
 {
@@ -128,16 +126,9 @@ class TeamService
         $sum = fn (array $ids, WalletType $type) => $ids === [] ? 0 : (int) Wallet::query()
             ->whereIn('user_id', $ids)->where('currency', Currency::CH->value)->where('type', $type->value)->sum('balance');
 
-        $agentRows = $agentIds === [] ? collect() : Agent::query()->whereIn('user_id', $agentIds)->pluck('id');
-        $earned = $agentRows->isEmpty() ? 0 : (int) AgentCommission::query()->whereIn('agent_id', $agentRows)
-            ->whereNotIn('status', [CommissionStatus::Rejected->value, CommissionStatus::Reversed->value])->sum('amount');
-
         return [
             'total_player_wallets' => Points::decimal($sum($playerIds, WalletType::Player)),
             'total_agent_wallets' => Points::decimal($sum($agentIds, WalletType::Allocation)),
-            'agents_commission' => Points::decimal($earned),
-            // Unconverted commission still sitting in the team's agents' commission wallets.
-            'agents_commission_balance' => Points::decimal($sum($agentIds, WalletType::Commission)),
             'players' => count($playerIds),
             'agents' => count($agentIds),
             'scope' => $user->isSuperAdmin() ? 'platform' : 'downline',
@@ -158,31 +149,35 @@ class TeamService
             ];
         }
 
-        // The permanent sponsor tree.
-        $ids = [];
-        $frontier = [$user->id];
-        while ($frontier !== []) {
-            $next = User::query()->whereIn('sponsor_id', $frontier)->whereNotIn('id', array_merge($ids, [$user->id]))->pluck('id')->all();
-            $ids = array_merge($ids, $next);
-            $frontier = $next;
-        }
+        // Walk both trees until nothing new turns up: sponsored accounts, sub-agents of any agent
+        // reached so far, and players linked to those agents. Keys de-duplicate every account.
+        $seen = [$user->id => true];
+        $agentSeen = [];
+        $users = [$user->id];
+        $agents = $user->isAgent() && $user->agent ? [$user->agent->id] : [];
 
-        // Agents: also the agent structure (sub-agents and every player linked to them).
-        if ($user->isAgent() && $user->agent) {
-            $agentIds = [$user->agent->id];
-            $frontier = [$user->agent->id];
-            while ($frontier !== []) {
-                $next = Agent::query()->whereIn('parent_agent_id', $frontier)->whereNotIn('id', $agentIds)->pluck('id')->all();
-                $agentIds = array_merge($agentIds, $next);
-                $frontier = $next;
+        while ($users !== [] || $agents !== []) {
+            $agentSeen += array_fill_keys($agents, true);
+            $found = $users === [] ? [] : User::query()->whereIn('sponsor_id', $users)->pluck('id')->all();
+            if ($agents !== []) {
+                $found = array_merge(
+                    $found,
+                    Agent::query()->whereIn('parent_agent_id', $agents)->pluck('user_id')->all(),
+                    AgentPlayer::query()->whereIn('agent_id', $agents)->pluck('player_id')->all(),
+                );
             }
-            $ids = array_merge(
-                $ids,
-                Agent::query()->whereIn('id', $agentIds)->where('user_id', '!=', $user->id)->pluck('user_id')->all(),
-                AgentPlayer::query()->whereIn('agent_id', $agentIds)->pluck('player_id')->all(),
-            );
+
+            $users = [];
+            foreach ($found as $id) {
+                if (! isset($seen[$id])) {
+                    $seen[$id] = true;
+                    $users[] = (int) $id;
+                }
+            }
+            $agents = $users === [] ? [] : array_values(array_diff(Agent::query()->whereIn('user_id', $users)->pluck('id')->all(), array_keys($agentSeen)));
         }
 
+        $ids = array_keys($seen);
         $ids = array_values(array_unique(array_diff($ids, [$user->id])));
         $roles = User::query()->whereIn('id', $ids)->pluck('role', 'id');
 

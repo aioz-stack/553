@@ -23,6 +23,7 @@ test('a player registers, logs in with a bearer token and reads their wallet', f
         'password' => 'secret123',
         'password_confirmation' => 'secret123',
         'device_name' => 'Pixel 8',
+        'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor(superAdmin()),
     ])->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonMissingPath('data.token');
 
     // Waiting for approval: no sign-in yet.

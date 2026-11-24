@@ -52,6 +52,12 @@ class UserController extends Controller
     public function store(StoreUserRequest $request, ?string $role = null): JsonResponse
     {
         $role = Role::from($role ?? $request->input('role', Role::Player->value));
+
+        // Players and agents (every level) register only through registration links.
+        if ($role === Role::Player || $role === Role::Agent) {
+            throw new \App\Exceptions\BusinessRuleException('Players and agents register only through a registration link.', 422, 'registration_link_only');
+        }
+
         $data = $request->validated();
 
         $user = DB::transaction(function () use ($request, $role, $data) {

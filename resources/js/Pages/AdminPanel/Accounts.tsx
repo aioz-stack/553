@@ -1,7 +1,7 @@
-import { usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { useState, type ReactNode } from 'react';
 import {
-  ActionIcon,
+  ActionButton,
   AmountDialog,
   Btn,
   ConfirmDialog,
@@ -131,39 +131,36 @@ export default function Accounts({ kind }: { kind: Kind }) {
     }
   };
 
+  // Chips actions, in the same order for every role: Load Chips, then Withdraw Chips right after it.
+  // Agents get them only for players registered to them (the server checks the same).
+  const load = (a: Account, path: string, target: string) => (
+    <ActionButton label="Load Chips" tone="green" icon={<I.plus />} onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target, path, variant: 'success' })} />
+  );
+  const withdraw = (a: Account, path: string, target: string) => (
+    <ActionButton label="Withdraw Chips" tone="red" icon={<I.minus />} onClick={() => setAmount({ title: `Withdraw Chips · ${a.username}`, verb: 'Withdraw', target, path, limit: a.chips, limitLabel: `${a.username}'s Chips`, variant: 'danger' })} />
+  );
+
   const chipsActions = (a: Account) =>
     agent ? (
       a.can_load && (
-        <ActionIcon label={`Load Chips to ${a.username}`} tone="green" onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target: `to ${a.username} from your Chips`, path: `${panel.api}/accounts/${a.id}/load`, variant: 'success' })}>
-          <I.plus className="h-5 w-5" />
-        </ActionIcon>
+        <>
+          {load(a, `${panel.api}/accounts/${a.id}/load`, `to ${a.username} from your Chips`)}
+          {withdraw(a, `${panel.api}/accounts/${a.id}/withdraw`, `from ${a.username} back into your Chips`)}
+        </>
       )
     ) : canChips && (
       <>
-        <ActionIcon label={`Load Chips to ${a.username}`} tone="green" onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target: `to ${a.username}`, path: `/admin/panel/accounts/${a.id}/load`, variant: 'success' })}>
-          <I.plus className="h-5 w-5" />
-        </ActionIcon>
-        <ActionIcon label={`Withdraw Chips from ${a.username}`} tone="red" onClick={() => setAmount({ title: `Withdraw Chips · ${a.username}`, verb: 'Withdraw', target: `from ${a.username}`, path: `/admin/panel/accounts/${a.id}/withdraw`, limit: a.chips, limitLabel: `${a.username}'s Chips`, variant: 'danger' })}>
-          <I.minus className="h-5 w-5" />
-        </ActionIcon>
+        {load(a, `/admin/panel/accounts/${a.id}/load`, `to ${a.username}`)}
+        {withdraw(a, `/admin/panel/accounts/${a.id}/withdraw`, `from ${a.username}`)}
       </>
     );
 
   const more = (a: Account) => (
     <>
-      <ActionIcon label={`View ${a.username}`} onClick={() => openDetail(a)}>
-        <I.eye className="h-5 w-5" />
-      </ActionIcon>
-      {a.status === 'active' && !agent && (
-        <ActionIcon label={`Ban ${a.username}`} tone="red" onClick={() => status(a, 'ban')}>
-          <I.ban className="h-5 w-5" />
-        </ActionIcon>
-      )}
-      {a.status === 'active' && !agent && (
-        <ActionIcon label={`Archive ${a.username}`} onClick={() => status(a, 'archive')}>
-          <I.archive className="h-5 w-5" />
-        </ActionIcon>
-      )}
+      <ActionButton label="View" icon={<I.eye />} onClick={() => openDetail(a)} />
+      {!agent && <ActionButton label="Reset Password" tone="purple" icon={<I.lock />} onClick={() => router.visit(`/admin/reset-password?user=${a.id}`)} />}
+      {a.status === 'active' && !agent && <ActionButton label="Ban" tone="red" icon={<I.ban />} onClick={() => status(a, 'ban')} />}
+      {a.status === 'active' && !agent && <ActionButton label="Archive" icon={<I.archive />} onClick={() => status(a, 'archive')} />}
     </>
   );
 
@@ -201,16 +198,10 @@ export default function Accounts({ kind }: { kind: Kind }) {
           <span className="flex flex-wrap gap-1.5">
             {a.status === 'active' && chipsActions(a)}
             {a.status === 'active' && canCommission && (
-              <ActionIcon label={`Withdraw Commission of ${a.username}`} tone="gold" onClick={() => setAmount({ title: `Withdraw Commission · ${a.username}`, verb: 'Withdraw commission of', target: `into ${a.username}'s own Chips`, path: `/admin/panel/accounts/${a.id}/withdraw-commission`, limit: a.commission, limitLabel: 'Commission balance', variant: 'gold' })}>
-                <I.percent className="h-5 w-5" />
-              </ActionIcon>
+              <ActionButton label="Withdraw Commission" tone="gold" icon={<I.percent />} onClick={() => setAmount({ title: `Withdraw Commission · ${a.username}`, verb: 'Withdraw commission of', target: `into ${a.username}'s own Chips`, path: `/admin/panel/accounts/${a.id}/withdraw-commission`, limit: a.commission, limitLabel: 'Commission balance', variant: 'gold' })} />
             )}
             {more(a)}
-            {a.status !== 'active' && !agent && (
-              <ActionIcon label={`Reactivate ${a.username}`} tone="green" onClick={() => status(a, 'reactivate')}>
-                <I.restore className="h-5 w-5" />
-              </ActionIcon>
-            )}
+            {a.status !== 'active' && !agent && <ActionButton label="Reactivate" tone="green" icon={<I.restore />} onClick={() => status(a, 'reactivate')} />}
           </span>
         ),
       },
@@ -265,9 +256,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
                 Ban
               </Btn>
             )}
-            <ActionIcon label={`View ${a.username}`} onClick={() => openDetail(a)}>
-              <I.eye className="h-5 w-5" />
-            </ActionIcon>
+            <ActionButton label="View" icon={<I.eye />} onClick={() => openDetail(a)} />
           </span>
         ),
       },
@@ -284,9 +273,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
         label: 'Actions',
         render: (a: Account) => (
           <span className="flex flex-wrap gap-1.5">
-            <ActionIcon label={`View ${a.username}`} onClick={() => openDetail(a)}>
-              <I.eye className="h-5 w-5" />
-            </ActionIcon>
+            <ActionButton label="View" icon={<I.eye />} onClick={() => openDetail(a)} />
             <Btn size="sm" variant="success" onClick={() => status(a, 'restore')}>
               <I.restore className="h-4 w-4" /> Restore
             </Btn>

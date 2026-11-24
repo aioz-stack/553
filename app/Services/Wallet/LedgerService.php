@@ -162,6 +162,14 @@ class LedgerService
         $request->source?->setRawAttributes(array_merge($request->source->getAttributes(), ['balance' => $transaction->source_balance_after]), true);
         $request->destination?->setRawAttributes(array_merge($request->destination->getAttributes(), ['balance' => $transaction->destination_balance_after]), true);
 
+        // Chips balances feed the panels' Team Overview: tell the owners (and, in the worker, their upline).
+        if ($request->currency === \App\Enums\Currency::CH) {
+            $owners = array_values(array_filter([$source?->user_id, $destination?->user_id]));
+            if ($owners !== []) {
+                event(new \App\Events\PanelUpdated($owners, 'wallet'));
+            }
+        }
+
         return $transaction;
     }
 

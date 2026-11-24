@@ -26,7 +26,9 @@ describe('role-specific navigation', () => {
   it('shows agents only agent pages', () => {
     const links = hrefs(user('agent'));
 
-    expect(links).toContain('/agent/allocate');
+    expect(links).toContain('/agent/accounts/active-players');
+    // No Register Player, Referral Codes or other retired agent tools.
+    expect(links.some((h) => /\/agent\/(players|allocate|referral-codes|transactions|activity|reports)/.test(h))).toBe(false);
     expect(links.some((h) => h.startsWith('/admin') || h === '/lobby')).toBe(false);
   });
 

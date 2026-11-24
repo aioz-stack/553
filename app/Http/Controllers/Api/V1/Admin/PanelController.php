@@ -254,11 +254,11 @@ class PanelController extends Controller
 
     // ------------------------------------------------------------------ accounts
 
-    /** kind: agents | players | pending | banned | archived. */
+    /** kind: agents | players | pending | banned | archived | all. */
     public function accounts(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'kind' => ['required', 'in:agents,players,pending,banned,archived'],
+            'kind' => ['required', 'in:agents,players,pending,banned,archived,all'],
             'q' => ['nullable', 'string', 'max:64'],
             'level' => ['nullable', 'in:agent,master,silver'],
             'type' => ['nullable', 'in:player,agent'],
@@ -272,6 +272,7 @@ class PanelController extends Controller
             'pending' => $query->where('status', UserStatus::Pending->value),
             'banned' => $query->whereIn('status', [UserStatus::Banned->value, UserStatus::Suspended->value]),
             'archived' => $query->where('status', UserStatus::Archived->value),
+            'all' => $query, // Reset Password search: every agent and player, any status.
         };
 
         $query->when($request->filled('level'), fn (Builder $q) => $q->whereHas('agent', fn ($a) => $a->where('level', $data['level'])))
@@ -406,6 +407,39 @@ class PanelController extends Controller
     protected function accountExtras(User $u): array
     {
         return [];
+    }
+
+    // ------------------------------------------------------------------ global reset password
+
+    /**
+     * Admin Panel → Reset Password: Super Admin and Administrators set a new password for an
+     * Agent, Master Agent, Silver Agent or Player. The password is hashed by the model, never
+     * returned or logged; the account's API tokens are revoked so the old password's sign-ins
+     * end at once. The audit log records who reset whose password, and when.
+     */
+    public function resetPassword(Request $request, User $user): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor->isSuperAdmin() || $actor->isAdministrator(), 403);
+
+        if (! $user->isAgent() && ! $user->isPlayer()) {
+            throw new BusinessRuleException('Only agent and player passwords can be reset here.', 403, 'forbidden');
+        }
+
+        $request->validate([
+            'password' => ['required', 'string', 'confirmed', \Illuminate\Validation\Rules\Password::min(8)->letters()->numbers(), 'max:72'],
+        ]);
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($actor, $user, $request) {
+            $user->forceFill(['password' => $request->input('password'), 'remember_token' => \Illuminate\Support\Str::random(60)])->save();
+            $user->tokens()->delete();
+            if (config('session.driver') === 'database') {
+                \Illuminate\Support\Facades\DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
+            }
+            AuditLogger::log($actor, 'user.password_reset', $user, null, ['target' => $user->username, 'reset_by' => $actor->username]);
+        });
+
+        return response()->json(['message' => "Password reset for {$user->username}. The new password works now; any open sign-ins were ended.", 'data' => $this->presentAccount($user->fresh(['agent', 'sponsor.agent']))]);
     }
 
     // ------------------------------------------------------------------ presentation

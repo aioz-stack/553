@@ -15,7 +15,6 @@ interface CommissionWallet {
 interface TeamOverview {
   total_player_wallets: string;
   total_agent_wallets: string;
-  agents_commission: string;
   players: number;
   agents: number;
   scope: 'platform' | 'downline';
@@ -47,18 +46,16 @@ export default function TeamSections({ onChanged }: { onChanged?: () => void }) 
           </Btn>
         }
       >
-        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
           <Figure label="Total accumulated commission" value={c ? fmt(c.balance, 2) : '…'} tone="good" hint="Chips" />
           <Figure label="Available to convert" value={c ? fmt(c.available, 2) : '…'} hint={c && Number(c.pending) > 0 ? `${fmt(c.pending, 2)} reserved by pending withdrawals` : `Minimum conversion: ${min} Chips`} />
-          <Figure label="Converted so far" value={c ? fmt(c.converted, 2) : '…'} hint="Moved into your Chips wallet" />
         </div>
       </Panel>
 
       <Panel title="Team Overview" icon={<I.users className="h-6 w-6" />} actions={t && <span className="text-sm text-[#6b6385] dark:text-white/55">{t.scope === 'platform' ? 'Whole platform' : `${fmt(t.agents)} agents · ${fmt(t.players)} players in your downline`}</span>}>
-        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
-          <Figure label="Total Player Wallets" value={t ? fmt(t.total_player_wallets, 2) : '…'} tone="gold" hint="Chips held by your players" />
-          <Figure label="Total Agent Wallets" value={t ? fmt(t.total_agent_wallets, 2) : '…'} tone="gold" hint="Chips held by your agents" />
-          <Figure label="Agents Commission" value={t ? fmt(t.agents_commission, 2) : '…'} tone="good" hint="Earned by your agents" />
+        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+          <Figure label="Total Player Wallets" value={t ? fmt(t.total_player_wallets, 2) : '…'} tone="gold" hint={t?.scope === 'platform' ? 'Chips held by every player' : 'Chips held by every player in your downline, at every level'} />
+          <Figure label="Total Agent Wallets" value={t ? fmt(t.total_agent_wallets, 2) : '…'} tone="gold" hint={t?.scope === 'platform' ? 'Chips held by every agent' : 'Chips held by every agent in your downline, at every level'} />
         </div>
       </Panel>
 

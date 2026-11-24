@@ -54,7 +54,11 @@ class ChipLoadService
 
     public function withdraw(User $actor, User $account, int $amount, ?string $note = null, ?string $idempotencyKey = null): ChipLoad
     {
-        $this->authorize($actor, $account);
+        // Agents withdraw only from their own registered players, back into their own Chips.
+        $this->authorize($actor, $account, allowAgents: true);
+        if ($actor->isAgent() && ! $actor->agent?->owns($account)) {
+            throw new BusinessRuleException('Agents may withdraw Chips only from their own registered players.', 403, 'forbidden');
+        }
         $this->assertAmount($amount);
 
         return DB::transaction(function () use ($actor, $account, $amount, $note, $idempotencyKey) {

@@ -22,7 +22,7 @@ describe('TeamSections', () => {
     get.mockImplementation((url: string) =>
       Promise.resolve({
         data: {
-          data: url === '/commission/wallet' ? wallet : { total_player_wallets: '300.00', total_agent_wallets: '5000.00', agents_commission: '110.00', players: 2, agents: 2, scope: 'downline' },
+          data: url === '/commission/wallet' ? wallet : { total_player_wallets: '300.00', total_agent_wallets: '5000.00', players: 2, agents: 2, scope: 'downline' },
         },
       }),
     );
@@ -32,7 +32,9 @@ describe('TeamSections', () => {
     render(<TeamSections />);
     expect(await screen.findByText('5,000.00')).toBeInTheDocument();
     expect(screen.getByText('300.00')).toBeInTheDocument();
-    expect(screen.getByText('110.00')).toBeInTheDocument();
+    // Removed cards stay removed.
+    expect(screen.queryByText('Agents Commission')).toBeNull();
+    expect(screen.queryByText('Converted so far')).toBeNull();
     expect(screen.getByText('2 agents · 2 players in your downline')).toBeInTheDocument();
   });
 
@@ -68,7 +70,7 @@ describe('TeamSections', () => {
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith('/commission/convert', { amount: '30', request_id: 'req-1' });
     expect(await screen.findByText('30 Chips moved from commission to your wallet.')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('30.00')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('20.00').length).toBeGreaterThan(0));
     expect(onChanged).toHaveBeenCalled();
   });
 

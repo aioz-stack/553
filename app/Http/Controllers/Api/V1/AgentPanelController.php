@@ -92,6 +92,14 @@ class AgentPanelController extends PanelController
         return parent::load($request, $user);
     }
 
+    /** Withdraw Chips from one of the agent's own players back into the agent's Chips. */
+    public function withdraw(Request $request, User $user): JsonResponse
+    {
+        abort_unless(in_array($user->id, $this->team()['players'], true), 404);
+
+        return parent::withdraw($request, $user);
+    }
+
     // ------------------------------------------------------------------ the agent's own scope
 
     protected function scopeLoads(Builder $query): Builder

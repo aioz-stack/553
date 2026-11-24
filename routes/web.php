@@ -62,16 +62,6 @@ Route::middleware('auth')->group(function () {
             Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
         }
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
-        Route::inertia('/players', 'Agent/Players')->name('players');
-        Route::inertia('/players/create', 'Agent/RegisterPlayer')->name('players.create');
-        Route::get('/players/{player}', fn (User $player) => Inertia::render('Agent/PlayerDetail', ['playerId' => $player->id]))->name('players.show');
-        Route::inertia('/referral-codes', 'Agent/ReferralCodes')->name('referrals');
-        Route::inertia('/allocate', 'Agent/Allocate')->name('allocate');
-        Route::inertia('/balances', 'Agent/Balances')->name('balances');
-        Route::inertia('/transactions', 'Agent/Transactions')->name('transactions');
-        Route::inertia('/activity', 'Agent/Activity')->name('activity');
-        Route::inertia('/commissions', 'Agent/Commissions')->name('commissions');
-        Route::inertia('/reports', 'Agent/Reports')->name('reports');
     });
 
     // Super Admin / Administrator dashboard (page access; each API call re-checks abilities).
@@ -85,6 +75,7 @@ Route::middleware('auth')->group(function () {
             Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
         }
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
+        Route::inertia('/reset-password', 'AdminPanel/ResetPassword')->name('reset-password');
         Route::inertia('/platform', 'Admin/Overview')->name('platform');
         Route::inertia('/administrators', 'Admin/Users', ['role' => 'admin'])->middleware('can:super-admin')->name('administrators');
         Route::inertia('/agents', 'Admin/Users', ['role' => 'agent'])->middleware('can:manage_agents')->name('agents');

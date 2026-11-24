@@ -350,6 +350,26 @@ export function ActionIcon({ label, onClick, tone = 'default', children }: { lab
   );
 }
 
+/**
+ * Labeled row action (icon + action name), used in Agents / Players so every action says what it
+ * does. Same tones as ActionIcon; the name is the button's accessible name and its tooltip.
+ */
+export function ActionButton({ label, icon, onClick, tone = 'default' }: { label: string; icon: ReactNode; onClick: () => void; tone?: 'default' | 'green' | 'red' | 'gold' | 'purple' }) {
+  const cls = {
+    default: 'border-[#e3dcf5] text-[#4b4266] hover:bg-[#f3eeff] dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10',
+    green: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10',
+    red: 'border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10',
+    gold: 'border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-300 dark:hover:bg-amber-400/10',
+    purple: 'border-violet-200 text-violet-700 hover:bg-violet-50 dark:border-violet-500/30 dark:text-violet-300 dark:hover:bg-violet-500/10',
+  }[tone];
+  return (
+    <button type="button" onClick={onClick} title={label} className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border bg-white px-2.5 text-xs font-bold transition dark:bg-white/[0.03] ${cls}`}>
+      <span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
 // ------------------------------------------------------------------ feedback
 
 export function Toast({ toast, onDone }: { toast: { ok: boolean; text: string } | null; onDone: () => void }) {

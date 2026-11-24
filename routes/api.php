@@ -6,7 +6,6 @@ use App\Http\Controllers\Api\V1\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Api\V1\Admin\RoomController as AdminRoomController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Admin\WalletController as AdminWalletController;
-use App\Http\Controllers\Api\V1\AgentController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\GameController;
@@ -72,7 +71,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         });
 
         // Allocation (Super Admin / Administrator / Agent; rules in AllocationService)
-        Route::post('wallet/allocate', [AdminWalletController::class, 'allocate'])->middleware(['role:super_admin,admin,agent', 'throttle:wallet-actions']);
+        // Agents load Chips from the Agent Panel (agent/panel/accounts/{user}/load).
+        Route::post('wallet/allocate', [AdminWalletController::class, 'allocate'])->middleware(['role:super_admin,admin', 'throttle:wallet-actions']);
 
         // Rooms & tables
         Route::get('rooms', [RoomController::class, 'index']);
@@ -132,19 +132,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
 
         // Agent
         Route::prefix('agent')->middleware('can:agent')->group(function () {
-            Route::get('dashboard', [AgentController::class, 'dashboard']);
-            Route::get('players', [AgentController::class, 'players']);
-            Route::post('players', [AgentController::class, 'registerPlayer']);
-            Route::get('players/{player}', [AgentController::class, 'player']);
-            Route::get('wallet', [AgentController::class, 'wallets']);
-            Route::get('transactions', [AgentController::class, 'transactions']);
-            Route::get('commissions', [AgentController::class, 'commissions']);
-            Route::get('referral-codes', [AgentController::class, 'referralCodes']);
-            Route::post('referral-codes', [AgentController::class, 'createReferralCode']);
-            Route::get('activity', [AgentController::class, 'activity']);
+            // The old agent tools (dashboard, player register, referral codes, transactions, activity,
+            // reports) are gone: agents work only in the Agent Panel and register people only
+            // through their registration links.
             Route::get('payout-requests', [PayoutController::class, 'index']);
             Route::post('payout-requests', [PayoutController::class, 'store'])->middleware('throttle:wallet-actions');
-            // Referral links, balances, downline; Chips requests to the Administrator.
             // Agent Panel: the Admin Panel screens limited to this agent's own downline (read + own actions only).
             Route::get('panel', [AgentPanelController::class, 'overview']);
             Route::prefix('panel')->group(function () {
@@ -156,9 +148,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::get('accounts', [AgentPanelController::class, 'accounts']);
                 Route::get('accounts/{user}', [AgentPanelController::class, 'account']);
                 Route::post('accounts/{user}/load', [AgentPanelController::class, 'load'])->middleware('throttle:wallet-actions');
+                Route::post('accounts/{user}/withdraw', [AgentPanelController::class, 'withdraw'])->middleware('throttle:wallet-actions');
             });
             Route::post('chip-requests', [AgentPanelController::class, 'requestChips'])->middleware('throttle:wallet-actions');
-            Route::get('reports', [AgentController::class, 'dashboard']);
         });
 
         // Admin (Super Admin + Administrators; per-endpoint abilities)
@@ -167,8 +159,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('users', [AdminUserController::class, 'store']);
             foreach (['players' => 'player', 'agents' => 'agent', 'administrators' => 'admin'] as $path => $role) {
                 Route::get($path, [AdminUserController::class, 'index'])->defaults('role', $role);
-                Route::post($path, [AdminUserController::class, 'store'])->defaults('role', $role);
             }
+            // Players and agents register only through registration links; staff create administrators.
+            Route::post('administrators', [AdminUserController::class, 'store'])->defaults('role', 'admin');
             Route::get('users/{user}', [AdminUserController::class, 'show']);
             Route::patch('users/{user}', [AdminUserController::class, 'update']);
             Route::post('users/{user}/status', [AdminUserController::class, 'setStatus']);
@@ -222,6 +215,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::post('accounts/{user}/approve', [PanelController::class, 'approve']);
                 Route::delete('accounts/{user}', [PanelController::class, 'destroy']);
                 Route::post('accounts/{user}/status', [PanelController::class, 'setStatus']);
+                Route::put('accounts/{user}/password', [PanelController::class, 'resetPassword'])->middleware('throttle:wallet-actions');
             });
 
             Route::get('payout-requests', [PayoutController::class, 'index']);

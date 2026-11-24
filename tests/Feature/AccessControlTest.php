@@ -62,20 +62,28 @@ test('agents only see their own players', function () {
     $mine = app(UserManagementService::class)->create($agentA, Role::Player, newUserPayload());
     $theirs = app(UserManagementService::class)->create($agentB, Role::Player, newUserPayload());
 
-    $this->actingAs($agentA)->getJson('/api/v1/agent/players')
+    $this->actingAs($agentA)->getJson('/api/v1/agent/panel/accounts?kind=players')
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $mine->id);
 
-    $this->actingAs($agentA)->getJson("/api/v1/agent/players/{$theirs->id}")->assertForbidden();
-    $this->actingAs($agentA)->getJson("/api/v1/agent/players/{$mine->id}")->assertOk();
+    $this->actingAs($agentA)->getJson("/api/v1/agent/panel/accounts/{$theirs->id}")->assertNotFound();
+    $this->actingAs($agentA)->getJson("/api/v1/agent/panel/accounts/{$mine->id}")->assertOk();
 });
 
-test('agents can register players but never agents or administrators', function () {
+test('nobody registers players or agents except through a registration link', function () {
     $agent = User::factory()->agent()->create();
+    $super = superAdmin();
 
-    $this->actingAs($agent)->postJson('/api/v1/agent/players', newUserPayload())->assertCreated();
-    $this->actingAs($agent)->postJson('/api/v1/admin/agents', newUserPayload())->assertForbidden();
+    // The old agent "Register Player" and referral-code endpoints are gone.
+    foreach (['/api/v1/agent/players', '/api/v1/agent/referral-codes'] as $url) {
+        expect($this->actingAs($agent)->postJson($url, newUserPayload())->status())->toBeIn([404, 405]);
+    }
+    expect($this->actingAs($agent)->postJson('/api/v1/admin/agents', newUserPayload())->status())->toBeIn([403, 404, 405]);
+    // Staff cannot create players or agents directly either.
+    expect($this->actingAs($super)->postJson('/api/v1/admin/players', newUserPayload())->status())->toBeIn([404, 405]);
+    $this->actingAs($super)->postJson('/api/v1/admin/users', newUserPayload(['role' => 'player']))->assertStatus(422)->assertJsonPath('error', 'registration_link_only');
+    $this->actingAs($super)->postJson('/api/v1/admin/users', newUserPayload(['role' => 'agent']))->assertStatus(422);
 
     expect(fn () => app(UserManagementService::class)->create($agent, Role::Agent, newUserPayload()))->toThrow(BusinessRuleException::class);
     expect(fn () => app(UserManagementService::class)->create($agent, Role::Administrator, newUserPayload()))->toThrow(BusinessRuleException::class);
@@ -90,13 +98,15 @@ test('agents cannot allocate to another agent player through the API', function 
     $this->actingAs($agentA)->postJson('/api/v1/wallet/allocate', [
         'recipient_id' => $theirs->id, 'currency' => 'CH', 'amount' => '10',
     ])->assertForbidden();
+    // Nor through the Agent Panel (not in its downline).
+    $this->actingAs($agentA)->postJson("/api/v1/agent/panel/accounts/{$theirs->id}/load", ['amount' => '10'])->assertNotFound();
 });
 
 test('players cannot use admin, agent or allocation endpoints', function () {
     $player = User::factory()->create();
 
     $this->actingAs($player)->getJson('/api/v1/admin/users')->assertForbidden();
-    $this->actingAs($player)->getJson('/api/v1/agent/dashboard')->assertForbidden();
+    $this->actingAs($player)->getJson('/api/v1/agent/panel/overview')->assertForbidden();
     $this->actingAs($player)->postJson('/api/v1/wallet/allocate', ['recipient_id' => $player->id, 'currency' => 'CH', 'amount' => '100'])->assertForbidden();
 });
 

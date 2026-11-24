@@ -5,9 +5,9 @@ import AuthCard from '../../Components/AuthCard';
 import { Button, Field, Input } from '../../Components/ui';
 
 /**
- * Registration, also reached through the permanent referral links
- * (/register/player?ref=CODE and /register/agent?ref=CODE). The server decides the sponsor and
- * the agent level from the code; the new account waits for administrator approval.
+ * Registration — only through a registration link (/register/player?ref=CODE or
+ * /register/agent?ref=CODE). Without a valid link there is no form. The server checks the
+ * link again, decides the sponsor and the agent level, and the account waits for approval.
  */
 export default function Register({ referral, accountType = 'player' }: { referral?: string | null; accountType?: 'player' | 'agent' }) {
   const [invite, setInvite] = useState<{ sponsor: string; sponsor_name: string; level: string } | null>(null);
@@ -54,6 +54,12 @@ export default function Register({ referral, accountType = 'player' }: { referra
         </div>
       )}
       {inviteError && <div role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-200">{inviteError}</div>}
+      {!referral && (
+        <div role="alert" className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-200">
+          Registration is by invitation only. Ask your agent or administrator for your <b>registration link</b> and open it to create your account.
+        </div>
+      )}
+      {invite && !inviteError && (
       <form onSubmit={submit} className="space-y-4">
         <Field label="Full name" error={errors.name} required>
           <Input value={data.name} onChange={(e) => setData('name', e.target.value)} autoComplete="name" />
@@ -77,13 +83,14 @@ export default function Register({ referral, accountType = 'player' }: { referra
             <Input type="password" value={data.password_confirmation} onChange={(e) => setData('password_confirmation', e.target.value)} autoComplete="new-password" />
           </Field>
         </div>
-        <Field label={accountType === 'agent' ? 'Referral code (required)' : 'Referral code'} error={errors.referral_code ?? (errors as Record<string, string>).account_type} required={accountType === 'agent'}>
-          <Input value={data.referral_code} readOnly={!!referral} onChange={(e) => setData('referral_code', e.target.value.toUpperCase())} />
-        </Field>
+        {(errors.referral_code || (errors as Record<string, string>).account_type) && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">{errors.referral_code ?? (errors as Record<string, string>).account_type}</p>
+        )}
         <Button type="submit" disabled={processing} className="w-full">
           Create account
         </Button>
       </form>
+      )}
     </AuthCard>
   );
 }

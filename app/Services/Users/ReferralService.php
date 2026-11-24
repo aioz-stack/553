@@ -9,7 +9,6 @@ use App\Enums\UserStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Agent;
 use App\Models\AgentPlayer;
-use App\Models\AgentReferralCode;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Audit\AuditLogger;
@@ -100,14 +99,8 @@ class ReferralService
         $code = strtoupper(trim($code));
         $sponsor = User::query()->where('referral_code', $code)->first();
 
-        // Older per-agent codes (agent_referral_codes) still register Players under that agent.
-        if ($sponsor === null && $type === 'player') {
-            $legacy = AgentReferralCode::query()->where('code', $code)->first();
-            if ($legacy && $legacy->isUsable()) {
-                $sponsor = $legacy->agent?->user;
-            }
-        }
-
+        // Only the permanent registration links (users.referral_code) register accounts; the
+        // retired per-agent referral codes no longer do.
         if ($sponsor === null || $sponsor->isPlayer() || $sponsor->status !== UserStatus::Active) {
             throw new BusinessRuleException('This referral link is invalid or no longer active.', 422, 'invalid_referral');
         }
@@ -131,19 +124,20 @@ class ReferralService
     // ------------------------------------------------------------------ registration
 
     /**
-     * Public registration: a pending account (no sign-in until approved). A Player may register
-     * without a link (no sponsor); an agent must use an Agent link.
+     * Public registration: a pending account (no sign-in until approved), only through a
+     * registration link — Player links register players, Agent links agents of the next level —
+     * so every new account has its referrer and place in the hierarchy.
      *
      * @param  array{name: string, username: string, email: string, password: string, phone?: string|null}  $data
      */
     public function register(array $data, ?string $code, string $type = 'player'): User
     {
-        if ($type === 'agent' && ! $code) {
-            throw new BusinessRuleException('Agents register through an Agent Registration Link.', 422, 'invalid_referral');
+        if ($code === null || trim($code) === '') {
+            throw new BusinessRuleException('Registration is only possible through a registration link.', 422, 'invalid_referral');
         }
 
         return DB::transaction(function () use ($data, $code, $type) {
-            $resolved = $code ? $this->resolve($code, $type) : null;
+            $resolved = $this->resolve($code, $type);
 
             $user = new User($data);
             $user->forceFill([

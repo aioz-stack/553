@@ -81,16 +81,8 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
     { label: 'Pending Users', href: `${b}/accounts/pending-users`, icon: <I.clock className="h-[18px] w-[18px]" />, badge: counts.data?.data.pending_users },
     ...(panel.isAgent ? [] : [{ label: 'Ban Users', href: '/admin/accounts/ban-users', icon: <I.ban className="h-[18px] w-[18px]" />, badge: counts.data?.data.banned_users }]),
   ];
-  const tools: NavItem[] = panel.isAgent
-    ? [
-        { label: 'Register Player', href: '/agent/players/create', icon: <I.userPlus className="h-[18px] w-[18px]" /> },
-        { label: 'Load Chips', href: '/agent/allocate', icon: <I.plus className="h-[18px] w-[18px]" /> },
-        { label: 'Referral Codes', href: '/agent/referral-codes', icon: <I.percent className="h-[18px] w-[18px]" /> },
-        { label: 'Transactions', href: '/agent/transactions', icon: <I.coins className="h-[18px] w-[18px]" /> },
-        { label: 'Player Activity', href: '/agent/activity', icon: <I.clock className="h-[18px] w-[18px]" /> },
-        { label: 'Reports', href: '/agent/reports', icon: <I.logs className="h-[18px] w-[18px]" /> },
-      ]
-    : [];
+  // The Platform panel is the Administrators' only: agents have no Platform group (the pages
+  // and their API refuse agents on the server too).
   const platform: NavItem[] = panel.isAgent ? [] : [
     { label: 'Game Rooms', href: '/admin/rooms', icon: <I.grid className="h-[18px] w-[18px]" />, ability: 'manage_rooms' },
     { label: 'Active Tables', href: '/admin/tables', icon: <I.grid className="h-[18px] w-[18px]" />, ability: 'manage_games' },
@@ -104,7 +96,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
   ].filter(allowed);
 
   const peopleOpenDefault = people.some((p) => path.startsWith(p.href));
-  const platformOpenDefault = [...platform, ...tools].some((p) => path.startsWith(p.href));
+  const platformOpenDefault = platform.some((p) => path.startsWith(p.href));
   const [peopleOpen, setPeopleOpen] = useState(true);
   const [platformOpen, setPlatformOpen] = useState(platformOpenDefault);
   useEffect(() => {
@@ -166,8 +158,8 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
           <div className="my-3 border-t border-white/10" />
           {!panel.isAgent && item({ label: 'Archive', href: '/admin/accounts/archive', icon: <I.archive className="h-5 w-5" /> })}
           {group('Platform', <I.grid className="h-5 w-5" />, platformOpen, setPlatformOpen, platform)}
-          {group('Agent Tools', <I.grid className="h-5 w-5" />, platformOpen, setPlatformOpen, tools)}
           <div className="my-3 border-t border-white/10" />
+          {!panel.isAgent && item({ label: 'Reset Password', href: '/admin/reset-password', icon: <I.shield className="h-5 w-5" /> })}
           {item({ label: 'Change Password', href: `${b}/change-password`, icon: <I.lock className="h-5 w-5" /> })}
           <button type="button" onClick={() => router.post('/logout')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-base font-semibold text-white/80 transition hover:bg-rose-500/15 hover:text-white">
             <I.power className="h-5 w-5 text-white/70" /> Logout

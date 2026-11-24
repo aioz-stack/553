@@ -94,7 +94,9 @@ test('an agent loads Chips to its own players from the panel, and nothing else',
 
     // Real time: the player, the master and the whole upline are told to refresh.
     Event::assertDispatched(PanelUpdated::class, fn (PanelUpdated $e) => $e->kind === 'load'
-        && empty(array_diff([$t['pMaster']->id, $t['master']->id, $t['agent']->id, $t['super']->id], $e->userIds)));
+        && empty(array_diff([$t['pMaster']->id, $t['master']->id, $t['agent']->id, $t['super']->id], $e->recipients())));
+    // Wallet balance changes are signalled too (Team Overview totals), never to outsiders.
+    Event::assertDispatched(PanelUpdated::class, fn (PanelUpdated $e) => $e->kind === 'wallet' && in_array($t['agent']->id, $e->recipients(), true) && ! in_array($t['other']->id, $e->recipients(), true));
     expect(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
 
@@ -112,7 +114,6 @@ test('agents cannot use any Administrator action', function () {
     // The agent panel has no such routes at all.
     expect($this->postJson("/api/v1/agent/panel/load-logs/{$request->id}/approve")->status())->toBeIn([404, 405])
         ->and($this->postJson("/api/v1/agent/panel/accounts/{$pending->id}/approve")->status())->toBeIn([404, 405])
-        ->and($this->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/withdraw", ['amount' => '1'])->status())->toBeIn([404, 405])
         ->and($this->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/status", ['action' => 'ban', 'reason' => 'x'])->status())->toBeIn([404, 405]);
 
     // It sees its pending registration, read-only.
@@ -155,4 +156,53 @@ test('the Silver Agent panel has no agents below it but the same overview', func
         ->assertJsonPath('data.level', 'silver')->assertJsonPath('data.links.agent', null)
         ->assertJsonPath('data.active_agents.total', 0)->assertJsonPath('data.active_players', 1);
     $this->actingAs($t['silver'])->getJson('/api/v1/agent/panel/accounts?kind=agents')->assertOk()->assertJsonCount(0, 'data');
+});
+
+test('an agent withdraws Chips only from its own players, back into its own Chips', function () {
+    $t = agpTree();
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/load", ['amount' => '300'])->assertCreated();
+
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/withdraw", ['amount' => '120', 'idempotency_key' => 'w1'])->assertCreated()
+        ->assertJsonPath('data.direction', 'withdraw');
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/withdraw", ['amount' => '120', 'idempotency_key' => 'w1'])->assertCreated(); // once
+    expect(balance($t['pMaster'], Currency::CH, WalletType::Player))->toBe(18_000)
+        ->and(balance($t['master'], Currency::CH, WalletType::Allocation))->toBe(82_000);
+
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/withdraw", ['amount' => '999'])->assertStatus(422)->assertJsonPath('error', 'insufficient_balance');
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pSilver']->id}/withdraw", ['amount' => '1'])->assertForbidden();
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pOther']->id}/withdraw", ['amount' => '1'])->assertNotFound();
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['silver']->id}/withdraw", ['amount' => '1'])->assertNotFound();
+    expect(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
+});
+
+test('Admin Reset Password: Super Admin and Administrators reset agent and player passwords; nobody else', function () {
+    $t = agpTree();
+    $admin = User::factory()->create(['role' => 'admin']);
+    $body = ['password' => 'newpass123', 'password_confirmation' => 'newpass123'];
+    $t['pMaster']->createToken('phone');
+
+    // Validation: confirmation and strength.
+    $this->actingAs($t['super'])->putJson("/api/v1/admin/panel/accounts/{$t['pMaster']->id}/password", ['password' => 'newpass123', 'password_confirmation' => 'other123'])->assertStatus(422)->assertJsonValidationErrors('password');
+    $this->actingAs($t['super'])->putJson("/api/v1/admin/panel/accounts/{$t['pMaster']->id}/password", ['password' => 'short', 'password_confirmation' => 'short'])->assertStatus(422);
+
+    $this->actingAs($t['super'])->putJson("/api/v1/admin/panel/accounts/{$t['pMaster']->id}/password", $body)->assertOk()
+        ->assertJsonMissingPath('data.password');
+    expect(\Illuminate\Support\Facades\Hash::check('newpass123', $t['pMaster']->fresh()->password))->toBeTrue()
+        ->and($t['pMaster']->fresh()->password)->not->toBe('newpass123')
+        ->and($t['pMaster']->tokens()->count())->toBe(0);
+    $this->postJson('/api/v1/auth/login', ['username' => 'pmaster', 'password' => 'newpass123'])->assertOk();
+    $log = \App\Models\AuditLog::query()->where('action', 'user.password_reset')->latest('id')->first();
+    expect($log->actor_id ?? $log->user_id)->toBe($t['super']->id)->and($log->created_at)->not->toBeNull()
+        ->and(json_encode($log->toArray()))->not->toContain('newpass123');
+
+    // Administrators may reset agents (any level) too.
+    $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$t['silver']->id}/password", $body)->assertOk();
+    // Never administrators or Super Admins; never by agents or players.
+    $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$t['super']->id}/password", $body)->assertForbidden();
+    $this->actingAs($t['agent'])->putJson("/api/v1/admin/panel/accounts/{$t['pAgent']->id}/password", $body)->assertForbidden();
+    $this->actingAs($t['pAgent'])->putJson("/api/v1/admin/panel/accounts/{$t['pMaster']->id}/password", $body)->assertForbidden();
+    expect($this->actingAs($t['agent'])->putJson("/api/v1/agent/panel/accounts/{$t['pAgent']->id}/password", $body)->status())->toBeIn([404, 405]);
+
+    // Search for the Reset Password page: every agent and player, any status.
+    $this->actingAs($t['super'])->getJson('/api/v1/admin/panel/accounts?kind=all&q=tsil')->assertOk()->assertJsonPath('data.0.username', 'tsilver');
 });

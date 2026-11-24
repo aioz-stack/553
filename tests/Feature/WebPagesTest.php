@@ -37,19 +37,11 @@ dataset('agent pages', [
     ['/agent/accounts/active-players', 'AdminPanel/Accounts'],
     ['/agent/accounts/pending-users', 'AdminPanel/Accounts'],
     ['/agent/change-password', 'AdminPanel/ChangePassword'],
-    ['/agent/players', 'Agent/Players'],
-    ['/agent/players/create', 'Agent/RegisterPlayer'],
-    ['/agent/referral-codes', 'Agent/ReferralCodes'],
-    ['/agent/allocate', 'Agent/Allocate'],
-    ['/agent/balances', 'Agent/Balances'],
-    ['/agent/transactions', 'Agent/Transactions'],
-    ['/agent/activity', 'Agent/Activity'],
-    ['/agent/commissions', 'Agent/Commissions'],
-    ['/agent/reports', 'Agent/Reports'],
 ]);
 
 dataset('admin pages', [
     ['/admin', 'AdminPanel/Overview'],
+    ['/admin/reset-password', 'AdminPanel/ResetPassword'],
     ['/admin/load-logs', 'AdminPanel/LoadLogs'],
     ['/admin/commission-logs', 'AdminPanel/CommissionLogs'],
     ['/admin/commission-withdrawals', 'AdminPanel/Withdrawals'],
@@ -83,6 +75,13 @@ test('agent pages render for agents and are hidden from players', function (stri
     $this->actingAs(User::factory()->create())->get($url)->assertForbidden();
 })->with('agent pages');
 
+test('the retired agent tools (Register Player, Referral Codes, the old agent pages) are gone', function () {
+    $agent = User::factory()->agent()->create();
+    foreach (['/agent/players', '/agent/players/create', '/agent/referral-codes', '/agent/allocate', '/agent/balances', '/agent/transactions', '/agent/activity', '/agent/commissions', '/agent/reports'] as $url) {
+        $this->actingAs($agent)->get($url)->assertNotFound();
+    }
+});
+
 test('admin pages render for super admin and are hidden from agents and players', function (string $url, string $component) {
     $this->actingAs(superAdmin())->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->component($component));
     $this->actingAs(User::factory()->agent()->create())->get($url)->assertForbidden();
@@ -113,9 +112,9 @@ test('players can open the table page and staff cannot play', function () {
     $this->actingAs(superAdmin())->get('/lobby')->assertForbidden();
 });
 
-test('web registration (with an older agent code) waits for approval, then links the player to the agent', function () {
+test('web registration through an agent\'s Player Registration Link waits for approval, then links the player to the agent', function () {
     $agent = User::factory()->agent()->create();
-    $code = app(UserManagementService::class)->createReferralCode($agent->agent);
+    $code = (object) ['code' => app(\App\Services\Users\ReferralService::class)->codeFor($agent)];
 
     $this->post('/register', [
         'name' => 'Web Player',

@@ -8,6 +8,7 @@ import { GameButton } from '@/components/game';
 import { Field, Notice } from '@/components/ui';
 import { ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { parseRegistrationLink } from '@/lib/registration';
 
 export default function Register() {
   const { register } = useAuth();
@@ -26,7 +27,8 @@ export default function Register() {
     setError(null);
 
     try {
-      setDone(await register(form));
+      const { referral_code, account_type } = parseRegistrationLink(form.referral_code);
+      setDone(await register({ ...form, referral_code, account_type }));
     } catch (e) {
       if (e instanceof ApiError && e.errors) {
         setErrors(Object.fromEntries(Object.entries(e.errors).map(([k, v]) => [k, v[0]])));
@@ -55,7 +57,8 @@ export default function Register() {
         <Field label="Email" type="email" autoComplete="email" {...bind('email')} />
         <Field label="Password" type="password" autoComplete="new-password" {...bind('password')} />
         <Field label="Confirm password" type="password" autoComplete="new-password" {...bind('password_confirmation')} />
-        <Field label="Referral code (optional)" autoCapitalize="characters" {...bind('referral_code')} />
+        <Field label="Registration link or code (required)" autoCapitalize="none" placeholder="Paste the link your agent sent you" required {...bind('referral_code')} />
+        <p className="-mt-1 mb-3 text-xs text-white/70">Registration is by invitation only: use the registration link from your agent or administrator.</p>
         <GameButton type="submit" tone="green" size="lg" className="mt-2 w-full" disabled={busy}>
           {busy ? 'CREATING…' : 'CREATE ACCOUNT'}
         </GameButton>
