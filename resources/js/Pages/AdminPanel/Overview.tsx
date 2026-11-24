@@ -122,9 +122,13 @@ export default function Overview() {
         />
       </div>
 
+      {/* Only the links this role may use: Admin → Agents; Agent → Master Agents + Players;
+          Master Agent → Silver Agents + Players; Silver Agent → Players. The server enforces the same. */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <CopyLink title={d?.links.agent_level ? `${d.links.agent_level} Registration Link` : 'Agent Registration Link'} url={d?.links.agent ?? null} icon={<I.userPlus className="h-7 w-7" />} hint={d?.links.agent_level ? `Registers ${d.links.agent_level}s under your account` : agent ? 'Silver Agents cannot recruit agents' : undefined} />
-        <CopyLink title="Player Registration Link" url={d?.links.player ?? null} icon={<I.users className="h-7 w-7" />} hint="Registers Players under your account" />
+        {(!d || d.links.agent) && (
+          <CopyLink title={d?.links.agent_level ? `${d.links.agent_level} Registration Link` : 'Agent Registration Link'} url={d?.links.agent ?? null} icon={<I.userPlus className="h-7 w-7" />} hint={d?.links.agent_level ? `Registers ${d.links.agent_level}s under your account` : undefined} />
+        )}
+        {(!d || d.links.player) && <CopyLink title="Player Registration Link" url={d?.links.player ?? null} icon={<I.users className="h-7 w-7" />} hint="Registers Players directly under your account" />}
       </div>
       <Note>
         <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved{agent ? ' by the Administrator' : ''}.

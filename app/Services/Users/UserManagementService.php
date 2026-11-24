@@ -17,12 +17,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Account creation and hierarchy rules:
- *  - only Super Admin creates Super Admins and Administrators;
- *  - Super Admin or an Administrator with manage_agents creates Agents;
- *  - Super Admin, an Administrator with manage_players, or an Agent creates Players
- *    (a player created by an agent is owned by that agent);
- *  - agents can never create agents or administrators.
+ * Account creation, following the one hierarchy rule (App\Services\Users\Hierarchy):
+ *  - Admins create Agents (an Administrator also needs manage_agents);
+ *  - Agents create Master Agents and Players, Master Agents create Silver Agents and Players,
+ *    Silver Agents create Players only — always directly under the creator;
+ *  - only a Super Admin creates Super Admins and Administrators.
+ * The creator is the permanent sponsor; an agent's level and parent come from the creator.
  */
 class UserManagementService
 {
@@ -31,11 +31,11 @@ class UserManagementService
     /**
      * @param  array{name: string, username: string, email: string, password: string, phone?: string|null}  $data
      */
-    public function create(?User $actor, Role $role, array $data, ?string $referralCode = null): User
+    public function create(?User $actor, Role $role, array $data): User
     {
-        $this->authorizeCreate($actor, $role);
+        $level = $this->authorizeCreate($actor, $role);
 
-        return DB::transaction(function () use ($actor, $role, $data, $referralCode) {
+        return DB::transaction(function () use ($actor, $role, $data, $level) {
             $user = new User($data);
             $user->forceFill([
                 'role' => $role,
@@ -58,15 +58,16 @@ class UserManagementService
                 Agent::create([
                     'user_id' => $user->id,
                     'code' => $this->uniqueAgentCode(),
+                    'level' => ($level ?? \App\Enums\AgentLevel::Agent)->value,
+                    'parent_agent_id' => $actor?->isAgent() ? $actor->agent?->id : null,
                     'status' => 'active',
                     'created_by' => $actor?->id,
                 ]);
             }
 
-            if ($role === Role::Player && $actor?->isAgent()) {
+            if ($role === Role::Player) {
+                // Hierarchy guarantees the creator is an agent: the player is theirs.
                 $this->linkPlayer($actor->agent, $user, $actor);
-            } elseif ($role === Role::Player && $referralCode) {
-                $this->applyReferral($user, $referralCode);
             }
 
             AuditLogger::log($actor ?? $user, 'user.create', $user, null, ['role' => $role->value, 'username' => $user->username]);
@@ -150,23 +151,16 @@ class UserManagementService
         ]);
     }
 
-    public function authorizeCreate(?User $actor, Role $role): void
+    /**
+     * The hierarchy rule (plus the staff ability for Administrators creating Agents). Returns
+     * the level a new agent gets.
+     */
+    public function authorizeCreate(?User $actor, Role $role): ?\App\Enums\AgentLevel
     {
-        $allowed = match (true) {
-            $actor === null => $role === Role::Player, // public self-registration
-            $actor->isSuperAdmin() => true,
-            $actor->isAdministrator() => match ($role) {
-                Role::Agent => $actor->hasAbility(Ability::ManageAgents),
-                Role::Player => $actor->hasAbility(Ability::ManagePlayers),
-                default => false,
-            },
-            $actor->isAgent() => $role === Role::Player,
-            default => false,
-        };
+        $level = Hierarchy::assertCanCreate($actor, $role);
+        Hierarchy::assertStaffAbility($actor, $role);
 
-        if (! $allowed) {
-            throw new BusinessRuleException("You are not allowed to create {$role->label()} accounts.", 403, 'forbidden');
-        }
+        return $level;
     }
 
     private function linkPlayer(Agent $agent, User $player, ?User $actor, ?int $referralCodeId = null): void
@@ -178,18 +172,6 @@ class UserManagementService
             'referral_code_id' => $referralCodeId,
             'assigned_at' => now(),
         ]);
-    }
-
-    private function applyReferral(User $player, string $code): void
-    {
-        $referral = AgentReferralCode::query()->where('code', strtoupper($code))->lockForUpdate()->first();
-
-        if ($referral === null || ! $referral->isUsable()) {
-            throw new BusinessRuleException('The referral code is invalid or expired.');
-        }
-
-        $referral->increment('uses');
-        $this->linkPlayer($referral->agent, $player, null, $referral->id);
     }
 
     private function uniqueAgentCode(): string

@@ -754,6 +754,22 @@ through a service (validation, row locks, ledger, idempotency keys, audit log). 
   password (8+ characters, letters and numbers), confirm. `PUT admin/panel/accounts/{user}/password` hashes it (model
   cast), revokes the account's API tokens and database sessions, never returns or logs it, and writes
   `user.password_reset` to the audit log (actor, target, time). Administrators and Super Admins cannot be reset there.
+- **Account hierarchy** (`App\Services\Users\Hierarchy` — the one rule every creation path uses):
+
+  | Creator | May create (always directly under itself) |
+  | --- | --- |
+  | Admin (Super Admin / Administrator) | Agents (an Administrator also needs `manage_agents`) |
+  | Agent | Master Agents, Players |
+  | Master Agent | Silver Agents, Players |
+  | Silver Agent | Players only |
+  | Player | nothing |
+
+  Super Admins also create Super Admins and Administrators (platform staff, outside the agent hierarchy). Enforced in
+  `ReferralService` (links: an Admin has only an Agent link, a Silver Agent only a Player link; `resolve` refuses
+  anything else; `approve` checks again and refuses registrations without a sponsor), in
+  `UserManagementService::create` (the new agent's level and parent come from the creator; players are linked to the
+  creating agent) and in the staff API (no player/agent creation). The request can never choose a role, level, sponsor
+  or parent. Existing accounts keep their sponsor and place (nothing is reassigned).
 - **Registration only through links:** `referral_code` is required for every registration (web, API, mobile);
   only the permanent links (`users.referral_code`) work — the retired per-agent referral codes no longer register
   anyone. `/register` without a link shows "invitation only" and no form. Staff cannot create players or agents
@@ -994,3 +1010,13 @@ Not done / not verified:
 - Agents / Players actions are labeled buttons; Withdraw Chips sits right after Load Chips for every role that has it.
 - Tests: AgentPanelTest (withdraw, reset password), TeamTest (multi-level totals), AccessControlTest, AdminPanelTest,
   WebPagesTest; web navigation + TeamSections; mobile registration-link parser.
+
+### 2026-11-24 — Strict account-creation hierarchy
+
+- One rule (`Hierarchy`): Admin → Agents; Agent → Master Agents + Players; Master Agent → Silver Agents + Players;
+  Silver Agent → Players. Admins no longer have a Player Registration Link and their code no longer registers players;
+  approval re-checks the rule; direct creation (`UserManagementService`) follows it; the legacy staff "Add agent / Add
+  player" buttons are gone (Add administrator stays, Super Admin only). Links a role may not use are hidden, not shown
+  disabled. Existing accounts are unchanged.
+- Tests: `tests/Feature/HierarchyTest.php` (links per role, registration per role with tampered requests, approval
+  re-check, direct creation matrix, staff API, existing data untouched).

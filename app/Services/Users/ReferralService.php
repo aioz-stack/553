@@ -57,18 +57,10 @@ class ReferralService
         return $user->referral_code;
     }
 
-    /** The level an Agent link of $user registers (null = $user cannot recruit agents). */
+    /** The level an Agent link of $user registers (null = $user cannot recruit agents). See Hierarchy. */
     public function recruitLevel(User $user): ?AgentLevel
     {
-        if ($user->isSuperAdmin() || $user->isAdministrator()) {
-            return AgentLevel::Agent;
-        }
-
-        if ($user->isAgent()) {
-            return $user->agent?->level?->recruits();
-        }
-
-        return null;
+        return Hierarchy::agentLevelFor($user);
     }
 
     /**
@@ -79,7 +71,8 @@ class ReferralService
         $code = $this->codeFor($user);
         $base = rtrim((string) config('app.url'), '/');
         $level = $this->recruitLevel($user);
-        $canRefer = ! $user->isPlayer();
+        // Player links belong to agents only (Agent, Master Agent, Silver Agent); Admins recruit Agents.
+        $canRefer = Hierarchy::canCreatePlayers($user);
 
         return [
             'code' => $code,
@@ -116,6 +109,10 @@ class ReferralService
 
         if ($type !== 'player') {
             throw new BusinessRuleException('Choose a valid account type.', 422, 'invalid_referral');
+        }
+
+        if (! Hierarchy::canCreatePlayers($sponsor)) {
+            throw new BusinessRuleException('This account cannot register players.', 422, 'invalid_referral');
         }
 
         return ['sponsor' => $sponsor, 'type' => 'player', 'level' => null];
@@ -181,9 +178,14 @@ class ReferralService
 
             $sponsor = $user->sponsor;
 
+            // The hierarchy is checked again now: the sponsor must still be allowed to create this account.
+            if ($sponsor === null) {
+                throw new BusinessRuleException('This registration has no sponsor; it cannot join the hierarchy.', 409, 'invalid_state');
+            }
+
             if ($user->isAgent()) {
-                // The level comes from the sponsor (Administrator → Agent → Master → Silver), checked again now.
-                $level = $sponsor ? $this->recruitLevel($sponsor) : AgentLevel::Agent;
+                // The level comes from the sponsor (Administrator → Agent → Master → Silver).
+                $level = $this->recruitLevel($sponsor);
                 if ($level === null) {
                     throw new BusinessRuleException('The sponsor can no longer register agents.', 409, 'invalid_state');
                 }
@@ -195,7 +197,9 @@ class ReferralService
                     'status' => 'active',
                     'created_by' => $actor->id,
                 ]);
-            } elseif ($sponsor?->isAgent() && $sponsor->agent) {
+            } elseif (! Hierarchy::canCreatePlayers($sponsor)) {
+                throw new BusinessRuleException('Players can only join under an Agent, Master Agent or Silver Agent.', 409, 'invalid_state');
+            } else {
                 AgentPlayer::query()->firstOrCreate(['player_id' => $user->id], [
                     'agent_id' => $sponsor->agent->id,
                     'assigned_by' => $actor->id,

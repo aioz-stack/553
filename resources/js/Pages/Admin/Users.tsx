@@ -34,8 +34,7 @@ export default function Users({ role }: { role: 'admin' | 'agent' | 'player' }) 
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const { data, loading, reload } = useApi<{ data: UserRow[]; meta: { current_page: number; last_page: number; total: number } }>(ENDPOINT[role], { page, search: search || undefined });
-  const agents = useApi<{ data: UserRow[] }>(role === 'player' && auth.user?.abilities.includes('manage_agents') ? '/admin/agents' : null, { per_page: 100 });
-  const [form, setForm] = useState({ name: '', username: '', email: '', password: '', agent_id: '', role: role === 'admin' ? 'admin' : role });
+  const [form, setForm] = useState({ name: '', username: '', email: '', password: '', role: role === 'admin' ? 'admin' : role });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +44,7 @@ export default function Users({ role }: { role: 'admin' | 'agent' | 'player' }) 
     setError(null);
     try {
       const endpoint = role === 'admin' && form.role === 'super_admin' ? '/admin/users' : ENDPOINT[role];
-      await api.post(endpoint, { ...form, agent_id: form.agent_id || null });
+      await api.post(endpoint, form);
       setOpen(false);
       setForm({ ...form, name: '', username: '', email: '', password: '' });
       reload();
@@ -64,7 +63,7 @@ export default function Users({ role }: { role: 'admin' | 'agent' | 'player' }) 
 
   return (
     <PageShell title={TITLES[role]}>
-      <Card title={TITLES[role]} actions={<Button onClick={() => setOpen(true)}>Add {role === 'admin' ? 'administrator' : role}</Button>}>
+      <Card title={TITLES[role]} actions={role === 'admin' ? <Button onClick={() => setOpen(true)}>Add administrator</Button> : <span className="text-sm text-gray-500">{role === 'agent' ? 'Agents' : 'Players'} join only through registration links.</span>}>
         <div className="mb-4 max-w-sm">
           <Input placeholder="Search name, username or email" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         </div>
@@ -112,18 +111,6 @@ export default function Users({ role }: { role: 'admin' | 'agent' | 'player' }) 
               <Select value={form.role} onChange={set('role')}>
                 <option value="admin">Administrator</option>
                 <option value="super_admin">Super Admin</option>
-              </Select>
-            </Field>
-          )}
-          {role === 'player' && agents.data && (
-            <Field label="Assign to agent">
-              <Select value={form.agent_id} onChange={set('agent_id')}>
-                <option value="">No agent</option>
-                {agents.data.data.map((a) => (
-                  <option key={a.id} value={a.agent?.id}>
-                    {a.name} ({a.agent?.code})
-                  </option>
-                ))}
               </Select>
             </Field>
           )}

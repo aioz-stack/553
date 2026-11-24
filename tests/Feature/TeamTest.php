@@ -131,7 +131,7 @@ test('an administrator\'s totals include players linked to agents below it, coun
     $agent = tmJoin($super, $admin->referral_code, 'agent', 'lvlagent');
     $master = tmJoin($super, $agent->referral_code, 'agent', 'lvlmaster');
     $silver = tmJoin($super, $master->referral_code, 'agent', 'lvlsilver');
-    $direct = tmJoin($super, $admin->referral_code, 'player', 'lvldirect');
+    $direct = tmJoin($super, $agent->referral_code, 'player', 'lvldirect');
     $deep = tmJoin($super, $silver->referral_code, 'player', 'lvldeep');
     // A player sponsored elsewhere but linked to the Master Agent (agent_players) still counts — once.
     $linked = User::factory()->player()->create();

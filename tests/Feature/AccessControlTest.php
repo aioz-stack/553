@@ -85,7 +85,6 @@ test('nobody registers players or agents except through a registration link', fu
     $this->actingAs($super)->postJson('/api/v1/admin/users', newUserPayload(['role' => 'player']))->assertStatus(422)->assertJsonPath('error', 'registration_link_only');
     $this->actingAs($super)->postJson('/api/v1/admin/users', newUserPayload(['role' => 'agent']))->assertStatus(422);
 
-    expect(fn () => app(UserManagementService::class)->create($agent, Role::Agent, newUserPayload()))->toThrow(BusinessRuleException::class);
     expect(fn () => app(UserManagementService::class)->create($agent, Role::Administrator, newUserPayload()))->toThrow(BusinessRuleException::class);
 });
 

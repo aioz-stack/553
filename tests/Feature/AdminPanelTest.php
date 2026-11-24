@@ -53,7 +53,8 @@ function apChain($test, User $admin): array
 test('permanent referral links build the hierarchy: Administrator → Agent → Master Agent → Silver Agent → Players', function () {
     $admin = superAdmin();
     $links = $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertOk()->json('data.links');
-    expect($links['player'])->toEndWith("/register/player?ref={$links['code']}")->and($links['agent'])->toEndWith("/register/agent?ref={$links['code']}");
+    // Admins recruit Agents only: an Agent link, no Player link.
+    expect($links['player'])->toBeNull()->and($links['agent'])->toEndWith("/register/agent?ref={$links['code']}");
     // The same links every time (permanent).
     expect($this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->json('data.links'))->toBe($links);
 
@@ -67,11 +68,10 @@ test('permanent referral links build the hierarchy: Administrator → Agent → 
         ->assertJsonPath('data.level', 'silver')->assertJsonPath('data.links.agent', null);
     $this->getJson("/api/v1/auth/referral/{$silver->referral_code}?type=agent")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
 
-    // Player links: under the Silver Agent (linked on approval) and directly under the Administrator (no agent).
+    // Player links: under the Silver Agent (linked on approval). The Administrator's code registers no players.
     $p1 = apRegister($this, $admin, $silver->referral_code, 'player', 'playermark');
-    $p2 = apRegister($this, $admin, $links['code'], 'player', 'directpat');
-    expect($p1->agentLink->agent_id)->toBe($silver->agent->id)->and($p1->sponsor_id)->toBe($silver->id)
-        ->and($p2->agentLink)->toBeNull()->and($p2->sponsor_id)->toBe($admin->id);
+    expect($p1->agentLink->agent_id)->toBe($silver->agent->id)->and($p1->sponsor_id)->toBe($silver->id);
+    $this->getJson("/api/v1/auth/referral/{$links['code']}?type=player")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
 
     // The public lookup tells the registration page who is inviting and what is created.
     $this->getJson("/api/v1/auth/referral/{$master->referral_code}?type=agent")->assertOk()->assertJsonPath('data.level', 'Silver Agent')->assertJsonPath('data.sponsor', 'mastermae');
@@ -99,7 +99,7 @@ test('referrals are validated on the server: bad codes, players\' codes and agen
 test('pending users cannot sign in or use anything until approved; approval and deletion are once only', function () {
     $admin = superAdmin();
     $link = app(\App\Services\Users\ReferralService::class)->codeFor($admin);
-    $this->postJson('/api/v1/auth/register', ['name' => 'Pen', 'username' => 'penny', 'email' => 'p@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link])->assertCreated();
+    $this->postJson('/api/v1/auth/register', ['name' => 'Pen', 'username' => 'penny', 'email' => 'p@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link, 'account_type' => 'agent'])->assertCreated();
     $penny = User::query()->where('username', 'penny')->firstOrFail();
 
     $this->postJson('/api/v1/auth/login', ['username' => 'penny', 'password' => 'secret123'])->assertForbidden()->assertJsonPath('error', 'account_pending');
@@ -114,7 +114,7 @@ test('pending users cannot sign in or use anything until approved; approval and 
 
     // Delete is for pending registrations only.
     $this->actingAs($admin)->deleteJson("/api/v1/admin/panel/accounts/{$penny->id}")->assertStatus(409);
-    $this->postJson('/api/v1/auth/register', ['name' => 'Del', 'username' => 'delme', 'email' => 'd@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link])->assertCreated();
+    $this->postJson('/api/v1/auth/register', ['name' => 'Del', 'username' => 'delme', 'email' => 'd@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link, 'account_type' => 'agent'])->assertCreated();
     $del = User::query()->where('username', 'delme')->firstOrFail();
     $this->actingAs($admin)->deleteJson("/api/v1/admin/panel/accounts/{$del->id}")->assertOk();
     expect(User::query()->where('username', 'delme')->exists())->toBeFalse();
@@ -281,7 +281,7 @@ test('ban, suspend, reactivate, archive and restore: blocked accounts are signed
 
 test('administrators need the matching ability for account actions', function () {
     $admin = User::factory()->create(['role' => Role::Administrator]);
-    $this->postJson('/api/v1/auth/register', ['name' => 'Q', 'username' => 'queued', 'email' => 'q@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor(superAdmin())])->assertCreated();
+    $this->postJson('/api/v1/auth/register', ['name' => 'Q', 'username' => 'queued', 'email' => 'q@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor(User::factory()->agent()->create())])->assertCreated();
     $queued = User::query()->where('username', 'queued')->firstOrFail();
 
     $this->actingAs($admin)->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertForbidden();

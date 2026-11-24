@@ -40,7 +40,7 @@ const AGENT_PAGE: Partial<Record<Kind, { title: string; subtitle: string; empty:
 
 const PAGE: Record<Kind, { title: string; subtitle: string; empty: string }> = {
   agents: { title: 'Agents', subtitle: 'Agents, Master Agents and Silver Agents', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
-  players: { title: 'Active Players', subtitle: 'Every active player on the platform, under any agent or directly under you', empty: 'No active players match.' },
+  players: { title: 'Active Players', subtitle: 'Every active player on the platform, under their Agent, Master Agent or Silver Agent', empty: 'No active players match.' },
   pending: { title: 'Pending Users', subtitle: 'New registrations waiting for approval', empty: 'No registrations are waiting.' },
   banned: { title: 'Ban Users', subtitle: 'Banned and suspended accounts', empty: 'No banned or suspended accounts.' },
   archived: { title: 'Archive', subtitle: 'Retired accounts, kept with their full history', empty: 'The archive is empty.' },
