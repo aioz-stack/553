@@ -19,9 +19,12 @@ return [
     | redemption or payouts of any kind.
     */
     'features' => [
-        // Players may sign in (web and app). Off for now: players are refused at sign-in and any
-        // existing player session or app token is refused too. Set PLAYER_LOGIN_ENABLED=true to reopen.
-        'player_login' => (bool) env('PLAYER_LOGIN_ENABLED', false),
+        // Players may sign in (in the Mobile Game). Set PLAYER_LOGIN_ENABLED=false to shut players out
+        // everywhere (sign-in and any existing app token are refused).
+        'player_login' => (bool) env('PLAYER_LOGIN_ENABLED', true),
+        // Platform lock: Players only in the Mobile Game (app token); Admins, staff and every agent
+        // level only in the Web App (browser session). See App\Support\PlatformAccess.
+        'platform_lock' => (bool) env('PLATFORM_LOGIN_LOCK', true),
     ],
 
     // Player-created private rooms play for Chips, fee-free, and use this

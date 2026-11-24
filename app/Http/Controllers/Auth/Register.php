@@ -32,13 +32,15 @@ class Register extends Controller
     public function store(RegisterRequest $request, ReferralService $referrals): RedirectResponse
     {
         $data = $request->validated();
-        $referrals->register(
+        $user = $referrals->register(
             collect($data)->only(['name', 'username', 'email', 'phone', 'password'])->all(),
             $data['referral_code'] ?? null,
             $data['account_type'] ?? 'player',
         );
 
-        return redirect()->route('login')->with('success', 'Registration received. You can sign in once an administrator approves your account.');
+        return redirect()->route('login')->with('success', $user->isPlayer() && \App\Support\PlatformAccess::enabled()
+            ? 'Registration received. Once an administrator approves your account, sign in with the Pusoy553 mobile app.'
+            : 'Registration received. You can sign in once an administrator approves your account.');
     }
 
     public function forgot(): Response

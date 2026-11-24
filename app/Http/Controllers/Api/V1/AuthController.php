@@ -75,6 +75,11 @@ class AuthController extends Controller
             throw new BusinessRuleException($user->status->blockedMessage(), 403, $user->status->blockedCode());
         }
 
+        // Mobile Game (app token): Players only — Admins, staff and agents use the Web App.
+        if (! \App\Support\PlatformAccess::allowsGame($user)) {
+            throw new BusinessRuleException(\App\Support\PlatformAccess::WEB_ONLY_TITLE.'. '.\App\Support\PlatformAccess::WEB_ONLY_MESSAGE, 403, 'web_only');
+        }
+
         if ($user->signInBlocked()) {
             throw new BusinessRuleException(User::SIGN_IN_DISABLED_MESSAGE, 403, 'player_login_disabled');
         }

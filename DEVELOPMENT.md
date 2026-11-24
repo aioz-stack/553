@@ -1089,3 +1089,22 @@ Not done / not verified:
 - Tests: `tests/Feature/LoaderAccountTest.php` (creation rules, permission filtering, blocked Admin areas, loads from the
   employer with attribution and idempotency, commission withdrawals, password resets, deactivation / reactivation,
   delete safeguard, maintenance) and the updated HierarchyTest / WebPagesTest.
+
+### 2026-11-24 — Web App / Mobile Game login restrictions
+
+| Account | Web App (browser session, `POST /login`) | Mobile Game (app token, `POST /api/v1/auth/login`) |
+| --- | --- | --- |
+| Super Admin, Administrator, Loader | allowed | blocked — 403 `web_only` "Mobile Game Access Restricted…" |
+| Agent, Master Agent, Silver Agent | allowed | blocked — 403 `web_only` |
+| Player | blocked — "Mobile App Required" | allowed (subject to status, `PLAYER_LOGIN_ENABLED`, maintenance) |
+
+- The platform is how the account is authenticated, never a request field: Web App = session, Mobile Game = Sanctum
+  app token (`App\Support\PlatformAccess`). Both sign-ins check the role; `EnsurePlatformAccess` (web and api groups)
+  checks again on every request: a non-player's app token is refused and revoked (so older tokens die), a player's
+  browser session is signed out (web pages redirect to login with the message; API calls get 403 `mobile_only`).
+  Logging out is always allowed. No accounts are changed; new accounts follow their role automatically.
+- `PLATFORM_LOGIN_LOCK` (default true). `PLAYER_LOGIN_ENABLED` now defaults to **true** (players sign in through the
+  Mobile Game); set it to false to shut players out again. Web registration tells players to sign in with the app.
+- The test suite runs with the lock off (`phpunit.xml`, most tests act as players over a session);
+  `tests/Feature/PlatformAccessTest.php` turns it on and tests every role on both platforms, token reuse, session
+  reuse, maintenance and the player switch.

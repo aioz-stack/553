@@ -50,10 +50,17 @@ export default function Login() {
                 <div>
                   <div className="mb-5 sm:mb-8">
                     <h1 className="mb-2 text-title-sm font-semibold text-gray-800 dark:text-white/90">Sign In</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Enter your username and password to play Pusoy 13.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Pusoy553 Web Platform — for Admins, Agents, Master Agents and Silver Agents.</p>
+                    <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Players sign in with the Pusoy553 mobile game app.</p>
                   </div>
 
                   {flash?.success && <div className="mb-4 text-sm text-green-600">{flash.success}</div>}
+                  {errors.platform && (
+                    <div role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">
+                      <p className="font-semibold">Mobile App Required</p>
+                      <p>{errors.platform}</p>
+                    </div>
+                  )}
                   {errors.username && <div className="mb-4 text-sm text-red-600">{errors.username}</div>}
 
                   <form onSubmit={submit}>

@@ -26,12 +26,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleInertiaRequests::class,
             EnsureActiveAccount::class,
+            \App\Http\Middleware\EnsurePlatformAccess::class,
         ]);
 
         // Allows the Inertia web app to call /api/v1 with its session cookie.
         $middleware->statefulApi();
 
-        $middleware->api(append: [EnsureActiveAccount::class, TouchLastSeen::class]);
+        $middleware->api(append: [EnsureActiveAccount::class, \App\Http\Middleware\EnsurePlatformAccess::class, TouchLastSeen::class]);
 
         $middleware->alias([
             'role' => EnsureRole::class,

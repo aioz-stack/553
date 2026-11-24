@@ -39,6 +39,13 @@ class Login extends Controller
                 throw ValidationException::withMessages(['username' => $user->status->blockedMessage()]);
             }
 
+            // Web App: Admins, staff and agents only — Players use the Mobile Game.
+            if (! \App\Support\PlatformAccess::allowsWeb($user)) {
+                Auth::logout();
+
+                throw ValidationException::withMessages(['platform' => \App\Support\PlatformAccess::MOBILE_ONLY_MESSAGE]);
+            }
+
             if ($user->signInBlocked()) {
                 Auth::logout();
 
