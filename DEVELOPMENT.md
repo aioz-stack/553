@@ -1108,3 +1108,24 @@ Not done / not verified:
 - The test suite runs with the lock off (`phpunit.xml`, most tests act as players over a session);
   `tests/Feature/PlatformAccessTest.php` turns it on and tests every role on both platforms, token reuse, session
   reuse, maintenance and the player switch.
+
+### 2026-11-24 — New login screens (Web App and Mobile Game)
+
+- Both login screens are the Pusoy553 login artwork with a working form laid over the fields drawn in it:
+  Username, Password, show / hide password, LOG IN — nothing else (no Forgot Password, Create Account or register links).
+  - Web App: `resources/js/Pages/Auth/Login.tsx` + `Components/LoginArt.tsx`, artwork `public/images/login-art.webp`.
+  - Mobile Game: `mobile/src/app/login/page.tsx` + `mobile/src/components/LoginArt.tsx`, artwork `mobile/public/login-art.webp`,
+    landscape lock (a portrait browser rotates the stage).
+- Full screen, never cropped: the stage box has the artwork's aspect ratio (1672 × 941) and the largest size that fits
+  the screen inside the safe areas (`min(100cqw, 100cqh × ratio)` — scaled by the tighter dimension; the image is
+  `object-contain`). Spare space (screens of another shape) is filled edge to edge by mirrored copies of the artwork's
+  own edges, seamless at the border and fading out (sides and floor ~20 %, top only a sliver so the logo never repeats),
+  over a soft ambient copy. When there is spare height, the stage moves up so the login panel sits at the screen's
+  centre, never further than the spare space. Input text is at least 12 px.
+  The root uses `overflow: clip` so focusing a field can never scroll the artwork. Controls are positioned in artwork
+  pixels (measured from the images, see `WEB_LOGIN_ART` / `LOGIN_ART`) and text uses container units, so they stay on
+  the drawn fields at any size. While a field is focused or filled, its fill colour covers the drawn label.
+- Behaviour is unchanged: same endpoints (`POST /login`, `POST /api/v1/auth/login`), loading state ("SIGNING IN…"),
+  the server's messages (wrong credentials, pending / suspended / banned, platform rules, maintenance) under the button.
+- The register / forgot-password pages still exist for registration links and password resets but are no longer linked
+  from the login screens. Tests: `mobile/src/app/login/page.test.tsx`; the web login is covered by AuthAndCrudTest.
