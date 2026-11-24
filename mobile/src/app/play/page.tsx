@@ -9,6 +9,7 @@ import { Avatar, Coin, Confetti, GameButton, GlassCard, Ribbon } from '@/compone
 import { IconCrown } from '@/components/icons';
 import PlayingCard from '@/components/PlayingCard';
 import { Felt, PotDisplay, RevealedHand, Seat, TimerRing } from '@/components/TableView';
+import MultiplayerTable from '@/components/table/MultiplayerTable';
 import { Notice, Screen, Spinner } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -31,7 +32,15 @@ export default function Play() {
   const router = useRouter();
   const tableParam = useQueryParam('table');
   const tableId = tableParam ? Number(tableParam) : null;
-  const { table, session, error, live, refresh, clockOffset } = useTable(tableId, user?.id);
+  const { table, session, error, live, refresh, removed, clockOffset } = useTable(tableId, user?.id);
+
+  // No longer seated here (removed after missing rounds while offline, or the table is gone):
+  // say so briefly, then back to the Multiplayer Lobby — nothing to leave by hand.
+  useEffect(() => {
+    if (!removed) return undefined;
+    const t = setTimeout(() => router.replace('/lobby/'), 2500);
+    return () => clearTimeout(t);
+  }, [removed, router]);
   const secondsLeft = useSecondsLeft(session?.status === 'ARRANGING' ? session.arrangement_deadline : null, clockOffset);
   const betSecondsLeft = useSecondsLeft(session?.status === 'BETTING' ? session.betting_deadline : null, clockOffset);
 
@@ -75,6 +84,17 @@ export default function Play() {
     }
   };
 
+  if (removed) {
+    return (
+      <Screen title="Table" tabs={false} hud={false}>
+        <div className="pt-24 text-center" role="status">
+          <p className="font-display text-xl font-black">You are no longer seated at this table.</p>
+          <p className="mt-2 text-sm text-white/70">Your finished rounds are settled. Returning to the Multiplayer Lobby…</p>
+        </div>
+      </Screen>
+    );
+  }
+
   if (!table) {
     return (
       <Screen title="Table" back tabs={false} hud={false}>
@@ -84,6 +104,30 @@ export default function Play() {
   }
 
   const banker = table.game_mode === 'round_bank' || table.game_mode === 'banker';
+
+  // Multiplayer lobby matches (Round Bank / Banker Mode): the landscape in-game table.
+  if (banker) {
+    return (
+      <Screen title={table.room.name} immersive>
+        <MultiplayerTable
+          table={table}
+          session={session ?? undefined}
+          userId={user?.id}
+          chips={chips}
+          live={live}
+          betSecondsLeft={betSecondsLeft}
+          arrangeSecondsLeft={secondsLeft}
+          nextIn={nextIn}
+          refresh={refresh}
+          onLeave={async () => {
+            await api(`/tables/${table.id}/leave`, { method: 'POST' });
+            router.replace('/lobby/');
+          }}
+          onLobby={() => router.replace('/lobby/')}
+        />
+      </Screen>
+    );
+  }
   const inGame = !!session && table.status !== 'WAITING_FOR_PLAYERS';
   const players: SeatPlayer[] = inGame && session!.players.length ? session!.players : table.players;
   const me = table.players.find((p) => p.is_you);

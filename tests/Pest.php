@@ -7,6 +7,11 @@ use App\Models\GameSession;
 use App\Models\GameTable;
 use App\Models\User;
 use App\Services\Game\TableService;
+use App\Game\AutoArranger;
+use App\Models\GameBet;
+use App\Models\GameCard;
+use App\Services\Game\BankerMatchService;
+use App\Services\Game\GameEngine;
 use App\Enums\TransactionType;
 use App\Services\Wallet\AllocationService;
 use App\Services\Wallet\LedgerService;
@@ -88,4 +93,74 @@ function startGame(?GameRoom $room = null, bool $ready = true): array
     $table->refresh();
 
     return [$table, $table->currentSession, $players];
+}
+
+// ---------------------------------------------------------------------------
+// Multiplayer lobby helpers (LobbyTest, MultiplayerMatchTest)
+// ---------------------------------------------------------------------------
+
+/** A player holding `$diamonds` VC. */
+function lbPlayer(int $diamonds = 10_000): User
+{
+    $u = User::factory()->player()->create();
+    fund($u, $diamonds * 100);
+
+    return $u;
+}
+
+function lbCreate($test, User $u, array $over = [])
+{
+    return $test->actingAs($u, 'sanctum')->postJson('/api/v1/lobbies', $over + [
+        'name' => 'Rookie Room',
+        'game_mode' => 'round_bank',
+        'min_entry' => 1000,
+        'preparation_seconds' => 45,
+    ]);
+}
+
+/** Owner + three joined players, everyone's seat (1–4 in join order) confirmed. */
+function lbFull($test, array $over = []): array
+{
+    $owner = lbPlayer();
+    $room = lbCreate($test, $owner, $over)->assertCreated()->json('data');
+    $test->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 1])->assertOk();
+    $others = [];
+    foreach (range(1, 3) as $i) {
+        $p = lbPlayer();
+        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join", ['password' => $over['password'] ?? null])->assertCreated();
+        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => $i + 1])->assertOk();
+        $others[] = $p;
+    }
+
+    return [$owner, $room, $others];
+}
+
+/** All four press Start; after the 3-second countdown the next look at the lobby starts the match. */
+function lbStart($test, array $players, array $room): GameTable
+{
+    foreach ($players as $p) {
+        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
+    }
+    $test->travel(3100)->milliseconds();
+    $test->actingAs($players[0], 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk();
+
+    return GameTable::query()->findOrFail($room['table_id']);
+}
+
+function lbPlayRound(GameTable $table): GameSession
+{
+    $session = GameSession::query()->findOrFail($table->fresh()->current_session_id);
+    foreach ($session->config['participants'] as $userId) {
+        if (! GameBet::query()->where('game_session_id', $session->id)->where('user_id', $userId)->exists()) {
+            app(BankerMatchService::class)->placeBet(User::find($userId), $session, $session->config['min_bet']);
+        }
+    }
+    foreach (GameCard::query()->where('game_session_id', $session->id)->get() as $card) {
+        if (! $session->submissions()->where('user_id', $card->user_id)->exists()) {
+            $a = AutoArranger::arrange($card->cards);
+            app(GameEngine::class)->submit(User::find($card->user_id), $session->fresh(), $a->front, $a->middle, $a->back);
+        }
+    }
+
+    return $session->fresh();
 }

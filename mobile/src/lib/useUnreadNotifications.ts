@@ -5,9 +5,11 @@ import { api } from './api';
 import { getEcho } from './echo';
 
 /**
- * Unread notification count for the Main Lobby bell. Loaded from /notifications, bumped live when
- * the server broadcasts a new notification on the private `user.{id}` channel (Laravel broadcast
- * notifications), and reloaded when the app comes back to the foreground.
+ * Unread notification count for a lobby bell. Loaded from /notifications, bumped live when the
+ * server broadcasts a new notification on the private `user.{id}` channel (Laravel broadcast
+ * notifications) — which is also re-dispatched as the `pusoy:notification` window event so an open
+ * notification panel reloads — and reloaded when the app returns to the foreground. `setUnread` lets
+ * the panel report the exact count after marking notifications read.
  */
 export function useUnreadNotifications(userId: number | undefined) {
   const [unread, setUnread] = useState(0);
@@ -31,8 +33,11 @@ export function useUnreadNotifications(userId: number | undefined) {
     getEcho().then((echo) => {
       if (!echo || cancelled) return;
       const channel = echo.private(`user.${userId}`);
-      channel.notification(() => setUnread((n) => n + 1));
-      stop = () => channel.stopListening('.Illuminate\Notifications\Events\BroadcastNotificationCreated');
+      channel.notification(() => {
+        setUnread((n) => n + 1);
+        window.dispatchEvent(new Event('pusoy:notification'));
+      });
+      stop = () => channel.stopListening('.Illuminate\\Notifications\\Events\\BroadcastNotificationCreated');
     });
 
     const onVisible = () => {
@@ -47,5 +52,5 @@ export function useUnreadNotifications(userId: number | undefined) {
     };
   }, [userId, reload]);
 
-  return { unread, reload, clear: useCallback(() => setUnread(0), []) };
+  return { unread, setUnread, reload };
 }

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMock = vi.fn();
 const push = vi.fn();
+const replace = vi.fn();
+let currentTable: object | null = null;
 vi.mock('@/lib/api', () => ({
   api: (...args: unknown[]) => apiMock(...args),
   errorText: (e: Error) => e.message,
@@ -14,7 +16,7 @@ vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ chips: '250.00', gold:
 vi.mock('@/lib/echo', () => ({ getEcho: async () => null }));
 vi.mock('@/lib/useLandscapeLock', () => ({ useLandscapeLock: () => undefined }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn(), useSound: () => [true, vi.fn()] }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), push, back: vi.fn() }), usePathname: () => '/home/' }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace, push, back: vi.fn() }), usePathname: () => '/home/' }));
 vi.mock('@/components/ui', async (orig) => ({ ...(await orig<object>()), Screen: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
 import Home from './page';
@@ -29,10 +31,11 @@ function routes(goldState: ReturnType<typeof gold>) {
   apiMock.mockImplementation((path: string) => {
     if (path === '/practice/gold') return Promise.resolve(goldState);
     if (path === '/practice/tiers') return Promise.resolve({ data: [] });
-    if (path === '/tables/current') return Promise.resolve({ data: null });
+    if (path === '/tables/current') return Promise.resolve({ data: currentTable });
     if (path === '/profile/stats') return Promise.resolve({ data: { level: { level: 3, xp: 10, into_level: 5, for_next: 10 } } });
     if (path === '/wallet') return Promise.resolve({ data: [], meta: {} });
     if (path === '/notifications') return Promise.resolve(notifications);
+    if (path.startsWith('/notifications/') && path.endsWith('/read')) return Promise.resolve({ meta: { unread: 0 } });
     return Promise.resolve({ data: null });
   });
 }
@@ -115,7 +118,7 @@ describe('Home — Main Lobby top bar', () => {
     expect(container.querySelector('a[href="/leaderboard/"]')).toBeNull();
   });
 
-  it('the bell opens the notification pop-up with the announcement and your notifications, and marks them read', async () => {
+  it('the bell opens the notification pop-up with the announcement and your notifications; tapping one marks it read and acts', async () => {
     notifications = {
       data: [{ id: 'n1', type: 'App\\Notifications\\PointsReceived', data: { title: 'Points received', message: 'You received 100 Chips.' }, read_at: null, created_at: '2026-11-25T01:00:00Z' }],
       meta: { unread: 1, announcement: 'Server update tonight at 11 PM.' },
@@ -129,8 +132,34 @@ describe('Home — Main Lobby top bar', () => {
     expect(within(dialog).getByText('You received 100 Chips.')).toBeInTheDocument();
     expect(within(dialog).getByText('Server update tonight at 11 PM.')).toBeInTheDocument();
     expect(within(dialog).getByText('Account')).toBeInTheDocument();
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/notifications/read', { method: 'POST' }));
+    // Opening does not mark anything read; tapping the notification does, then opens the wallet.
+    expect(apiMock).not.toHaveBeenCalledWith('/notifications/read', expect.anything());
+    fireEvent.click(within(dialog).getByRole('button', { name: /Points received/ }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/notifications/n1/read', { method: 'POST' }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/wallet/'));
     expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument();
-    expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe('Home — reconnecting to a match in progress', () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    replace.mockReset();
+    currentTable = null;
+  });
+
+  it('goes straight back to the table of a match you are seated in', async () => {
+    currentTable = { id: 14, status: 'IN_GAME', players: [], room: { id: 1, name: 'Test', currency: 'CH' } };
+    routes(gold({ out_of_gold: false }));
+    render(<Home />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/play/?table=14'));
+  });
+
+  it('stays on Home when there is no match in progress (a waiting lobby or none)', async () => {
+    currentTable = { id: 15, status: 'WAITING_FOR_PLAYERS', players: [], room: { id: 1, name: 'Test', currency: 'CH' } };
+    routes(gold({ out_of_gold: false }));
+    render(<Home />);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/tables/current'));
+    expect(replace).not.toHaveBeenCalledWith(expect.stringContaining('/play/'));
   });
 });

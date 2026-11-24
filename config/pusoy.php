@@ -75,6 +75,9 @@ return [
     */
     'lobby' => [
         'seat_release_seconds' => (int) env('LOBBY_SEAT_RELEASE_SECONDS', 60),
+        // Betting chips of a lobby, as percentages of its Minimum Entry, 1:1 (no multiplier):
+        // Minimum Entry 100 Chips → chips of 5, 10 and 15 Chips. These are the only bets allowed.
+        'bet_chip_percents' => [5, 10, 15],
     ],
 
     /*
@@ -93,6 +96,10 @@ return [
         ],
         // Each side reserves this multiple of the bet in escrow (the worst case).
         'reserve_multiplier' => 2,
+        // Banker eligibility: a player may bank only with a Chips wallet balance of at least this
+        // multiple of the maximum permitted bet (3 players × 2× reserve of the biggest bet = 6×).
+        // Ineligible players are skipped clockwise until an eligible banker is found.
+        'banker_reserve_multiple' => 6,
         // Lucky Hand (six pairs / three flushes / three straights) pays this multiple.
         'lucky_multiplier' => 2,
         'default_betting_seconds' => (int) env('BANKER_BETTING_SECONDS', 15),

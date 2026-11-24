@@ -176,23 +176,23 @@ test('banker mode: the creator banks every round; leaving hands it to the highes
 
 test('bets are validated server side', function () {
     $room = bankerRoom(GameMode::Banker);
-    [$table, [$banker, $p1, $p2]] = startMatch($room, 3, [12_000, 100_000, 100_000]);
+    // The banker holds exactly the banker reserve: 6 × the 50.00 maximum bet = 300.00.
+    [$table, [$banker, $p1, $p2]] = startMatch($room, 3, [30_000, 100_000, 100_000]);
     $session = currentRound($table);
 
     expect(fn () => $this->match->placeBet($banker, $session, 1_000))->toThrow(BusinessRuleException::class, 'banker');
     expect(fn () => $this->match->placeBet($p1, $session, 999))->toThrow(BusinessRuleException::class, 'Bet must be between');
     expect(fn () => $this->match->placeBet($p1, $session, 5_001))->toThrow(BusinessRuleException::class, 'Bet must be between');
 
-    // Banker has 120.00: covering a 50.00 bet reserves 100.00.
+    expect($session->banker_user_id)->toBe($banker->id);
+    // Covering a 50.00 bet reserves 100.00 of the banker's 300.00.
     $this->match->placeBet($p1, $session, 5_000);
     expect(fn () => $this->match->placeBet($p1, $session, 1_000))->toThrow(BusinessRuleException::class, 'already placed');
 
-    // Only 20.00 of banker balance left: a 20.00 bet needs 40.00 of cover.
-    expect(fn () => $this->match->placeBet($p2, $session, 2_000))->toThrow(BusinessRuleException::class, 'cannot cover');
+    // The 6× banker reserve always covers the other players' biggest bets.
+    $this->match->placeBet($p2, $session, 5_000);
 
-    $this->match->placeBet($p2, $session, 1_000);
-
-    expect(balance($banker))->toBe(12_000 - 10_000 - 2_000)
+    expect(balance($banker))->toBe(30_000 - 10_000 - 10_000)
         ->and(balance($p1))->toBe(100_000 - 10_000)
         ->and($session->fresh()->status)->toBe(GameStatus::Arranging) // everyone bet → dealt
         ->and(GameCard::query()->where('game_session_id', $session->id)->count())->toBe(3);

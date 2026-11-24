@@ -25,6 +25,7 @@ import { play, useSound } from '@/lib/sound';
 import type { Level, TableState } from '@/lib/types';
 import { useBalance } from '@/lib/useBalance';
 import { useUnreadNotifications } from '@/lib/useUnreadNotifications';
+import { useResumeMatch } from '@/lib/useResumeMatch';
 import { useGoldWallet } from '@/lib/useGoldWallet';
 import { fetchGold, type GoldWallet } from '@/lib/gold';
 import { practiceUrl } from '@/lib/singlePlayer';
@@ -202,7 +203,7 @@ export default function Home() {
   // Single Player Gold wallet (Total Amount): the same server source as the game screens.
   const { wallet: goldWallet } = useGoldWallet(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
-  const { unread, reload: reloadUnread, clear: clearUnread } = useUnreadNotifications(user?.id);
+  const { unread, setUnread, reload: reloadUnread } = useUnreadNotifications(user?.id);
   const [notifications, setNotifications] = useState(false);
   const [seat, setSeat] = useState<TableState | null>(null);
   const [soundOn] = useSound();
@@ -215,6 +216,8 @@ export default function Home() {
   const [outOfGold, setOutOfGold] = useState<GoldWallet | null>(null);
 
   useLandscapeLock();
+  // Reconnect: if a match you are seated in is still being played, go straight back to it.
+  useResumeMatch(user?.id);
 
   /** Single Player: Out of Gold opens the free Gold popup instead of the level picker. */
   const openPicker = async () => {
@@ -361,10 +364,16 @@ export default function Home() {
         {settings && <SettingsPanel onClose={() => setSettings(false)} />}
         {notifications && (
           <NotificationsPanel
-            onRead={clearUnread}
+            onUnread={setUnread}
             onClose={() => {
               setNotifications(false);
               reloadUnread();
+            }}
+            onAction={(a) => {
+              setNotifications(false);
+              // Invitations open in the Multiplayer Lobby (it joins them); Friends is already on this screen.
+              if (a.kind === 'lobby') router.push(`/lobby/?join=${a.roomId}`);
+              if (a.kind === 'wallet') router.push('/wallet/');
             }}
           />
         )}

@@ -62,9 +62,44 @@ class GameRoom extends Model
         ];
     }
 
+    /**
+     * Multiplayer lobby betting chips (minor units): the configured percentages of the Minimum
+     * Entry, strictly 1:1 — Minimum Entry 100 Chips → 5, 10 and 15 Chips. Null for other rooms.
+     *
+     * @return list<int>|null
+     */
+    public function betChips(): ?array
+    {
+        if (! $this->min_entry) {
+            return null;
+        }
+
+        return array_values(array_map(
+            fn ($pct) => intdiv((int) $this->min_entry * (int) $pct, 100),
+            (array) config('pusoy.lobby.bet_chip_percents', [5, 10, 15]),
+        ));
+    }
+
+    /** Smallest permitted bet: the lobby's smallest chip, otherwise the room's entry amount. */
+    public function minBet(): int
+    {
+        return ($chips = $this->betChips()) ? min($chips) : (int) $this->entry_amount;
+    }
+
+    /** Largest permitted bet: the lobby's biggest chip, otherwise max_bet (or entry × max_bet_multiple). */
     public function maxBet(): int
     {
+        if ($chips = $this->betChips()) {
+            return max($chips);
+        }
+
         return $this->max_bet ?? $this->entry_amount * (int) config('pusoy.banker.max_bet_multiple', 10);
+    }
+
+    /** Chips a player must hold to be banker: banker_reserve_multiple × the maximum permitted bet. */
+    public function bankerReserve(): int
+    {
+        return $this->maxBet() * (int) config('pusoy.banker.banker_reserve_multiple', 6);
     }
 
     public function tables(): HasMany
@@ -137,13 +172,18 @@ class GameRoom extends Model
             'seats' => 4,
             'game_mode' => $this->game_mode->value,
             'rounds_total' => $this->game_mode->hasBanker() ? $this->rounds_total : 1,
-            'min_bet' => $this->entry_amount,
+            'min_bet' => $this->minBet(),
             'max_bet' => $this->maxBet(),
+            // Lobbies: the only permitted bets, and the Minimum Entry they come from (1:1).
+            'bet_chips' => $this->betChips(),
+            'min_entry' => $this->min_entry,
             'betting_seconds' => $this->betting_seconds,
             'lucky_hands_enabled' => $this->lucky_hands_enabled,
             'banker' => $this->game_mode->hasBanker() ? [
                 'settlement' => config('pusoy.banker.settlement'),
                 'reserve_multiplier' => (int) config('pusoy.banker.reserve_multiplier'),
+                'banker_reserve_multiple' => (int) config('pusoy.banker.banker_reserve_multiple', 6),
+                'banker_reserve' => $this->bankerReserve(),
                 'lucky_multiplier' => (int) config('pusoy.banker.lucky_multiplier'),
                 'foul' => 'fouled_hand_loses_every_lane_vs_valid_hand',
                 'fee' => 'platform_fee_bps_of_each_positive_net_win',

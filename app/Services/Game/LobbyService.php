@@ -11,6 +11,7 @@ use App\Events\Game\GameEvents;
 use App\Events\Game\LobbyEvent;
 use App\Events\Game\TableEvent;
 use App\Exceptions\BusinessRuleException;
+use App\Models\GameInvitation;
 use App\Models\GamePlayer;
 use App\Models\GameRoom;
 use App\Models\GameTable;
@@ -251,7 +252,8 @@ class LobbyService
             'game_mode' => $room->game_mode->value,
             'game_mode_label' => $room->game_mode->label(),
             'min_entry' => (int) intdiv((int) $room->min_entry, Points::SCALE),
-            'min_bet' => Points::decimal($room->entry_amount),
+            'min_bet' => Points::decimal($room->minBet()),
+            'bet_chips' => array_map(fn (int $c) => Points::decimal($c), $room->betChips() ?? [$room->minBet()]),
             'preparation_seconds' => $room->arrangement_seconds,
             'players' => $players,
             'max_players' => 4,
@@ -357,7 +359,10 @@ class LobbyService
             return $seat; // already here: joining again changes nothing
         }
 
-        if ($room->isPrivateLobby() && ! Hash::check((string) $password, (string) $room->lobby_password)) {
+        // A pending, unexpired invitation from a player in the lobby (Friends → Invite) lets you in
+        // without the private lobby's password — that is what tapping the invitation notification does.
+        $invitation = $room->isPrivateLobby() && ! $password ? $this->pendingInvitation($user, $room) : null;
+        if ($room->isPrivateLobby() && ! $invitation && ! Hash::check((string) $password, (string) $room->lobby_password)) {
             throw new BusinessRuleException($password ? 'Incorrect lobby password.' : 'This is a private lobby — enter its password.', 422, 'wrong_password');
         }
 
@@ -366,7 +371,19 @@ class LobbyService
         }
 
         // TableService locks the player and the room, re-checks the seat count and the balance.
-        return $this->tables->join($user, $room, $room->invite_code);
+        $seat = $this->tables->join($user, $room, $room->invite_code);
+        GameInvitation::query()->where('game_room_id', $room->id)->where('invitee_id', $user->id)->where('status', 'pending')->update(['status' => 'accepted']);
+
+        return $seat;
+    }
+
+    /** A pending invitation to this lobby that has not expired. */
+    private function pendingInvitation(User $user, GameRoom $room): ?GameInvitation
+    {
+        return GameInvitation::query()
+            ->where('game_room_id', $room->id)->where('invitee_id', $user->id)->where('status', 'pending')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->first();
     }
 
     /**
@@ -642,6 +659,7 @@ class LobbyService
 
         $this->tables->leave($target, $table);
         AuditLogger::log($user, 'lobby.player_removed', $room, null, ['user_id' => $userId]);
+        $target->notify((new \App\Notifications\RemovedFromLobby($room, $user))->afterCommit());
     }
 
     // ------------------------------------------------------------------

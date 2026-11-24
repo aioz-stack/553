@@ -136,3 +136,74 @@ describe('Multiplayer Lobby', () => {
     expect(await screen.findByRole('dialog', { name: 'Create Lobby' })).toBeInTheDocument();
   });
 });
+
+describe('Multiplayer Lobby — notifications', () => {
+  const N = (id: string, type: string, data: Record<string, unknown>, at: string, read = false) => ({ id, type: 'App\\Notifications\\' + type, data, read_at: read ? at : null, created_at: at });
+  const FEED = () => ({
+    data: [
+      N('n3', 'RoomInvitation', { title: 'Room invitation', message: 'ann invited you to Secret.', room_id: 7 }, '2026-11-25T03:00:00Z'),
+      N('n2', 'FriendRequest', { title: 'Friend request', message: 'bob wants to be friends.' }, '2026-11-25T02:00:00Z'),
+      N('n1', 'PointsReceived', { title: 'Points received', message: 'You received 100.00 CH.' }, '2026-11-24T01:00:00Z', true),
+    ],
+    meta: { unread: 2, announcement: 'Double rewards this weekend!', maintenance: { label: 'Agents/Players', message: 'Chips transactions are paused.', game_blocked: false, transactions_blocked: true, changed_at: null } },
+  });
+
+  beforeEach(() => {
+    apiMock.mockReset();
+    push.mockReset();
+  });
+
+  it('the message envelope is now a bell with the unread badge, and it opens the pop-up in the lobby', async () => {
+    routes({ '/lobbies': LIST([]), '/notifications': FEED() });
+    const { container } = render(<Lobby />);
+    const bell = await screen.findByRole('button', { name: 'Notifications — 2 unread' });
+    expect(within(bell).getByText('2')).toBeInTheDocument();
+    expect(container.querySelector('a[href="/notifications/"]')).toBeNull();
+    fireEvent.click(bell);
+    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
+    // Pinned announcements, then newest first.
+    expect(within(dialog).getByText('Maintenance — Agents/Players')).toBeInTheDocument();
+    expect(within(dialog).getByText('Double rewards this weekend!')).toBeInTheDocument();
+    const titles = within(within(dialog).getByRole('list', { name: 'Your notifications' })).getAllByRole('button').map((b) => b.textContent);
+    expect(titles[0]).toContain('Room invitation');
+    expect(titles[1]).toContain('Friend request');
+    expect(titles[2]).toContain('Points received');
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('Mark all as read clears every unread notification and the bell badge', async () => {
+    routes({ '/lobbies': LIST([]), '/notifications': FEED(), '/notifications/read': { message: 'ok' } });
+    render(<Lobby />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications — 2 unread' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
+    await within(dialog).findByText('Room invitation');
+    expect(within(dialog).getAllByText('New')).toHaveLength(2);
+    fireEvent.click(within(dialog).getByRole('button', { name: /Mark all as read/ }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/notifications/read', { method: 'POST' }));
+    await waitFor(() => expect(within(dialog).queryAllByText('New')).toHaveLength(0));
+    expect(within(dialog).getByRole('button', { name: /Mark all as read/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument();
+  });
+
+  it('tapping an invitation marks it read, joins that lobby and goes to Choose Your Seat', async () => {
+    routes({ '/lobbies': LIST([]), '/notifications': FEED(), '/notifications/n3/read': { meta: { unread: 1 } }, '/lobbies/7/join': { data: { ...DETAIL, id: 7 } } });
+    render(<Lobby />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications — 2 unread' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Room invitation/ }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/notifications/n3/read', { method: 'POST' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/lobbies/7/join', { method: 'POST', body: {} }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/lobby/room/?id=7'));
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull();
+  });
+
+  it('a friend request opens Friends; the unread counter follows the server', async () => {
+    routes({ '/lobbies': LIST([]), '/notifications': FEED(), '/notifications/n2/read': { meta: { unread: 1 } } });
+    render(<Lobby />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Notifications — 2 unread' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Notifications' });
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Friend request/ }));
+    expect(await screen.findByText('Friends list')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Notifications — 1 unread' })).toBeInTheDocument();
+  });
+});

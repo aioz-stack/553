@@ -86,6 +86,9 @@ class ChipLoadService
 
             if ($load->wasRecentlyCreated) {
                 AuditLogger::log($actor, 'chips.withdraw', $account, null, ['amount' => $amount, 'reference' => $load->reference]);
+                if ($account->isPlayer()) {
+                    $account->notify((new \App\Notifications\ChipsWithdrawn($load))->afterCommit());
+                }
             }
 
             return $load;

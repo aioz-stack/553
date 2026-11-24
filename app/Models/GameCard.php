@@ -15,7 +15,7 @@ class GameCard extends Model
 
     protected function casts(): array
     {
-        return ['cards' => 'array'];
+        return ['cards' => 'array', 'draft' => 'array', 'draft_saved_at' => 'datetime'];
     }
 
     public function session(): BelongsTo

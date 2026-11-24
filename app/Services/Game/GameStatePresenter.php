@@ -59,8 +59,12 @@ class GameStatePresenter
                 'payout_mode' => $room->payout_mode->value,
                 'game_mode' => $room->game_mode->value,
                 'arrangement_seconds' => $room->arrangement_seconds,
-                'min_bet' => Points::decimal($room->entry_amount),
+                'min_bet' => Points::decimal($room->minBet()),
                 'max_bet' => Points::decimal($room->maxBet()),
+                // Lobbies: the permitted chips (1:1 with the Minimum Entry) and the banker reserve.
+                'bet_chips' => ($chips = $room->betChips()) ? array_map(fn (int $c) => Points::decimal($c), $chips) : null,
+                'min_entry' => $room->min_entry ? Points::decimal((int) $room->min_entry) : null,
+                'banker_reserve' => $banker ? Points::decimal($room->bankerReserve()) : null,
                 'lucky_hands_enabled' => $room->lucky_hands_enabled,
                 'is_hosted' => $room->owner_id !== null,
                 'invite_code' => $room->owner_id === $viewer->id ? $room->invite_code : null,
@@ -168,11 +172,23 @@ class GameStatePresenter
                 'betting_seconds' => $config['betting_seconds'] ?? null,
                 'lucky_hands_enabled' => (bool) ($config['lucky_hands_enabled'] ?? false),
                 'settlement' => $config['banker']['settlement'] ?? null,
+                'bet_chips' => isset($config['bet_chips']) ? array_map(fn ($c) => Points::decimal((int) $c), $config['bet_chips']) : null,
+                'min_entry' => isset($config['min_entry']) ? Points::decimal((int) $config['min_entry']) : null,
+                'banker_reserve' => isset($config['banker']['banker_reserve']) ? Points::decimal((int) $config['banker']['banker_reserve']) : null,
             ],
+            // Banker rotation of this round: the clockwise seat order and who qualified to bank
+            // (eligibility only — other players' balances are never sent).
+            'seat_order' => $config['seat_order'] ?? null,
+            'banker_selection' => isset($config['banker_selection']) ? [
+                'reason' => $config['banker_selection']['reason'],
+                'checks' => array_map(fn (array $c) => ['user_id' => $c['user_id'], 'seat' => $c['seat'], 'eligible' => $c['eligible']], $config['banker_selection']['checks'] ?? []),
+            ] : null,
             'pot' => Points::decimal($session->pot),
             'players' => $players,
             'is_participant' => $myCards !== null,
             'my_cards' => $myCards?->cards,
+            // Your saved (not yet submitted) arrangement: restored when you come back to the table.
+            'my_draft' => $myCards && ! $mySubmission && is_array($myCards->draft) ? $myCards->draft : null,
             'my_submission' => $mySubmission ? [
                 'front' => $mySubmission->front,
                 'middle' => $mySubmission->middle,

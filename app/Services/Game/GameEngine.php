@@ -181,8 +181,53 @@ class GameEngine
     }
 
     /**
-     * Timer expiry: resolve every missing arrangement according to the
-     * room's timeout policy, then move on to the reveal.
+     * Save the player's current arrangement while they arrange (no submission). Only a valid one
+     * is kept — all 13 of their own cards in 3 / 5 / 5, in order (or misplaced where the room allows
+     * misplaced hands); anything else leaves the last valid draft in place. Returns true when saved.
+     *
+     * @param  mixed  $front
+     * @param  mixed  $middle
+     * @param  mixed  $back
+     */
+    public function saveDraft(User $user, GameSession $session, $front, $middle, $back): bool
+    {
+        return DB::transaction(function () use ($user, $session, $front, $middle, $back) {
+            $session = GameSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+            $card = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->lockForUpdate()->first();
+
+            if ($card === null) {
+                throw new BusinessRuleException('You are not playing in this game.', 403, 'forbidden');
+            }
+
+            if ($session->status !== GameStatus::Arranging || $session->arrangement_deadline?->isPast()
+                || GameSubmission::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->exists()) {
+                throw new BusinessRuleException('This arrangement is already locked.', 409, 'invalid_state');
+            }
+
+            try {
+                $arrangement = ArrangementValidator::build($card->cards, $front, $middle, $back);
+            } catch (InvalidArrangementException) {
+                return false;
+            }
+
+            if ($arrangement->isFoul() && ! ($session->config['allow_foul_submission'] ?? false)) {
+                return false;
+            }
+
+            $card->forceFill([
+                'draft' => ['front' => $arrangement->front, 'middle' => $arrangement->middle, 'back' => $arrangement->back],
+                'draft_saved_at' => now(),
+            ])->save();
+
+            return true;
+        });
+    }
+
+    /**
+     * Timer expiry (whether the player is online, offline or gone): every missing arrangement is
+     * submitted for them — their last saved valid arrangement when there is one (never reset or
+     * randomised), otherwise per the room's timeout policy — then on to the reveal. Runs once:
+     * the session row is locked and the state re-checked, so a repeat run submits nothing twice.
      */
     public function expire(GameSession $session, bool $force = false): void
     {
@@ -197,7 +242,20 @@ class GameEngine
             $policy = TimeoutPolicy::from($session->config['timeout_policy'] ?? 'auto_arrange');
 
             foreach (GameCard::query()->where('game_session_id', $session->id)->whereNotIn('user_id', $submitted)->get() as $card) {
-                $this->storeSubmission($session, $card->user_id, AutoArranger::arrange($card->cards), $policy === TimeoutPolicy::Foul, true);
+                $draft = $this->validDraft($session, $card);
+
+                if ($draft) {
+                    $this->storeSubmission($session, $card->user_id, $draft, $draft->isFoul(), true);
+                } else {
+                    $this->storeSubmission($session, $card->user_id, AutoArranger::arrange($card->cards), $policy === TimeoutPolicy::Foul, true);
+                }
+
+                event(new TableEvent($session->game_table_id, GameEvents::PLAYER_SUBMITTED, [
+                    'session_id' => $session->id,
+                    'user_id' => $card->user_id,
+                    'auto' => true,
+                    'source' => $draft ? 'saved_arrangement' : 'auto_arranged',
+                ]));
             }
 
             $this->markAllSubmitted($session);
@@ -334,6 +392,22 @@ class GameEngine
             'arrangement_deadline' => $session->arrangement_deadline->toIso8601String(),
             'seconds_remaining' => max(0, (int) now()->diffInSeconds($session->arrangement_deadline, false)),
         ]));
+    }
+
+    /** The player's saved draft, re-validated against their dealt cards (null when there is none). */
+    private function validDraft(GameSession $session, GameCard $card): ?Arrangement
+    {
+        if (! is_array($card->draft)) {
+            return null;
+        }
+
+        try {
+            $arrangement = ArrangementValidator::build($card->cards, $card->draft['front'] ?? [], $card->draft['middle'] ?? [], $card->draft['back'] ?? []);
+        } catch (InvalidArrangementException) {
+            return null;
+        }
+
+        return $arrangement->isFoul() && ! ($session->config['allow_foul_submission'] ?? false) ? null : $arrangement;
     }
 
     private function storeSubmission(GameSession $session, int $userId, Arrangement $arrangement, bool $isFoul, bool $isAuto): GameSubmission

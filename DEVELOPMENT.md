@@ -1159,3 +1159,96 @@ Not done / not verified:
   a type badge (Account = Chips received, Game = room invitation, Friends, Alert = anything else). Opening it marks
   everything read. The red dot updates live from broadcast notifications on `user.{id}`
   (`lib/useUnreadNotifications.ts`). Tests: `src/app/home/page.test.tsx`, `src/components/AvatarPicker.test.tsx`.
+
+## Notifications — Multiplayer Lobby bell (shared pop-up)
+
+- The Multiplayer Lobby's message envelope is now a **bell** (`app/lobby/page.tsx`). It shows a red unread badge and
+  rings while there are unread notifications. Tapping it opens `components/NotificationsPanel.tsx` inside the lobby.
+  The Main Lobby (Home) bell opens the same pop-up.
+- **Content** (all from `GET /api/v1/notifications`, newest first, last 50):
+  - pinned **Maintenance** announcement while maintenance is on (`meta.maintenance`: label, message — Admin Settings
+    `maintenance_message` or a default — and game / transaction flags);
+  - pinned **System announcement** (`meta.announcement`, Admin → Settings → Lobby announcement);
+  - the player's notifications, tagged by type: **Account** (`PointsReceived`, new `ChipsWithdrawn` when an agent or
+    staff withdraws a player's Chips), **Lobby** (`RoomInvitation`, new `RemovedFromLobby` when the owner kicks you),
+    **Friends** (`FriendRequest`), **Alert** (anything else).
+- **Reading:** opening no longer marks anything read. Tapping a notification calls `POST /notifications/{id}/read`
+  (own notifications only, 404 otherwise) and the returned unread count updates the bell. **Mark all as read** calls
+  `POST /notifications/read`.
+- **Actions when tapped:** invitation → joins that lobby and opens Choose Your Seat (from Home it goes via
+  `/lobby/?join=ID`); friend request → Friends; Chips received/withdrawn → wallet; announcements and other items expand.
+- **Invitations into private lobbies:** a pending, unexpired `game_invitations` row lets the invitee join a private
+  lobby without its password (`LobbyService::join`); it is marked `accepted` on join. Everyone else still needs the
+  password; expired invitations do not work.
+- **Real time:** new notifications arrive on the private `user.{id}` channel (Laravel broadcast notifications);
+  `lib/useUnreadNotifications.ts` bumps the badge and re-dispatches `pusoy:notification` so an open pop-up reloads.
+  The pop-up also reloads on `maintenance.updated`. The count is reloaded when the app returns to the foreground.
+- Tests: `tests/Feature/NotificationsTest.php`, `mobile/src/app/lobby/page.test.tsx`, `mobile/src/app/home/page.test.tsx`.
+
+## Multiplayer in-game table — chips, 12 rounds, clockwise banker with reserve check
+
+- **Start Game → table:** when the lobby countdown ends the waiting room goes to `/play/?table=ID`. For Round Bank /
+  Banker Mode tables that is now the landscape table `mobile/src/components/table/MultiplayerTable.tsx`, built like
+  the Single Player table. It shows a short "Entering the table…" cover and is driven only by server state
+  (`useTable`: REST + Reverb `table.{id}`). Classic tables keep the portrait screen.
+- **Chips 1:1:** `config/pusoy.php` `lobby.bet_chip_percents` = `[5, 10, 15]` % of the lobby's Minimum Entry,
+  with no multiplier: Minimum Entry 100 → **5 / 10 / 15 Chips** (250 → 12.50 / 25 / 37.50).
+  - `GameRoom::betChips()` / `minBet()` / `maxBet()`.
+  - Snapshotted into each round (`config.bet_chips`, `min_entry`).
+  - `BankerMatchService::placeBet` refuses anything else (`invalid_bet`). Auto bets use the smallest chip.
+- **12 rounds:** `rounds_total` 12 from `pusoy.banker.rounds`. Each round is one `game_session` (`round_number` 1–12);
+  `startRound` is locked and idempotent, and after round 12 the table closes with `end_reason = completed`.
+- **Banker eligibility:** to bank, a player's Chips balance must be ≥ `banker_reserve_multiple` (6) × the maximum
+  permitted bet (`GameRoom::bankerReserve()`, e.g. 90 Chips for Minimum Entry 100).
+  - **Round Bank:** the creator banks first. The turn then passes clockwise by seat number from the previous banker,
+    who is checked last.
+  - Each candidate is checked in that order; anyone below the reserve is skipped, so an underfunded player is never
+    banker.
+  - **Banker Mode:** the creator continues while eligible, otherwise the eligible player with the highest balance.
+  - If nobody qualifies the match ends with `end_reason = no_eligible_banker`.
+- **History:** every round stores `config.seat_order` and `config.banker_selection` (reason, required reserve, each
+  check with balance). The API (`GET /games/{id}`) returns the checks without balances. The `banker.assigned` event
+  carries `skipped_user_ids` and the reserve, and the table marks skipped players "Can't bank".
+- **Table UI:** shows Round X / 12 with "NAME banks", the BANKER badge, room name, Minimum Entry and mode, and your
+  Total Chips. Other players' wallet balances are not shown; their seats show this round's bet / ready state and match net.
+  - Betting is the room's chips only. The banker sees "Covering N".
+  - Arranging uses the shared `LuckPopup` with `previewPath` `/games/{id}/preview` and a Chips HUD.
+  - The reveal shows every hand with lane WIN/LOSS against the banker; final standings appear after round 12.
+  - Offline seats are greyed out, and the Back button (leave) works between rounds only.
+- **Local note:** rounds advance through queued jobs (`CloseBetting`, `ExpireArrangement`, `ResolveGameSession`,
+  `StartNextRound`); run `php artisan queue:work` locally or betting and timers will not move on.
+- Tests: `tests/Feature/MultiplayerMatchTest.php` (chips, skip-and-record, no eligible banker, exactly 12 rounds),
+  `LobbyTest`, `BankerModesTest`, `mobile/src/components/table/MultiplayerTable.test.tsx`. The lobby test helpers moved
+  to `tests/Pest.php`.
+
+## Disconnection, timeout, saved arrangements and reconnection (multiplayer)
+
+- **Saved arrangement:** while you arrange, the app sends every move to `PUT /api/v1/games/{id}/draft`. It is
+  debounced at 400 ms and sent at once when the app goes to the background or the page closes.
+  - The server keeps only a **valid** arrangement (`GameEngine::saveDraft`): all 13 of your cards in 3 / 5 / 5, in
+    order, or misplaced only where the room allows misplaced hands. Anything else leaves the last valid one in place.
+  - Stored in `game_cards.draft` / `draft_saved_at` (migration `2026_11_25_120000_add_draft_to_game_cards`).
+  - Locked once you submit or the timer ends (409).
+- **Timer expiry** (`ExpireArrangement` → `GameEngine::expire`, row-locked so a repeat run does nothing): every missing
+  hand is submitted as the player's **last saved arrangement**. It is never reset or randomised, and is marked
+  `is_auto` with event `player.submitted` `{auto: true, source: 'saved_arrangement'}`.
+  - Only a player who never saved a valid arrangement falls back to the room's timeout policy
+    (`source: 'auto_arranged'`).
+  - The timer is server-side, so it runs on whether the player is online, offline or gone, and the others are never held up.
+- **Offline players:**
+  - The heartbeat (`/tables/{id}/heartbeat`) runs every 10 s, plus at once on open, on app resume and when the network returns.
+  - `pusoy:sweep` marks a player disconnected after `GAME_DISCONNECT_AFTER_SECONDS` (30) and broadcasts
+    `player.disconnected` / `player.reconnected`.
+  - An offline player's dealt round still finishes (their saved hand is played and settled). They sit out the next
+    rounds, are not dealt in or made banker, and are dealt back in at the next round after they return. Completed rounds
+    are never replayed.
+- **Removed after staying away:** after `pusoy.banker.max_missed_rounds` (2) rounds in a row offline, the player leaves
+  the match. They get the `RemovedFromMatch` notification, and their finished rounds stay settled.
+  - The app then gets 403 for the table (`useTable().removed`): `/play` says so and returns to the Multiplayer Lobby.
+  - When the match ends the table closes, and on return the player sees the final results, then the lobby.
+- **Reconnecting:** Home and the Multiplayer Lobby call `useResumeMatch` (on open, app resume and network back). If
+  `/tables/current` is a match being played (`IN_GAME`), the player goes straight to `/play/?table=ID`.
+  - The table restores the current round, your cards and your saved arrangement (`my_draft` in `GET /games/{id}`).
+  - Your submission, if any, stays locked: no duplicates.
+- Tests: `tests/Feature/ReconnectTest.php`, `mobile/src/app/home/page.test.tsx` (resume),
+  `mobile/src/components/table/MultiplayerTable.test.tsx` (restore + save).

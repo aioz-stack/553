@@ -153,8 +153,11 @@ class BankerMatchService
                 $player->forceFill(['missed_rounds' => $player->missed_rounds + 1])->save();
 
                 if ($player->missed_rounds >= (int) config('pusoy.banker.max_missed_rounds', 2)) {
+                    // Still offline: their finished rounds are settled; they leave the match (and the
+                    // app takes them back to the lobby when they return).
                     $player->delete();
                     event(new TableEvent($table->id, GameEvents::PLAYER_LEFT, ['user_id' => $player->user_id, 'reason' => 'inactive']));
+                    $player->user?->notify((new \App\Notifications\RemovedFromMatch($table, $table->rounds_played))->afterCommit());
                 }
             }
 
@@ -169,7 +172,15 @@ class BankerMatchService
             }
 
             $previousBanker = $table->banker_user_id;
-            [$banker, $reason] = $this->chooseBanker($table, $eligible, $balances);
+            [$banker, $reason, $bankerChecks] = $this->chooseBanker($table, $eligible, $balances);
+
+            if ($banker === null) {
+                // Nobody seated holds the banker reserve: the match cannot go on.
+                $this->end($table, 'no_eligible_banker');
+
+                return null;
+            }
+
             $participants = $eligible->where('user_id', '!=', $banker->user_id)->pluck('user_id')->values()->all();
 
             GamePlayer::query()->whereIn('id', $eligible->pluck('id'))->update(['missed_rounds' => 0]);
@@ -189,6 +200,9 @@ class BankerMatchService
                     'rounds_total' => $table->rounds_total,
                     'banker_user_id' => $banker->user_id,
                     'participants' => $participants,
+                    // Round history: clockwise seat order and the banker eligibility checks of this round.
+                    'seat_order' => $players->sortBy('seat')->map(fn (GamePlayer $p) => ['user_id' => $p->user_id, 'seat' => $p->seat])->values()->all(),
+                    'banker_selection' => ['reason' => $reason, 'required' => $room->bankerReserve(), 'checks' => $bankerChecks],
                 ],
                 'currency' => $currency,
                 'pot' => 0,
@@ -209,6 +223,9 @@ class BankerMatchService
                 'banker_user_id' => $banker->user_id,
                 'previous_banker_user_id' => $previousBanker,
                 'reason' => $reason,
+                // Who was skipped for not holding the banker reserve (no balances are broadcast).
+                'skipped_user_ids' => collect($bankerChecks)->where('eligible', false)->pluck('user_id')->values()->all(),
+                'banker_reserve' => Points::decimal($room->bankerReserve()),
             ]));
 
             event(new TableEvent($table->id, GameEvents::ROUND_STARTED, [
@@ -230,50 +247,79 @@ class BankerMatchService
     }
 
     /**
-     * Banker Mode: the creator banks; if they are gone or ineligible, the
-     * eligible player with the highest available balance takes over (ties:
-     * lowest seat). Round Bank: the seat after the previous banker, never the
-     * same player twice in a row while someone else is eligible.
+     * Choose this round's banker. Only a player whose Chips balance is at least the room's banker
+     * reserve (banker_reserve_multiple × the maximum permitted bet) may bank; anyone below it is
+     * skipped and the next player clockwise is checked, until an eligible banker is found.
      *
-     * @param  Collection<int, GamePlayer>  $eligible
+     * Round Bank: the creator banks first (or, if they cannot, the next eligible player clockwise
+     * from them); after that the turn passes clockwise (seat order) from the previous banker, who
+     * comes last — so nobody banks twice in a row while someone else qualifies.
+     * Banker Mode: the creator banks while eligible; otherwise the eligible player with the highest
+     * balance takes over (ties: lowest seat).
+     *
+     * Returns [banker or null when nobody qualifies, reason, checks]; `checks` lists every player
+     * looked at in order with the result, for the round's history.
+     *
+     * @param  Collection<int, GamePlayer>  $eligible  players taking part in this round
      * @param  array<int, int>  $balances
-     * @return array{0: GamePlayer, 1: string}
+     * @return array{0: GamePlayer|null, 1: string, 2: list<array{user_id: int, seat: int, balance: int, required: int, eligible: bool}>}
      */
     public function chooseBanker(GameTable $table, Collection $eligible, array $balances): array
     {
+        $required = $table->room->bankerReserve();
         $bySeat = $eligible->sortBy('seat')->values();
+        $checks = [];
+        $check = function (GamePlayer $p) use ($balances, $required, &$checks): bool {
+            $ok = ($balances[$p->user_id] ?? 0) >= $required;
+            $checks[] = ['user_id' => $p->user_id, 'seat' => $p->seat, 'balance' => (int) ($balances[$p->user_id] ?? 0), 'required' => $required, 'eligible' => $ok];
+
+            return $ok;
+        };
 
         if ($table->game_mode === GameMode::Banker) {
-            if ($table->banker_user_id && ($current = $bySeat->firstWhere('user_id', $table->banker_user_id))) {
-                return [$current, 'continues'];
+            $qualified = $bySeat->filter(fn (GamePlayer $p) => $check($p))->values();
+
+            if ($table->banker_user_id && ($current = $qualified->firstWhere('user_id', $table->banker_user_id))) {
+                return [$current, 'continues', $checks];
             }
 
-            if ($table->rounds_played === 0 && $table->banker_user_id === null && ($creator = $bySeat->firstWhere('user_id', $table->creator_user_id))) {
-                return [$creator, 'room_creator'];
+            if ($table->rounds_played === 0 && $table->banker_user_id === null && ($creator = $qualified->firstWhere('user_id', $table->creator_user_id))) {
+                return [$creator, 'room_creator', $checks];
             }
 
-            $richest = $bySeat->sort(fn (GamePlayer $a, GamePlayer $b) => [$balances[$b->user_id], $a->seat] <=> [$balances[$a->user_id], $b->seat])->first();
+            $richest = $qualified->sort(fn (GamePlayer $a, GamePlayer $b) => [$balances[$b->user_id], $a->seat] <=> [$balances[$a->user_id], $b->seat])->first();
 
-            return [$richest, $table->banker_user_id ? 'replacement_highest_balance' : 'highest_balance'];
+            return [$richest, $richest ? ($table->banker_user_id ? 'replacement_highest_balance' : 'highest_balance') : 'no_eligible_banker', $checks];
         }
 
+        if ($bySeat->isEmpty()) {
+            return [null, 'no_eligible_banker', $checks];
+        }
+
+        // Clockwise order to check, starting at the right seat.
         if ($table->banker_user_id === null) {
-            // Round Bank: the player who created the table banks first (then the seat rotates).
-            if ($creator = $bySeat->firstWhere('user_id', $table->creator_user_id)) {
-                return [$creator, 'room_creator'];
-            }
-
-            return [$bySeat->first(), 'first_eligible'];
+            $creatorSeat = $bySeat->firstWhere('user_id', $table->creator_user_id)?->seat;
+            $startSeat = $creatorSeat ?? $bySeat->first()->seat;
+            $order = $bySeat->filter(fn (GamePlayer $p) => $p->seat >= $startSeat)->concat($bySeat->filter(fn (GamePlayer $p) => $p->seat < $startSeat))->values();
+            $firstReason = $creatorSeat !== null ? 'room_creator' : 'first_eligible';
+        } else {
+            $lastSeat = GameCard::query()->where('game_session_id', $table->current_session_id)->where('user_id', $table->banker_user_id)->value('seat')
+                ?? GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $table->banker_user_id)->value('seat')
+                ?? 0;
+            $order = $bySeat->filter(fn (GamePlayer $p) => $p->seat > $lastSeat)->concat($bySeat->filter(fn (GamePlayer $p) => $p->seat <= $lastSeat))->values();
+            // The previous banker is checked last (only banks again when nobody else qualifies).
+            $order = $order->reject(fn (GamePlayer $p) => $p->user_id === $table->banker_user_id)
+                ->concat($order->filter(fn (GamePlayer $p) => $p->user_id === $table->banker_user_id))->values();
+            $firstReason = 'rotation';
         }
 
-        $lastSeat = GameCard::query()->where('game_session_id', $table->current_session_id)->where('user_id', $table->banker_user_id)->value('seat')
-            ?? GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $table->banker_user_id)->value('seat')
-            ?? 0;
+        foreach ($order as $i => $candidate) {
+            if ($check($candidate)) {
+                return [$candidate, $i === 0 ? $firstReason : 'rotation_skipped_ineligible', $checks];
+            }
+        }
 
-        $others = $bySeat->where('user_id', '!=', $table->banker_user_id)->values();
-        $next = $others->first(fn (GamePlayer $p) => $p->seat > $lastSeat) ?? $others->first() ?? $bySeat->first();
-
-        return [$next, 'rotation'];
+        return [null, 'no_eligible_banker', $checks];
     }
 
     // ------------------------------------------------------------------
@@ -304,6 +350,11 @@ class BankerMatchService
 
             if (GameBet::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->exists()) {
                 throw new BusinessRuleException('You have already placed your bet for this round.', 409, 'already_bet');
+            }
+
+            // Lobbies: only the room's chips (5 / 10 / 15 % of the Minimum Entry, 1:1) can be bet.
+            if (! empty($config['bet_chips']) && ! in_array($amount, array_map('intval', $config['bet_chips']), true)) {
+                throw new BusinessRuleException('Choose one of this table\'s chips: '.implode(', ', array_map(fn ($c) => Points::decimal((int) $c), $config['bet_chips'])).' Chips.', 422, 'invalid_bet');
             }
 
             if ($amount < $config['min_bet'] || $amount > $config['max_bet']) {

@@ -8,6 +8,8 @@ use App\Http\Resources\UserResource;
 use App\Models\GameSession;
 use App\Models\PlayerProfile;
 use App\Models\SystemSetting;
+use App\Enums\MaintenanceMode;
+use App\Services\System\MaintenanceService;
 use App\Models\User;
 use App\Services\Audit\AuditLogger;
 use App\Events\Game\GameEvents;
@@ -186,12 +188,36 @@ class PlayerController extends Controller
         return response()->json(['data' => $rows]);
     }
 
-    public function notifications(Request $request): JsonResponse
+    public function notifications(Request $request, MaintenanceService $maintenance): JsonResponse
     {
         $items = $request->user()->notifications()->latest()->limit(50)->get(['id', 'type', 'data', 'read_at', 'created_at']);
 
-        // System announcement (Admin → Settings → Lobby announcement) is shown pinned above the player's own notifications.
-        return response()->json(['data' => $items, 'meta' => ['unread' => $request->user()->unreadNotifications()->count(), 'announcement' => SystemSetting::get('lobby_announcement') ?: null]]);
+        // Pinned above the player's own notifications: the System announcement (Admin → Settings →
+        // Lobby announcement) and, while maintenance is on, the Maintenance announcement.
+        $status = $maintenance->status();
+
+        return response()->json(['data' => $items, 'meta' => [
+            'unread' => $request->user()->unreadNotifications()->count(),
+            'announcement' => SystemSetting::get('lobby_announcement') ?: null,
+            'maintenance' => $status['mode'] === MaintenanceMode::Off->value ? null : [
+                'label' => $status['label'],
+                'message' => SystemSetting::get('maintenance_message') ?: ($status['game_blocked']
+                    ? 'The game is closed for maintenance. Please check back soon.'
+                    : 'Chips loads, withdrawals and other transactions are paused for maintenance. You can still play.'),
+                'game_blocked' => $status['game_blocked'],
+                'transactions_blocked' => $status['transactions_blocked'],
+                'changed_at' => $status['changed_at'],
+            ],
+        ]]);
+    }
+
+    /** POST /notifications/{id}/read — mark one of your own notifications read; returns the new unread count. */
+    public function markNotificationRead(Request $request, string $id): JsonResponse
+    {
+        $notification = $request->user()->notifications()->whereKey($id)->firstOrFail();
+        $notification->markAsRead();
+
+        return response()->json(['data' => ['id' => $notification->id, 'read_at' => $notification->read_at], 'meta' => ['unread' => $request->user()->unreadNotifications()->count()]]);
     }
 
     public function markNotificationsRead(Request $request): JsonResponse

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import PlayingCard from '@/components/PlayingCard';
 import { api } from '@/lib/api';
 import type { GoldWallet } from '@/lib/gold';
@@ -111,6 +111,10 @@ export default function LuckPopup({
   onDeclare,
   onSubmit,
   submitting = false,
+  previewPath,
+  hud,
+  betText,
+  onRowsChange,
 }: {
   gameId: number;
   /** Your 13 cards in the order they were dealt. */
@@ -130,6 +134,14 @@ export default function LuckPopup({
   /** SUBMIT: send these rows to the server (settles the round). */
   onSubmit: (rows: Rows) => void;
   submitting?: boolean;
+  /** Live lane labels / order check: defaults to the Single Player preview (Multiplayer: /games/{id}/preview). */
+  previewPath?: string;
+  /** Replaces the Gold wallet HUD (Multiplayer shows your Chips). */
+  hud?: ReactNode;
+  /** Formats the bet line, e.g. "Bet: 10 Chips" (default "Bet: N"). */
+  betText?: (bet: number) => string;
+  /** Called with the new rows after every move you make (Multiplayer saves them on the server). */
+  onRowsChange?: (rows: Rows) => void;
 }) {
   const [rows, setRows] = useState<Rows>(() => (isFull(initial) ? initial : dealtRows(cards)));
   const [sel, setSel] = useState<string | null>(null);
@@ -148,16 +160,17 @@ export default function LuckPopup({
 
   useEffect(() => {
     let live = true;
-    api<{ data: Preview }>(`/practice/${gameId}/preview`, { method: 'POST', body: rows })
+    api<{ data: Preview }>(previewPath ?? `/practice/${gameId}/preview`, { method: 'POST', body: rows })
       .then((r) => live && setPreview(r.data))
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [rows, gameId]);
+  }, [rows, gameId, previewPath]);
 
   const apply = (next: Rows) => {
     setRows(next);
+    onRowsChange?.(next);
     setSel(null);
     setHint(null);
     play('deal');
@@ -226,7 +239,7 @@ export default function LuckPopup({
             </span>
             <span className="flex flex-col leading-tight">
               <span className="font-display text-[24px] font-black text-white">{tierName}</span>
-              <span className="font-display text-[22px] font-black text-[#ffe14d]">{betLabel ?? `Bet: ${fmt(bet)}`}</span>
+              <span className="font-display text-[22px] font-black text-[#ffe14d]">{betLabel ?? (betText ? betText(bet) : `Bet: ${fmt(bet)}`)}</span>
             </span>
           </div>
         </div>
@@ -310,7 +323,7 @@ export default function LuckPopup({
         </div>
 
         {/* Your Gold wallet: Total Amount, updated live while you arrange */}
-        <GoldWalletHud wallet={wallet ?? null} className="absolute left-[1080px] top-[668px] z-10" />
+        {hud ?? <GoldWalletHud wallet={wallet ?? null} className="absolute left-[1080px] top-[668px] z-10" />}
 
         {/* decorative 553 chips */}
         <svg width="230" height="170" viewBox="0 0 230 170" className="pointer-events-none absolute bottom-[10px] left-[10px]" aria-hidden="true">

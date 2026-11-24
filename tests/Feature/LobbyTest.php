@@ -22,71 +22,7 @@ beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
 });
 
-/** A player holding `$diamonds` VC. */
-function lbPlayer(int $diamonds = 10_000): User
-{
-    $u = User::factory()->player()->create();
-    fund($u, $diamonds * 100);
-
-    return $u;
-}
-
-function lbCreate($test, User $u, array $over = [])
-{
-    return $test->actingAs($u, 'sanctum')->postJson('/api/v1/lobbies', $over + [
-        'name' => 'Rookie Room',
-        'game_mode' => 'round_bank',
-        'min_entry' => 1000,
-        'preparation_seconds' => 45,
-    ]);
-}
-
-/** Owner + three joined players, everyone's seat (1–4 in join order) confirmed. */
-function lbFull($test, array $over = []): array
-{
-    $owner = lbPlayer();
-    $room = lbCreate($test, $owner, $over)->assertCreated()->json('data');
-    $test->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => 1])->assertOk();
-    $others = [];
-    foreach (range(1, 3) as $i) {
-        $p = lbPlayer();
-        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join", ['password' => $over['password'] ?? null])->assertCreated();
-        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/seat", ['seat' => $i + 1])->assertOk();
-        $others[] = $p;
-    }
-
-    return [$owner, $room, $others];
-}
-
-/** All four press Start; after the 3-second countdown the next look at the lobby starts the match. */
-function lbStart($test, array $players, array $room): GameTable
-{
-    foreach ($players as $p) {
-        $test->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertOk();
-    }
-    $test->travel(3100)->milliseconds();
-    $test->actingAs($players[0], 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk();
-
-    return GameTable::query()->findOrFail($room['table_id']);
-}
-
-function lbPlayRound(GameTable $table): GameSession
-{
-    $session = GameSession::query()->findOrFail($table->fresh()->current_session_id);
-    foreach ($session->config['participants'] as $userId) {
-        if (! GameBet::query()->where('game_session_id', $session->id)->where('user_id', $userId)->exists()) {
-            app(BankerMatchService::class)->placeBet(User::find($userId), $session, $session->config['min_bet']);
-        }
-    }
-    foreach (GameCard::query()->where('game_session_id', $session->id)->get() as $card) {
-        if (! $session->submissions()->where('user_id', $card->user_id)->exists()) {
-            $a = AutoArranger::arrange($card->cards);
-            app(GameEngine::class)->submit(User::find($card->user_id), $session->fresh(), $a->front, $a->middle, $a->back);
-        }
-    }
-
-    return $session->fresh();
-}
+// Lobby helpers (lbPlayer, lbCreate, lbFull, lbStart, lbPlayRound) live in tests/Pest.php.
 
 test('create a public lobby: unique 6-digit ID, owner in seat 1, settings stored, listed', function () {
     Event::fake([LobbyEvent::class]);
@@ -95,7 +31,8 @@ test('create a public lobby: unique 6-digit ID, owner in seat 1, settings stored
         ->assertJsonPath('data.type', 'public')
         ->assertJsonPath('data.game_mode', 'round_bank')
         ->assertJsonPath('data.min_entry', 1000)
-        ->assertJsonPath('data.min_bet', '100.00')
+        ->assertJsonPath('data.min_bet', '50.00')
+        ->assertJsonPath('data.bet_chips', ['50.00', '100.00', '150.00'])
         ->assertJsonPath('data.preparation_seconds', 45)
         ->assertJsonPath('data.players', 1)
         ->assertJsonPath('data.status', 'waiting')
@@ -233,7 +170,8 @@ test('all four press Start → synchronized server countdown → the match start
     $table = GameTable::query()->find($room['table_id']);
     $session = GameSession::query()->find($table->current_session_id);
     expect($table->status)->toBe(TableStatus::InGame)->and($session->banker_user_id)->toBe($owner->id)
-        ->and($session->config['arrangement_seconds'])->toBe(45)->and($session->config['min_bet'])->toBe(10_000);
+        ->and($session->config['arrangement_seconds'])->toBe(45)->and($session->config['min_bet'])->toBe(5_000)
+        ->and($session->config['bet_chips'])->toBe([5_000, 10_000, 15_000])->and($session->config['max_bet'])->toBe(15_000);
     // Seats are kept for the match.
     expect($table->players()->pluck('seat', 'user_id')->all())->toBe([$owner->id => 1, $others[0]->id => 2, $others[1]->id => 3, $others[2]->id => 4]);
     $this->actingAs(lbPlayer(), 'sanctum')->getJson('/api/v1/lobbies')->assertJsonPath('data.0.status', 'in_game');

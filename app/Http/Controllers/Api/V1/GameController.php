@@ -49,6 +49,26 @@ class GameController extends Controller
     }
 
     /**
+     * PUT /games/{session}/draft — save your current arrangement while you arrange (nothing is
+     * submitted). Only a valid arrangement replaces the saved one; at the timer's end the saved one
+     * is submitted for you, even if you went offline or left.
+     */
+    public function draft(Request $request, GameSession $session, GameEngine $engine): JsonResponse
+    {
+        $this->authorize('play', $session);
+
+        $data = $request->validate([
+            'front' => ['required', 'array', 'max:3'], 'front.*' => ['string', 'size:2'],
+            'middle' => ['required', 'array', 'max:5'], 'middle.*' => ['string', 'size:2'],
+            'back' => ['required', 'array', 'max:5'], 'back.*' => ['string', 'size:2'],
+        ]);
+
+        $saved = $engine->saveDraft($request->user(), $session, $data['front'], $data['middle'], $data['back']);
+
+        return response()->json(['data' => ['saved' => $saved]]);
+    }
+
+    /**
      * Server-side evaluation of a partial or full arrangement for UI hints
      * (hand names, foul warning). Never stores anything; clients do not
      * evaluate hands themselves.

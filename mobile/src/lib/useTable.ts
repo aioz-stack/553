@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, errorText } from './api';
+import { api, ApiError, errorText } from './api';
 import { getEcho } from './echo';
 import type { SessionState, TableState } from './types';
 
@@ -24,6 +24,8 @@ export function useTable(tableId: number | null, userId: number | undefined) {
   const [session, setSession] = useState<SessionState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  /** The server no longer seats you here (removed after missing rounds, or the table is gone). */
+  const [removed, setRemoved] = useState(false);
   const offset = useRef(0);
   const busy = useRef(false);
 
@@ -48,6 +50,7 @@ export function useTable(tableId: number | null, userId: number | undefined) {
 
       setError(null);
     } catch (e) {
+      if (e instanceof ApiError && (e.status === 403 || e.status === 404)) setRemoved(true);
       setError(errorText(e));
     } finally {
       busy.current = false;
@@ -94,12 +97,20 @@ export function useTable(tableId: number | null, userId: number | undefined) {
       return undefined;
     }
 
-    const beat = setInterval(() => api(`/tables/${tableId}/heartbeat`, { method: 'POST' }).catch(() => undefined), 10_000);
+    // Heartbeat: right away (so a reconnect is noticed at once), every 10 s, on app resume and when the network returns.
+    const heartbeat = () => api(`/tables/${tableId}/heartbeat`, { method: 'POST' }).catch(() => undefined);
+    heartbeat();
+    const beat = setInterval(heartbeat, 10_000);
+    const online = () => {
+      heartbeat();
+      refresh();
+    };
+    window.addEventListener('online', online);
     const poll = setInterval(refresh, live ? 30_000 : 4_000);
     let removeResume: (() => void) | undefined;
 
     import('@capacitor/app')
-      .then(({ App }) => App.addListener('resume', () => refresh()))
+      .then(({ App }) => App.addListener('resume', () => online()))
       .then((handle) => {
         removeResume = () => handle.remove();
       })
@@ -108,11 +119,12 @@ export function useTable(tableId: number | null, userId: number | undefined) {
     return () => {
       clearInterval(beat);
       clearInterval(poll);
+      window.removeEventListener('online', online);
       removeResume?.();
     };
   }, [tableId, refresh, live]);
 
-  return { table, session, error, live, refresh, clockOffset: offset.current };
+  return { table, session, error, live, refresh, removed, clockOffset: offset.current };
 }
 
 export function useSecondsLeft(deadline: string | null | undefined, offsetMs: number): number {

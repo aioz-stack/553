@@ -158,7 +158,16 @@ export interface SessionState {
     max_bet?: string;
     betting_seconds?: number | null;
     lucky_hands_enabled?: boolean;
+    /** Lobbies: the only permitted bets (5 / 10 / 15 % of the Minimum Entry, 1:1). */
+    bet_chips?: string[] | null;
+    min_entry?: string | null;
+    /** Chips a player must hold to bank (6 × the maximum bet). */
+    banker_reserve?: string | null;
   };
+  /** Clockwise seat order of the match. */
+  seat_order?: Array<{ user_id: number; seat: number }> | null;
+  /** This round's banker choice: who was checked (clockwise) and whether they held the banker reserve. */
+  banker_selection?: { reason: string; checks: Array<{ user_id: number; seat: number; eligible: boolean }> } | null;
   betting_deadline?: string | null;
   round_number?: number;
   banker_user_id?: number | null;
@@ -168,6 +177,8 @@ export interface SessionState {
   pot: string;
   players: SeatPlayer[];
   my_cards: string[] | null;
+  /** Your saved, not yet submitted arrangement (restored when you come back; submitted for you at the timer's end). */
+  my_draft?: { front: string[]; middle: string[]; back: string[] } | null;
   my_submission: { front: string[]; middle: string[]; back: string[]; lucky_type?: string | null } | null;
   arrangements: Arrangement[] | null;
   results: Result[] | null;
@@ -187,6 +198,9 @@ export interface TableState {
     min_bet?: string;
     max_bet?: string;
     lucky_hands_enabled?: boolean;
+    bet_chips?: string[] | null;
+    min_entry?: string | null;
+    banker_reserve?: string | null;
     is_hosted?: boolean;
     invite_code?: string | null;
   };

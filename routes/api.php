@@ -65,6 +65,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::get('leaderboard', [PlayerController::class, 'leaderboard']);
         Route::get('notifications', [PlayerController::class, 'notifications']);
         Route::post('notifications/read', [PlayerController::class, 'markNotificationsRead']);
+        Route::post('notifications/{id}/read', [PlayerController::class, 'markNotificationRead'])->whereUuid('id');
 
         // Own wallet
         Route::get('wallet', [WalletController::class, 'balances']);
@@ -114,6 +115,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::get('games/{session}/cards', [GameController::class, 'cards']);
             Route::post('games/{session}/submit', [GameController::class, 'submit'])->middleware('throttle:game-actions');
             Route::post('games/{session}/preview', [GameController::class, 'preview']);
+            Route::put('games/{session}/draft', [GameController::class, 'draft'])->middleware('throttle:120,1');
             Route::post('games/{session}/bet', [GameController::class, 'bet'])->middleware('throttle:game-actions');
             Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
 
