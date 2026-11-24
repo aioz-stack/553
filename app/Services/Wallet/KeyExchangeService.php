@@ -181,6 +181,8 @@ class KeyExchangeService
     public function hierarchy(User $player): array
     {
         $isAdmin = fn (?User $u) => $u && ($u->isSuperAdmin() || $u->isAdministrator());
+        // Always the hierarchy as stored right now (never relations loaded earlier on this model).
+        $player = User::query()->with(['agentLink.agent.user', 'agentLink.agent.parent.user', 'sponsor.agent'])->findOrFail($player->id);
         $agent = $player->agentLink?->agent ?? ($player->sponsor?->isAgent() ? $player->sponsor->agent : null);
 
         $master = $incorporator = $admin = null;
@@ -192,13 +194,20 @@ class KeyExchangeService
                 $incorporator = $agent->user;
             }
             $top = $incorporator ?? $master;
-            $admin = $isAdmin($top?->sponsor) ? $top->sponsor : null;
+            $admin = $this->adminAbove($top);
             $scenario = $master ? 'master' : 'incorporator';
             $upline = $master ?? $incorporator;
         } else {
             $admin = $isAdmin($player->sponsor) ? $player->sponsor : null;
             $scenario = 'admin';
             $upline = $admin;
+        }
+
+        // Every chain ends at an Admin: older accounts without a recorded sponsor or creator
+        // belong to the platform's Super Admin, so the Admin share always reaches an Admin's Chips.
+        $admin ??= $this->platformAdmin();
+        if ($scenario === 'admin') {
+            $upline ??= $admin;
         }
 
         $path = [];
@@ -209,6 +218,32 @@ class KeyExchangeService
         }
 
         return compact('scenario', 'upline', 'admin', 'incorporator', 'master', 'path');
+    }
+
+    /**
+     * The Admin (Super Admin or Administrator) above a top-level agent: its sponsor, otherwise the
+     * Admin who created the account (older accounts made before sponsors were recorded).
+     */
+    private function adminAbove(?User $agentUser): ?User
+    {
+        if ($agentUser === null) {
+            return null;
+        }
+        $isAdmin = fn (?User $u) => $u && ($u->isSuperAdmin() || $u->isAdministrator()) && $u->isActive();
+        foreach ([$agentUser->sponsor_id, $agentUser->agent?->created_by, $agentUser->created_by] as $id) {
+            $candidate = $id ? User::query()->find($id) : null;
+            if ($isAdmin($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /** The platform's Super Admin (the first active one), who owns any chain without a recorded Admin. */
+    public function platformAdmin(): ?User
+    {
+        return User::query()->where('role', \App\Enums\Role::SuperAdmin->value)->where('status', \App\Enums\UserStatus::Active->value)->orderBy('id')->first();
     }
 
     /**

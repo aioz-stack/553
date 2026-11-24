@@ -135,3 +135,54 @@ test('only players buy, never during maintenance; Keys are never turned back int
     // Every package costs exactly 5 Chips per Key, and there is no Keys → Chips package.
     expect(collect(\App\Services\Wallet\KeyExchangeService::packages())->every(fn ($p) => $p['chips'] === $p['keys'] * 5))->toBeTrue();
 });
+
+test('an Incorporator without a recorded sponsor still pays its Admin: the Admin who created it, else the Super Admin — never the platform', function () {
+    $super = superAdmin();
+    $admin = User::factory()->create(['role' => 'admin']);
+    // Older accounts: no sponsor recorded; one created by the Administrator, one by nobody known.
+    $incA = User::factory()->agent()->create(['sponsor_id' => null, 'created_by' => $admin->id]);
+    $incB = User::factory()->agent()->create(['sponsor_id' => null, 'created_by' => null]);
+    $incB->agent->forceFill(['created_by' => null])->save();
+    $pA = User::factory()->player()->create(['sponsor_id' => $incA->id]);
+    $pB = User::factory()->player()->create(['sponsor_id' => $incB->id]);
+    \App\Models\AgentPlayer::query()->create(['player_id' => $pA->id, 'agent_id' => $incA->agent->id, 'assigned_at' => now()]);
+    \App\Models\AgentPlayer::query()->create(['player_id' => $pB->id, 'agent_id' => $incB->agent->id, 'assigned_at' => now()]);
+    fund($pA, 1_000);
+    fund($pB, 1_000);
+    $adminBefore = shopChips($admin);
+    $superBefore = shopChips($super);
+
+    shopBuy($this, $pA, 'k2', 'buy-0101')->assertCreated();
+    shopBuy($this, $pB, 'k2', 'buy-0102')->assertCreated();
+
+    expect(shopChips($admin) - $adminBefore)->toBe(400)           // 40% of 10 Chips, to the Administrator who created incA
+        ->and(shopChips($super) - $superBefore)->toBe(400)        // incB has no Admin on record: the Super Admin
+        ->and(KeyExchangeShare::query()->where('role', 'platform')->count())->toBe(0)
+        ->and(KeyExchange::query()->where('user_id', $pB->id)->first()->hierarchy)->toContain(['role' => 'admin', 'user_id' => $super->id, 'username' => $super->username]);
+});
+
+test('pusoy:assign-admin puts an Incorporator under an Admin; its players then pay that Admin, and past shares can be moved', function () {
+    $super = superAdmin();
+    $admin = User::factory()->create(['role' => 'admin', 'username' => 'opsadmin']);
+    $inc = User::factory()->agent()->create(['sponsor_id' => null, 'created_by' => $super->id, 'username' => 'oldinc']);
+    $p = User::factory()->player()->create(['sponsor_id' => $inc->id]);
+    \App\Models\AgentPlayer::query()->create(['player_id' => $p->id, 'agent_id' => $inc->agent->id, 'assigned_at' => now()]);
+    fund($p, 2_000);
+
+    shopBuy($this, $p, 'k2', 'buy-0201')->assertCreated(); // before: the Super Admin gets the 40%
+    $superBefore = shopChips($super);
+    $adminBefore = shopChips($admin);
+
+    $this->artisan('pusoy:assign-admin', ['incorporator' => 'oldinc', 'admin' => 'opsadmin', '--move-shop-shares' => true])->assertSuccessful();
+    $this->artisan('pusoy:assign-admin', ['incorporator' => 'oldinc', 'admin' => 'opsadmin', '--move-shop-shares' => true])->assertSuccessful(); // re-run: nothing twice
+
+    expect($inc->fresh()->sponsor_id)->toBe($admin->id)
+        ->and(shopChips($admin) - $adminBefore)->toBe(400)->and($superBefore - shopChips($super))->toBe(400)
+        ->and(KeyExchangeShare::query()->where('role', 'admin')->value('recipient_user_id'))->toBe($admin->id);
+
+    shopBuy($this, $p, 'k2', 'buy-0202')->assertCreated(); // after: straight to the Administrator
+    expect(shopChips($admin) - $adminBefore)->toBe(800)
+        ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
+
+    $this->artisan('pusoy:assign-admin', ['incorporator' => 'opsadmin', 'admin' => 'oldinc'])->assertFailed();
+});

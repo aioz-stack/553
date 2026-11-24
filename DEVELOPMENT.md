@@ -1367,7 +1367,10 @@ This replaces the earlier Keys → Gold / Keys → Chips direction (the sections
 
   - "Admin" is the Super Admin or Administrator who sponsors the Incorporator (or the player, when the player sits
     directly under an Admin).
-  - A missing recipient's share goes to the Admin; with no Admin, to the platform's Chips wallet.
+  - **Finding the Admin:** the Incorporator's sponsor; otherwise the Admin who created the Incorporator
+    (\`agents.created_by\` / \`users.created_by\`, for older accounts without a recorded sponsor); otherwise the platform's
+    Super Admin (first active). So the Admin share always reaches an Admin's Chips wallet, never the platform wallet.
+    A missing Incorporator's share goes to the Admin.
   - Any rounding remainder goes to the first recipient, so the shares always equal the Chips paid.
   - Shares go into each recipient's **Chips wallet** (the Allocation / "My Chips" wallet staff and agents load from),
     never a Keys wallet.
@@ -1393,3 +1396,27 @@ This replaces the earlier Keys → Gold / Keys → Chips direction (the sections
   - The notice says Chips spent are non-refundable and Keys can't go back into Chips.
 - Tests: `tests/Feature/ShopKeyExchangeTest.php` (all three scenarios, refusals, double clicks, maintenance,
   reconciliation), `mobile/src/components/lobby/ShopModal.test.tsx`.
+
+### Fix: Admin shares that went to the platform wallet
+
+Older Incorporators (e.g. `agent`, `agent2`) had no recorded sponsor, so the first version paid the Admin's 40%
+into the platform's Chips wallet. Migration `2026_11_25_180000_move_platform_shop_shares_to_admin` moves every such
+share to the right Admin's Chips wallet with a new `KEY_EXCHANGE` ledger entry (the original is kept). It also
+re-points the share row, adds the Admin to the exchange's hierarchy snapshot and audits `shop.share_moved_to_admin`.
+Locally, 4 shares (12 Chips) moved to `superadmin`.
+
+### Choosing an Incorporator's Admin: `pusoy:assign-admin`
+
+```
+php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
+```
+
+- Makes the Admin (Super Admin or Administrator) the Incorporator's sponsor (audited `agent.admin_assigned`). From
+  then on its players' Shop purchases pay the Admin share to that Admin.
+- `--move-shop-shares` also moves Admin shares already paid for that Incorporator's players to a different Admin.
+  Each move is a new `KEY_EXCHANGE` ledger entry from the old Admin's Chips to the new Admin's (the original is
+  kept). The share row and hierarchy snapshot are updated and audited (`shop.share_moved_to_admin`).
+  - Re-running moves nothing twice.
+  - A share is skipped with a warning if the old Admin no longer has those Chips.
+- Locally: `agent` and `agent2` were put under the Administrator `admin`. 5 shares (16 Chips) moved from
+  `superadmin` to `admin`.
