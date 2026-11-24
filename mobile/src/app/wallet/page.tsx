@@ -14,7 +14,7 @@ import { useGoldWallet } from '@/lib/useGoldWallet';
 const INFO: Record<Currency, { name: string; note: string; bg: string; order: number }> = {
   GD: { name: 'Gold', note: 'Single Player only · won and lost automatically', bg: 'from-gold-400 via-gold-600 to-night-800', order: 0 },
   CH: { name: 'Chips', note: 'Multiplayer only · rooms, lobbies and Banker Mode', bg: 'from-[#e0262f] via-[#8a0a10] to-night-800', order: 1 },
-  KY: { name: 'Keys', note: 'Loaded by Pusoy553 · never cash, never exchanged', bg: 'from-[#9b3df0] via-[#4a0f9a] to-night-800', order: 2 },
+  KY: { name: 'Keys', note: 'Loaded by Pusoy553 · never cash · exchange for Gold in the Shop', bg: 'from-[#9b3df0] via-[#4a0f9a] to-night-800', order: 2 },
 };
 
 export default function WalletScreen() {

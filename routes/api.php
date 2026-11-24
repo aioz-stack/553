@@ -69,6 +69,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
 
         // Own wallet
         Route::get('wallet', [WalletController::class, 'balances']);
+        // Shop: Keys → Gold exchange (players; server-validated, idempotent, final).
+        Route::get('shop', [\App\Http\Controllers\Api\V1\ShopController::class, 'index']);
+        Route::post('shop/key-exchanges', [\App\Http\Controllers\Api\V1\ShopController::class, 'exchange'])->middleware('throttle:wallet-actions');
         Route::get('wallet/transactions', [WalletController::class, 'transactions']);
 
         // Convert Commission to Wallet + Team Overview (Administrators and every agent level).

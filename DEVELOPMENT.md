@@ -1282,3 +1282,32 @@ Not done / not verified:
 - The server side is unchanged: notifications are still stored and broadcast (`GET /notifications`,
   `POST /notifications/{id}/read`, `POST /notifications/read`, `RemovedFromLobby`, `RemovedFromMatch`,
   `ChipsWithdrawn`…), private lobbies still accept an invited player, and the `/notifications` screen still exists.
+
+## Shop — Keys → Gold exchange (Main Lobby pop-up)
+
+- **Shop button → pop-up** (`mobile/src/components/lobby/ShopModal.tsx`):
+  - Centered, 80% × 80% of the screen over a dark overlay, with Close (X).
+  - Every size uses container units of the pop-up, so it scales on any screen without clipping.
+  - Shows the Keys tab, your recent exchanges, four package cards (golden keys → Gold), your Keys balance (+ opens
+    Get Keys) and the IMPORTANT NOTICE (non-refundable, no Gold → Keys, final, confirm before completing).
+- **Packages** (`config('pusoy.shop.key_packages')`): 1 Key → 5 Gold, 2 → 10, 5 → 25, 10 → 50.
+- **Exchanging:**
+  - Too few Keys → a warning and no request.
+  - Otherwise a confirmation with a required acknowledgement checkbox.
+  - On confirm: one `POST /api/v1/shop/key-exchanges {package, idempotency_key, confirmed: true}`. A double tap
+    reuses the same key. The buttons are disabled while it runs.
+  - Success / failure / network messages are shown. The new balances come from the server, and `pusoy:wallet` plus
+    `wallet.updated` keep the lobby wallets in step.
+- **Server** (`App\Services\Wallet\KeyExchangeService`), all in one DB transaction:
+  - It locks the player and the Keys wallet and re-checks the Keys balance.
+  - It moves Keys out of the Keys wallet and Gold into the Gold wallet: two ledger rows, `KEY_EXCHANGE`, with
+    deterministic idempotency keys.
+  - It writes `key_exchanges` (player, package, Keys, Gold, both transactions, status, time) and an audit entry
+    `shop.key_exchange`.
+  - Any failure rolls everything back. The same idempotency key returns the first result (200) and never deducts
+    twice.
+- **Refusals:** too few Keys is refused (422 `insufficient_keys`) and logged as a `rejected` row with nothing moved.
+  Players only, and blocked during Agents/Players or Full maintenance.
+- **Policy:** there is no refund and no Gold → Keys path. Gold received this way is ordinary Single Player Gold.
+- Migration `2026_11_25_140000_create_key_exchanges_table`.
+- Tests: `tests/Feature/ShopKeyExchangeTest.php`, `mobile/src/components/lobby/ShopModal.test.tsx`.

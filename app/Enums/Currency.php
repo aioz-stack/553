@@ -9,7 +9,8 @@ namespace App\Enums;
  *  - CH — Chips: Multiplayer only (rooms, lobbies, entry, winnings, losses, platform
  *    fees, agent allocations and commissions).
  *  - KY — Keys: a player wallet of its own (Main Lobby). Loaded by a Super Admin through the
- *    audited wallet adjustment; never allocated, paid as commission, bet or exchanged.
+ *    audited wallet adjustment; never allocated, paid as commission or bet. The only way out is
+ *    the Shop's one-way Keys → Gold exchange (KeyExchangeService; final, never Gold → Keys).
  *
  * None is cash: nothing can be deposited, withdrawn, redeemed or exchanged for money, and
  * they can never be mixed, transferred or used for each other (LedgerService

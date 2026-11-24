@@ -75,7 +75,7 @@ export function GetKeysPanel({ keys, agentName, onClose, onWallet }: { keys?: nu
         </span>
       </div>
       <p className="mt-3 text-[15px] leading-snug text-white/85">
-        Keys are loaded onto your account by the Pusoy553 team. Every Key added or removed is recorded in your wallet history. Keys can&apos;t be bought with cash, cashed out or exchanged for Gold or Chips.
+        Keys are loaded onto your account by the Pusoy553 team. Every Key added or removed is recorded in your wallet history. Keys can&apos;t be bought with cash or cashed out. In the Shop you can exchange Keys for Gold (final — Gold can&apos;t be turned back into Keys).
       </p>
       <p className="mt-2 text-[15px] font-bold text-[#ffe14d]">{agentName ? `To get Keys, contact your agent ${agentName}.` : 'To get Keys, contact your agent or the Pusoy553 team.'}</p>
 
@@ -107,31 +107,6 @@ export function GetKeysPanel({ keys, agentName, onClose, onWallet }: { keys?: nu
       >
         Open wallet history
       </button>
-    </Panel>
-  );
-}
-
-/** Shop: not open yet — says so plainly (nothing can be bought). */
-export function ShopPanel({ onClose }: { onClose: () => void }) {
-  return (
-    <Panel label="Shop" onClose={onClose} tone="from-[#1d8a4a] via-[#0f5a2e] to-[#052a14]" title="Shop">
-      <div className="py-6 text-center">
-        <p className="text-[56px]" aria-hidden="true">
-          🛍️
-        </p>
-        <p className="font-display text-[28px] font-black text-[#ffe14d]">Coming soon!</p>
-        <p className="mx-auto mt-2 max-w-[440px] text-[15px] leading-snug text-white/85">The Pusoy553 Shop is being prepared. Nothing can be bought yet, and nothing is charged to your Gold, Chips or Keys.</p>
-        <button
-          type="button"
-          onClick={() => {
-            play('tap');
-            onClose();
-          }}
-          className="lx-tile mt-5 h-12 min-w-[180px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] to-[#e08a00] px-6 font-display text-[20px] font-black text-[#4a1d00] shadow-[0_5px_0_#8a4a00]"
-        >
-          OK
-        </button>
-      </div>
     </Panel>
   );
 }

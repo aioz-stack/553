@@ -73,6 +73,19 @@ return [
     | Multiplayer lobbies (Choose Your Seat): a player who has been gone this long loses their
     | seat before the match starts (never during the countdown).
     */
+    /*
+    | Shop: Keys → Gold exchange packages (whole Keys → whole Gold). Final and non-refundable; Gold can
+    | never be turned back into Keys. Keyed by package id.
+    */
+    'shop' => [
+        'key_packages' => [
+            'k1' => ['keys' => 1, 'gold' => 5],
+            'k2' => ['keys' => 2, 'gold' => 10],
+            'k5' => ['keys' => 5, 'gold' => 25],
+            'k10' => ['keys' => 10, 'gold' => 50],
+        ],
+    ],
+
     'lobby' => [
         'seat_release_seconds' => (int) env('LOBBY_SEAT_RELEASE_SECONDS', 60),
         // Betting chips of a lobby, as percentages of its Minimum Entry, 1:1 (no multiplier):

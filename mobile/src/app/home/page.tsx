@@ -10,7 +10,8 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
 import WalletStack from '@/components/lobby/WalletStack';
-import { GetKeysPanel, ShopPanel } from '@/components/lobby/LobbyPanels';
+import { GetKeysPanel } from '@/components/lobby/LobbyPanels';
+import ShopModal from '@/components/lobby/ShopModal';
 import { Avatar } from '@/components/game';
 import { CandyText, CrownArt, ExitArt, GearArt, LogoCrest, RoundBankArt } from '@/components/HomeArt';
 import LandscapeStage, { useToStage } from '@/components/LandscapeStage';
@@ -185,6 +186,8 @@ export default function Home() {
   const [picker, setPicker] = useState(false);
   const [settings, setSettings] = useState(false);
   const [panel, setPanel] = useState<'keys' | 'shop' | null>(null);
+  // Get Keys can also be opened from inside the Shop (its Keys "+"); the Shop stays open underneath.
+  const [keysOverShop, setKeysOverShop] = useState(false);
   const [avatarPicker, setAvatarPicker] = useState(false);
   const chipCount = useCountUp(chips !== undefined ? Math.floor(Number(chips)) : undefined);
   const keyCount = useCountUp(keys !== undefined ? Math.floor(Number(keys)) : undefined);
@@ -335,7 +338,15 @@ export default function Home() {
             onWallet={() => router.push('/wallet/')}
           />
         )}
-        {panel === 'shop' && <ShopPanel onClose={() => setPanel(null)} />}
+        {panel === 'shop' && <ShopModal onClose={() => setPanel(null)} onGetKeys={() => setKeysOverShop(true)} />}
+        {keysOverShop && (
+          <GetKeysPanel
+            keys={keyCount}
+            agentName={(user as { owning_agent?: { name?: string | null } | null } | null)?.owning_agent?.name ?? null}
+            onClose={() => setKeysOverShop(false)}
+            onWallet={() => router.push('/wallet/')}
+          />
+        )}
         {avatarPicker && <AvatarPicker onClose={() => setAvatarPicker(false)} />}
         {/* Change avatar / nickname: the pencil badge on your portrait (the only clickable part of the profile). */}
         <button

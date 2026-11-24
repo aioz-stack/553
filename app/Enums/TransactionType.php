@@ -28,5 +28,7 @@ enum TransactionType: string
     case OutOfGoldReward = 'OUT_OF_GOLD_REWARD';
     /** History only: Gold Points converted into Gold before Gold Points were retired. */
     case GoldConversion = 'GOLD_CONVERSION';
+    /** Shop: Keys exchanged for Gold (Keys out of the Keys wallet, Gold into the Gold wallet; final). */
+    case KeyExchange = 'KEY_EXCHANGE';
     case Reversal = 'REVERSAL';
 }
