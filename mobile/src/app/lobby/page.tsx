@@ -9,7 +9,6 @@ import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
 import { CandyButton, EyeButton, ChipMark, Lock, Modal, People, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
 import AvatarPicker from '@/components/AvatarPicker';
-import NotificationsPanel, { type NotificationAction } from '@/components/NotificationsPanel';
 import SettingsPanel from '@/components/SettingsPanel';
 import { LanternRoom } from '@/components/table/TableArt';
 import { Avatar } from '@/components/game';
@@ -21,7 +20,6 @@ import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import { useBalance } from '@/lib/useBalance';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
-import { useUnreadNotifications } from '@/lib/useUnreadNotifications';
 import { useResumeMatch } from '@/lib/useResumeMatch';
 
 /**
@@ -152,7 +150,7 @@ export default function MultiplayerLobby() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-  const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | 'avatar' | 'notifications' | null>(null);
+  const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | 'avatar' | null>(null);
   const [pwFor, setPwFor] = useState<LobbySummary | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -182,8 +180,6 @@ export default function MultiplayerLobby() {
   }, [load]);
   useLobbyUpdates(load, !!user);
 
-  // Bell badge: unread notifications, live over the private user channel.
-  const { unread, setUnread, reload: reloadUnread } = useUnreadNotifications(user?.id);
 
   // Search: apply after a short pause; changing the tab or the search resets to page 1.
   useEffect(() => {
@@ -248,52 +244,6 @@ export default function MultiplayerLobby() {
     }
   };
 
-  /**
-   * Tapping a lobby invitation: join that lobby directly (the server lets an invited player into a
-   * private lobby without its password) and go to Choose Your Seat; the server's message otherwise.
-   */
-  const joinInvited = useCallback(
-    async (roomId: number) => {
-      if (busy) return;
-      setBusy(true);
-      try {
-        const r = await api<{ data: LobbyDetail }>(`/lobbies/${roomId}/join`, { method: 'POST', body: {} });
-        play('chip');
-        window.dispatchEvent(new Event('pusoy:wallet'));
-        setLeaving(true);
-        setTimeout(() => router.push(roomUrl(r.data.id)), 380);
-      } catch (e) {
-        play('lose');
-        say(false, errorText(e));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [busy, router, say],
-  );
-
-  const onNotification = (a: NotificationAction) => {
-    if (a.kind === 'lobby') {
-      setPanel(null);
-      void joinInvited(a.roomId);
-    } else if (a.kind === 'friends') {
-      setPanel('friends');
-    } else {
-      setPanel(null);
-      router.push('/wallet/');
-    }
-  };
-
-  // Coming from the Main Lobby's notification pop-up: /lobby/?join=ID joins that invitation.
-  useEffect(() => {
-    if (!user) return;
-    const id = Number(new URLSearchParams(window.location.search).get('join'));
-    if (!id) return;
-    window.history.replaceState(null, '', '/lobby/');
-    void joinInvited(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
   const counts = list?.meta.counts ?? { all: 0, public: 0, private: 0 };
   const pages = list?.meta.pages ?? 1;
   const rows = list?.data ?? [];
@@ -338,22 +288,6 @@ export default function MultiplayerLobby() {
         </div>
 
         <div className="absolute right-[24px] top-[14px] z-10 flex gap-4">
-          <TopIcon
-            label={unread > 0 ? `Notifications — ${unread} unread` : 'Notifications'}
-            onClick={() => {
-              play('tap');
-              setPanel('notifications');
-            }}
-            badge={unread}
-          >
-            {/* Bell (notifications) — replaces the old message envelope; swings while there are unread ones. */}
-            <svg viewBox="0 0 40 40" className={`h-[50px] w-[50px] ${unread > 0 ? 'lx-ring' : ''}`} aria-hidden="true">
-              <path d="M20 5 C13 5 10 10.5 10 16.5 V23 L6.5 28.5 H33.5 L30 23 V16.5 C30 10.5 27 5 20 5Z" fill="#ffd34d" stroke="#8a4a00" strokeWidth="1.6" strokeLinejoin="round" />
-              <path d="M13.5 12.5 C14.5 9.5 16.5 8 19 7.6" fill="none" stroke="#fff6c8" strokeWidth="2" strokeLinecap="round" />
-              <circle cx="20" cy="4.6" r="2.2" fill="#ffd34d" stroke="#8a4a00" strokeWidth="1.2" />
-              <path d="M15.5 30.5 A4.6 4.6 0 0 0 24.5 30.5Z" fill="#e0a000" stroke="#8a4a00" strokeWidth="1.4" />
-            </svg>
-          </TopIcon>
           <TopIcon label={soundOn ? 'Sound on — tap to turn off' : 'Sound off — tap to turn on'} onClick={() => savePrefs({ sfx: !soundOn })}>
             <svg viewBox="0 0 40 40" className="h-[46px] w-[46px]" aria-hidden="true">
               <path d="M5 15 H12 L22 6 V34 L12 25 H5Z" fill="#ffd34d" />
@@ -583,16 +517,6 @@ export default function MultiplayerLobby() {
         {panel === 'create' && <CreateLobbyModal balance={balance} onClose={() => setPanel(null)} onCreated={enter} />}
         {panel === 'settings' && <SettingsPanel onClose={() => setPanel(null)} />}
         {panel === 'avatar' && <AvatarPicker onClose={() => setPanel(null)} />}
-        {panel === 'notifications' && (
-          <NotificationsPanel
-            onUnread={setUnread}
-            onAction={onNotification}
-            onClose={() => {
-              setPanel(null);
-              reloadUnread();
-            }}
-          />
-        )}
         {panel === 'friends' && (
           <Modal title="Friends" onClose={() => setPanel(null)} width={620}>
             <div className="h-[560px]">

@@ -1164,7 +1164,7 @@ Not done / not verified:
 
 - The Multiplayer Lobby's message envelope is now a **bell** (`app/lobby/page.tsx`). It shows a red unread badge and
   rings while there are unread notifications. Tapping it opens `components/NotificationsPanel.tsx` inside the lobby.
-  The Main Lobby (Home) bell opens the same pop-up.
+  (Both lobby bells were later removed — see "Notification bells removed" below.)
 - **Content** (all from `GET /api/v1/notifications`, newest first, last 50):
   - pinned **Maintenance** announcement while maintenance is on (`meta.maintenance`: label, message — Admin Settings
     `maintenance_message` or a default — and game / transaction flags);
@@ -1270,7 +1270,15 @@ Not done / not verified:
   - Player wallets are created on demand (`WalletService::provision`), so existing players get one automatically.
   - Test: `tests/Feature/KeysWalletTest.php`.
 - **Layout (1600×900 stage):**
-  - The bell sits beside the wallets. Single Player and Multiplayer keep their full 520×350 size, moved 6px lower to
+  - No notification bell on the Main Lobby (removed). Single Player and Multiplayer keep their full 520×350 size, moved 6px lower to
     clear the wallets.
   - The bottom row is Shop, Settings and Logout. Sound moved into Settings, which already has the Sound Effects switch.
   - Shop opens a "Coming soon" panel; nothing can be bought.
+
+## Notification bells removed (Main Lobby and Multiplayer Lobby)
+
+- Neither lobby shows a notification bell any more. The pop-up (`NotificationsPanel.tsx`) and its unread hook
+  (`useUnreadNotifications.ts`) were removed with them, and so was the `/lobby/?join=ID` hand-off they used.
+- The server side is unchanged: notifications are still stored and broadcast (`GET /notifications`,
+  `POST /notifications/{id}/read`, `POST /notifications/read`, `RemovedFromLobby`, `RemovedFromMatch`,
+  `ChipsWithdrawn`…), private lobbies still accept an invited player, and the `/notifications` screen still exists.
