@@ -19,8 +19,9 @@ use App\Models\User;
  *   Silver Agent                        → creates Players only
  *   Player                              → creates nothing
  *
- * Platform staff (Super Admins and Administrators) are created only by a Super Admin; that is
- * platform administration, outside the agent hierarchy.
+ * Platform staff (Super Admins and Administrators) are created only by a Super Admin; Loader
+ * Accounts (employees) by a Super Admin or an Administrator. That is platform administration,
+ * outside the agent hierarchy.
  */
 final class Hierarchy
 {
@@ -66,6 +67,7 @@ final class Hierarchy
                 ? 'Silver Agents can create players only.'
                 : 'You are not allowed to create agent accounts.'),
             Role::Administrator, Role::SuperAdmin => $creator->isSuperAdmin() ? null : throw $deny('Only a Super Admin can create administrator accounts.'),
+            Role::Loader => $creator->isActive() && ($creator->isSuperAdmin() || $creator->isAdministrator()) ? null : throw $deny('Only Admins can create Loader Accounts.'),
         };
     }
 

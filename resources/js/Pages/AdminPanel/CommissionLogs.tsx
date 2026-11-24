@@ -89,7 +89,7 @@ export default function CommissionLogs() {
       <Panel title="Commission Rates" icon={<I.percent className="h-6 w-6" />}>
         <div className="space-y-3 px-5 py-4">
           <p className="text-sm text-[#5b5274] dark:text-white/65">
-            Percent of the platform fee collected from each player's game. The player's direct sponsor earns its rate; each upline level earns the difference up to its own rate (for example under a Silver Agent: Silver 30%, Master 40−30 = 10%, Agent 50−40 = 10%). {panel.isAgent ? 'Rates are set by the Administrator.' : 'Individual agents can be given their own rate from the Agents page.'}
+            Percent of the platform fee collected from each player's game. The player's direct sponsor earns its rate; each upline level earns the difference up to its own rate (for example under a Silver Agent: Silver 30%, Master 40−30 = 10%, Agent 50−40 = 10%). {panel.isAgent || panel.isLoader ? 'Rates are set by the Administrator.' : 'Individual agents can be given their own rate from the Agents page.'}
           </p>
           <div className="flex flex-wrap items-end gap-3">
             {LEVELS.map(([l, label]) => (

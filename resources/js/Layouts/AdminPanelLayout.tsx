@@ -69,15 +69,28 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
   const allowed = (item: NavItem) => (item.superOnly ? isSuper : !item.ability || isSuper || abilities.has(item.ability));
 
   const b = panel.base;
-  const main: NavItem[] = [
+  // Loader Accounts: only their three modules, each only with its permission.
+  const loaderMain: NavItem[] = [
+    { label: 'Overview', href: '/loader', icon: <I.home className="h-5 w-5" /> },
+    ...(panel.loaderCan('loader_loads') ? [{ label: 'Load Transactions', href: '/loader/load-logs', icon: <I.logs className="h-5 w-5" /> }] : []),
+    ...(panel.loaderCan('loader_commissions')
+      ? [
+          { label: 'Commission Logs', href: '/loader/commission-logs', icon: <I.coins className="h-5 w-5" /> },
+          { label: 'Commission Withdrawal', href: '/loader/commission-withdrawals', icon: <I.wallet className="h-5 w-5" /> },
+        ]
+      : []),
+    ...(panel.loaderCan('loader_passwords') ? [{ label: 'Reset Password', href: '/loader/reset-password', icon: <I.shield className="h-5 w-5" /> }] : []),
+  ];
+  const main: NavItem[] = panel.isLoader ? loaderMain : [
     { label: 'Overview', href: b, icon: <I.home className="h-5 w-5" /> },
     { label: 'Load Logs', href: `${b}/load-logs`, icon: <I.logs className="h-5 w-5" /> },
     { label: 'Commission Logs', href: `${b}/commission-logs`, icon: <I.coins className="h-5 w-5" /> },
     { label: 'Commission Withdrawal', href: `${b}/commission-withdrawals`, icon: <I.wallet className="h-5 w-5" /> },
     ...(panel.isAgent ? [] : [{ label: 'Maintenance', href: '/admin/maintenance', icon: <I.shield className="h-5 w-5" /> }]),
+    ...(panel.isAgent ? [] : [{ label: 'Users / Employees', href: '/admin/employees', icon: <I.user className="h-5 w-5" /> }]),
   ];
   // Agents see only their own downline; Silver Agents recruit no agents, so they have no Agents list.
-  const people: NavItem[] = [
+  const people: NavItem[] = panel.isLoader ? [] : [
     ...(panel.level === 'silver' ? [] : [{ label: panel.isAgent ? 'My Agents' : 'Agents', href: `${b}/accounts/agents`, icon: <I.user className="h-[18px] w-[18px]" /> }]),
     { label: panel.isAgent ? 'My Players' : 'Active Players', href: `${b}/accounts/active-players`, icon: <I.users className="h-[18px] w-[18px]" /> },
     { label: 'Pending Users', href: `${b}/accounts/pending-users`, icon: <I.clock className="h-[18px] w-[18px]" />, badge: counts.data?.data.pending_users },
@@ -85,7 +98,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
   ];
   // The Platform panel is the Administrators' only: agents have no Platform group (the pages
   // and their API refuse agents on the server too).
-  const platform: NavItem[] = panel.isAgent ? [] : [
+  const platform: NavItem[] = panel.isAgent || panel.isLoader ? [] : [
     { label: 'Game Rooms', href: '/admin/rooms', icon: <I.grid className="h-[18px] w-[18px]" />, ability: 'manage_rooms' },
     { label: 'Active Tables', href: '/admin/tables', icon: <I.grid className="h-[18px] w-[18px]" />, ability: 'manage_games' },
     { label: 'Game Sessions', href: '/admin/sessions', icon: <I.logs className="h-[18px] w-[18px]" />, ability: 'manage_games' },
@@ -159,10 +172,10 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
           <div className="my-3 border-t border-white/10" />
           {group('Agents / Players', <I.users className="h-5 w-5" />, peopleOpen, setPeopleOpen, people)}
           <div className="my-3 border-t border-white/10" />
-          {!panel.isAgent && item({ label: 'Archive', href: '/admin/accounts/archive', icon: <I.archive className="h-5 w-5" /> })}
+          {!panel.isAgent && !panel.isLoader && item({ label: 'Archive', href: '/admin/accounts/archive', icon: <I.archive className="h-5 w-5" /> })}
           {group('Platform', <I.grid className="h-5 w-5" />, platformOpen, setPlatformOpen, platform)}
           <div className="my-3 border-t border-white/10" />
-          {!panel.isAgent && item({ label: 'Reset Password', href: '/admin/reset-password', icon: <I.shield className="h-5 w-5" /> })}
+          {!panel.isAgent && !panel.isLoader && item({ label: 'Reset Password', href: '/admin/reset-password', icon: <I.shield className="h-5 w-5" /> })}
           {item({ label: 'Change Password', href: `${b}/change-password`, icon: <I.lock className="h-5 w-5" /> })}
           <button type="button" onClick={() => router.post('/logout')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-base font-semibold text-white/80 transition hover:bg-rose-500/15 hover:text-white">
             <I.power className="h-5 w-5 text-white/70" /> Logout
@@ -206,7 +219,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
           </div>
         </header>
         <main className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8">
-          <MaintenanceBanner isAgent={panel.isAgent} />
+          <MaintenanceBanner isAgent={panel.isAgent} isLoader={panel.isLoader} />
           {children}
         </main>
       </div>
@@ -216,7 +229,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
 }
 
 /** Live notice while a maintenance mode is on (Admins see every mode; agents see what affects them). */
-function MaintenanceBanner({ isAgent }: { isAgent: boolean }) {
+function MaintenanceBanner({ isAgent, isLoader }: { isAgent: boolean; isLoader: boolean }) {
   const m = useMaintenance();
   if (m.mode === 'off' || (isAgent && !m.transactions_blocked)) return null;
 
@@ -230,7 +243,7 @@ function MaintenanceBanner({ isAgent }: { isAgent: boolean }) {
           : m.transactions_blocked
             ? `Agent and player transactions are disabled${m.game_blocked ? ' and the mobile game is closed' : ''}.`
             : 'The mobile game is closed; all transactions keep working.'}
-        {!isAgent && (
+        {!isAgent && !isLoader && (
           <>
             {' '}
             <Link href="/admin/maintenance" className="font-bold underline">

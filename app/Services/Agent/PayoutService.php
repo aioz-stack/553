@@ -146,7 +146,10 @@ class PayoutService
 
     private function assertReviewer(User $actor, Agent $agent): void
     {
-        if ((! $actor->isSuperAdmin() && ! $actor->hasAbility(Ability::ManageCommissions)) || $agent->user_id === $actor->id) {
+        // Admins with manage_commissions, and Loader Accounts with the Commission Transactions permission.
+        $allowed = $actor->isSuperAdmin() || $actor->hasAbility(Ability::ManageCommissions) || $actor->hasLoaderPermission(\App\Enums\LoaderPermission::Commissions);
+
+        if (! $allowed || $agent->user_id === $actor->id) {
             throw new BusinessRuleException('You are not allowed to review this withdrawal.', 403, 'forbidden');
         }
     }

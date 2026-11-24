@@ -110,8 +110,8 @@ test('direct account creation follows the same rule for every creator', function
     };
 
     $allowed = [
-        'super' => [Role::SuperAdmin, Role::Administrator, Role::Agent],
-        'admin' => [Role::Agent],
+        'super' => [Role::SuperAdmin, Role::Administrator, Role::Loader, Role::Agent],
+        'admin' => [Role::Loader, Role::Agent], // Loader Accounts: employees of Admins
         'agent' => [Role::Agent, Role::Player],
         'master' => [Role::Agent, Role::Player],
         'silver' => [Role::Player],

@@ -7,12 +7,16 @@ export type PanelLevel = 'agent' | 'master' | 'silver';
 export interface PanelInfo {
   /** Agents, Master Agents and Silver Agents use the Agent Panel; staff the Admin Panel. */
   isAgent: boolean;
+  /** Loader Accounts (employees) use the Loader Panel. */
+  isLoader: boolean;
+  /** The Loader's own permissions (loader_loads, loader_commissions, loader_passwords). */
+  loaderCan: (permission: 'loader_loads' | 'loader_commissions' | 'loader_passwords') => boolean;
   level: PanelLevel | null;
-  /** Web base path: /admin or /agent. */
-  base: '/admin' | '/agent';
-  /** API base: /admin/panel or /agent/panel (the agent one is limited to its own downline). */
-  api: '/admin/panel' | '/agent/panel';
-  /** "Admin Panel", "Agent Panel", "Master Agent Panel", "Silver Agent Panel". */
+  /** Web base path: /admin, /agent or /loader. */
+  base: '/admin' | '/agent' | '/loader';
+  /** API base (the agent one is limited to its own downline; the loader one to its three modules). */
+  api: '/admin/panel' | '/agent/panel' | '/loader/panel';
+  /** "Admin Panel", "Agent Panel", "Master Agent Panel", "Silver Agent Panel", "Loader Panel". */
   name: string;
 }
 
@@ -25,9 +29,16 @@ export function usePanel(): PanelInfo {
   const isAgent = user?.role === 'agent';
   const level = isAgent && (user?.account_type === 'master' || user?.account_type === 'silver') ? (user.account_type as PanelLevel) : isAgent ? 'agent' : null;
 
+  const abilities = new Set(user?.abilities ?? []);
+  const loaderCan = (p: string) => user?.role === 'loader' && abilities.has(p);
+
+  if (user?.role === 'loader') {
+    return { isAgent: false, isLoader: true, loaderCan, level: null, base: '/loader', api: '/loader/panel', name: 'Loader Panel' };
+  }
+
   return isAgent
-    ? { isAgent, level, base: '/agent', api: '/agent/panel', name: NAMES[level ?? 'agent'] }
-    : { isAgent: false, level: null, base: '/admin', api: '/admin/panel', name: 'Admin Panel' };
+    ? { isAgent, isLoader: false, loaderCan, level, base: '/agent', api: '/agent/panel', name: NAMES[level ?? 'agent'] }
+    : { isAgent: false, isLoader: false, loaderCan, level: null, base: '/admin', api: '/admin/panel', name: 'Admin Panel' };
 }
 
 /** Fired by the panel layout when Reverb says something on the panel changed (or the tab regains focus). */

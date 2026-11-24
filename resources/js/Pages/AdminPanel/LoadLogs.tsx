@@ -7,7 +7,7 @@ import { useApi } from '../../lib/useApi';
 import { TX_LOCKED_HINT, useMaintenance } from '../../lib/maintenance';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import { when } from '../../Components/AdminPanel/kit';
-import type { LoadLog, PageMeta } from './types';
+import type { Account, LoadLog, PageMeta } from './types';
 
 type Status = '' | 'completed' | 'pending' | 'rejected';
 
@@ -28,6 +28,8 @@ export default function LoadLogs() {
   const { data, loading, reload } = useApi<{ data: LoadLog[]; meta: PageMeta & { counts: Record<'completed' | 'pending' | 'rejected', number> } }>(`${panel.api}/load-logs`, params);
   usePanelRefresh(reload);
   const [request, setRequest] = useState<AmountAction | null>(null);
+  // Loader Accounts: "Load Chips" picks an agent or player, then the usual amount → confirm dialog.
+  const [picking, setPicking] = useState(false);
   const [detail, setDetail] = useState<{ title: string; rows: Array<[string, React.ReactNode]> } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
@@ -109,12 +111,17 @@ export default function LoadLogs() {
   ];
 
   return (
-    <AdminPanelLayout title="Load Logs" subtitle={panel.isAgent ? 'Your Chips loads and requests, and your downline’s' : 'Every Chips load, withdrawal and request'}>
+    <AdminPanelLayout title={panel.isLoader ? 'Load Transactions' : 'Load Logs'} subtitle={panel.isAgent ? 'Your Chips loads and requests, and your downline’s' : panel.isLoader ? 'Every Chips load and request on the platform; loads use your employer Admin’s Chips' : 'Every Chips load, withdrawal and request'}>
       <Panel
         title="Chips Transactions"
         icon={<I.logs className="h-6 w-6" />}
         actions={
           <>
+          {panel.isLoader && (
+            <Btn variant="success" size="sm" disabled={txLocked} title={txLocked ? TX_LOCKED_HINT : undefined} onClick={() => setPicking(true)}>
+              <I.plus className="h-4 w-4" /> Load Chips
+            </Btn>
+          )}
           {panel.isAgent && (
             <Btn variant="gold" size="sm" disabled={txLocked} title={txLocked ? TX_LOCKED_HINT : undefined} onClick={() => setRequest({ title: 'Request Chips', verb: 'Request', target: 'from the Administrator', path: '/agent/chip-requests', variant: 'gold' })}>
               <I.plus className="h-4 w-4" /> Request Chips
@@ -158,6 +165,15 @@ export default function LoadLogs() {
           reload();
         }}
       />
+      <PickAccountDialog
+        open={picking}
+        api={panel.api}
+        onClose={() => setPicking(false)}
+        onPick={(a) => {
+          setPicking(false);
+          setRequest({ title: `Load Chips · ${a.username}`, verb: 'Load', target: `to ${a.username} (${a.account_type_label}) from your employer Admin’s Chips`, path: `${panel.api}/accounts/${a.id}/load`, variant: 'success' });
+        }}
+      />
       <AmountDialog
         action={request}
         onClose={() => setRequest(null)}
@@ -169,5 +185,37 @@ export default function LoadLogs() {
       />
       <Toast toast={toast} onDone={() => setToast(null)} />
     </AdminPanelLayout>
+  );
+}
+
+/** Choose the agent or player to load (search by username, account ID, name or email). */
+function PickAccountDialog({ open, api: base, onClose, onPick }: { open: boolean; api: string; onClose: () => void; onPick: (a: Account) => void }) {
+  const [q, setQ] = useState('');
+  const term = q.trim().replace(/^(PL|AG)-0*/i, '');
+  const { data, loading } = useApi<{ data: Account[] }>(open && term ? `${base}/accounts` : null, { kind: 'all', q: term || undefined, per_page: 8 });
+
+  return (
+    <Dialog open={open} title="Load Chips — choose the account" onClose={onClose}>
+      <div className="space-y-3">
+        <SearchInput value={q} onChange={setQ} placeholder="Username, account ID, name or email…" />
+        {term && loading && !data && <p className="text-sm text-[#6b6385] dark:text-white/55">Searching…</p>}
+        {term && data?.data.length === 0 && <p className="text-sm text-[#6b6385] dark:text-white/55">No agent or player matches.</p>}
+        <ul className="divide-y divide-[#f0ecf9] dark:divide-white/[0.06]">
+          {term &&
+            data?.data.map((a) => (
+              <li key={a.id}>
+                <button type="button" disabled={a.status !== 'active'} onClick={() => onPick(a)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-[#f6f3fd] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/[0.05]">
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block font-bold">{a.username}</span>
+                    <span className="block font-mono text-[11px] text-[#857d9c] dark:text-white/45">{a.account_id} · {a.name}</span>
+                  </span>
+                  <TypePill type={a.account_type} label={a.account_type_label} />
+                  <StatusPill status={a.status} />
+                </button>
+              </li>
+            ))}
+        </ul>
+      </div>
+    </Dialog>
   );
 }

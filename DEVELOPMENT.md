@@ -1061,3 +1061,31 @@ Not done / not verified:
 - Tests: `tests/Feature/MaintenanceTest.php` (admin-only, audit, the full mode matrix, every blocked transaction,
   viewing still allowed), WebPagesTest, mobile `MaintenanceGate.test.tsx`.
 - The APK must be rebuilt (`npm run assets && npm run cap:sync && npm run cap:android`) for phones to get the screen.
+
+### 2026-11-24 — Users / Employees and Loader Accounts
+
+- **Admin Panel → Users / Employees** (`/admin/employees`; `GET|POST admin/employees`, `PATCH admin/employees/{id}`,
+  `PUT …/permissions`, `POST …/status`, `PUT …/password`, `GET …/activity`, `DELETE …`; `EmployeeService`):
+  search (name, username, email, role, status), create with own sign-in, edit details, permissions, activate /
+  deactivate (deactivating revokes app tokens and web sessions at once), reset password, activity (audit trail and
+  counts), delete only when the account never did anything (otherwise 409 — deactivate, history stays attributed).
+  Any Admin (Super Admin / Administrator) manages Loader Accounts; only the Super Admin manages Administrators; nobody
+  manages themselves or a Super Admin here. All changes are audited (`employee.*`).
+- **Loader Account** — role `loader` (`Role::Loader`) with only the three `LoaderPermission`s (stored in `permissions`,
+  never mixed with Administrator abilities; migration `2026_11_24_120000_add_loader_accounts` adds the rows):
+  - `loader_loads` → Load Transactions: all Chips loads and requests (search, details), **Load Chips** to agents and
+    players and approve / reject Chips requests. Loads use the Chips of the Admin who created the Loader (its
+    employer, `users.created_by`) under that Admin's rules and limits; the Loader is recorded as processor (Load Logs
+    `processed_by`, ledger `created_by` / `approved_by`, metadata `funds_from`, audit log). Same idempotency, ledger and
+    maintenance rules as everyone. If the employer is inactive, loads answer 409 `no_employer`.
+  - `loader_commissions` → Commission Logs (read-only, rates read-only) and Commission Withdrawal (approve / reject the
+    agents' commission → own Chips requests).
+  - `loader_passwords` → Reset Password for Agents, Master Agents, Silver Agents and Players only (never staff; hashed;
+    tokens and sessions ended; audited).
+  - **Loader Panel** (`/loader`, API `/api/v1/loader/panel/*`, `LoaderPanelController` extends `PanelController`): Overview
+    (load and commission figures, employer Chips, recent activity) plus the three modules, each behind
+    `can:loader_*` on the page and on the API. Everything else — Admin dashboard, Maintenance, settings, rates,
+    hierarchy, agent creation, withdrawing Chips, Employees — answers 403 / 404. Sign-in lands on `/loader`.
+- Tests: `tests/Feature/LoaderAccountTest.php` (creation rules, permission filtering, blocked Admin areas, loads from the
+  employer with attribution and idempotency, commission withdrawals, password resets, deactivation / reactivation,
+  delete safeguard, maintenance) and the updated HierarchyTest / WebPagesTest.

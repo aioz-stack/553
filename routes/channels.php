@@ -36,5 +36,5 @@ Broadcast::channel('table.{tableId}', function (User $user, int $tableId) {
 | Admin Panel refresh signals (no data, just "refetch"): Super Admin and Administrators.
 */
 Broadcast::channel('staff', function (User $user) {
-    return $user->isSuperAdmin() || $user->isAdministrator();
+    return $user->isSuperAdmin() || $user->isAdministrator() || $user->isLoader();
 });

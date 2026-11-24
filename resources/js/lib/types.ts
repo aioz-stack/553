@@ -1,4 +1,4 @@
-export type Role = 'super_admin' | 'admin' | 'agent' | 'player';
+export type Role = 'super_admin' | 'admin' | 'loader' | 'agent' | 'player';
 /** GD = Gold (Single Player only), CH = Chips (Multiplayer only). */
 export type Currency = 'GD' | 'CH';
 

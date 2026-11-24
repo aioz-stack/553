@@ -71,6 +71,7 @@ class Login extends Controller
         return match (true) {
             $user->isPlayer() => route('dashboard'),
             $user->isAgent() => route('agent.overview'),
+            $user->isLoader() => route('loader.overview'),
             default => route('admin.overview'),
         };
     }

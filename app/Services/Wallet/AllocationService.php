@@ -42,7 +42,12 @@ class AllocationService
         int $amount,
         ?string $reason = null,
         ?string $idempotencyKey = null,
+        // A Loader Account acting for $actor (its employer Admin): $actor's rules and Chips, the
+        // Loader recorded as the one who processed it (ledger created_by, Load Logs, audit log).
+        ?User $processedBy = null,
     ): WalletTransaction {
+        $processor = $processedBy ?? $actor;
+
         if ($actor->id === $recipient->id) {
             throw new BusinessRuleException('You cannot allocate points to yourself.', 403, 'forbidden');
         }
@@ -54,7 +59,7 @@ class AllocationService
         [$type, $source, $targetType] = $this->resolveRoute($actor, $recipient, $currency, $amount);
         $destination = $this->wallets->for($recipient, $currency, $targetType);
 
-        return DB::transaction(function () use ($actor, $recipient, $currency, $amount, $reason, $idempotencyKey, $type, $source, $destination, $targetType) {
+        return DB::transaction(function () use ($actor, $recipient, $currency, $amount, $reason, $idempotencyKey, $type, $source, $destination, $targetType, $processor) {
             // Maintenance (Full / Agents-Players): no Chips move for agents or players.
             app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $recipient);
             $transaction = $this->ledger->transfer(new TransferRequest(
@@ -64,11 +69,12 @@ class AllocationService
                 destination: $destination,
                 amount: $amount,
                 reason: $reason,
-                actor: $actor,
+                actor: $processor,
                 idempotencyKey: $idempotencyKey ? "alloc:{$actor->id}:{$idempotencyKey}" : null,
                 relatedPlayerId: $recipient->isPlayer() ? $recipient->id : null,
                 relatedAgentId: $actor->isAgent() ? $actor->id : ($recipient->isAgent() ? $recipient->id : null),
-                approvedBy: $actor->id,
+                approvedBy: $processor->id,
+                metadata: $processor->id !== $actor->id ? ['funds_from' => $actor->id, 'processed_by' => $processor->id] : [],
             ));
 
             if ($transaction->wasRecentlyCreated) {
@@ -82,7 +88,8 @@ class AllocationService
                     'reason' => $reason,
                 ]);
 
-                AuditLogger::log($actor, 'wallet.allocate', $transaction, null, [
+                AuditLogger::log($processor, 'wallet.allocate', $transaction, null, [
+                    'funds_from' => $actor->id,
                     'recipient_id' => $recipient->id,
                     'currency' => $currency->value,
                     'amount' => $amount,
@@ -92,7 +99,7 @@ class AllocationService
                 $recipient->notify((new PointsReceived($transaction))->afterCommit());
 
                 if ($currency === Currency::CH) {
-                    self::logLoad(ChipLoad::LOAD, $actor, $recipient, $amount, $transaction, $actor, $reason);
+                    self::logLoad(ChipLoad::LOAD, $actor, $recipient, $amount, $transaction, $processor, $reason);
                 }
             }
 

@@ -66,6 +66,16 @@ const agent: NavGroup[] = [
   },
 ];
 
+const loader: NavGroup[] = [
+  {
+    title: 'LOADER',
+    items: [
+      { key: 'loader', label: 'LOADER PANEL', href: '/loader', icon: IconGrid },
+      { key: 'profile', label: 'PROFILE', href: '/profile', icon: IconUser },
+    ],
+  },
+];
+
 const staff: NavGroup[] = [
   {
     title: 'PLATFORM',
@@ -112,7 +122,7 @@ export function navigationFor(user: AuthUser | null): NavGroup[] {
     return [];
   }
 
-  const groups = user.role === 'player' ? player : user.role === 'agent' ? agent : staff;
+  const groups = user.role === 'player' ? player : user.role === 'agent' ? agent : user.role === 'loader' ? loader : staff;
 
   const allowed = (item: NavItem) => {
     if (!item.ability) {
@@ -136,5 +146,5 @@ export function homePathFor(user: AuthUser | null): string {
     return '/';
   }
 
-  return user.role === 'player' ? '/dashboard' : user.role === 'agent' ? '/agent' : '/admin';
+  return user.role === 'player' ? '/dashboard' : user.role === 'agent' ? '/agent' : user.role === 'loader' ? '/loader' : '/admin';
 }

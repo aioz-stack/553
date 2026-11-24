@@ -64,6 +64,16 @@ Route::middleware('auth')->group(function () {
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
     });
 
+    // Loader Panel (Loader Accounts only; each page also needs its Loader permission).
+    Route::prefix('loader')->name('loader.')->middleware('can:loader')->group(function () {
+        Route::inertia('/', 'LoaderPanel/Overview')->name('overview');
+        Route::inertia('/load-logs', 'AdminPanel/LoadLogs')->middleware('can:loader_loads')->name('load-logs');
+        Route::inertia('/commission-logs', 'AdminPanel/CommissionLogs')->middleware('can:loader_commissions')->name('commission-logs');
+        Route::inertia('/commission-withdrawals', 'AdminPanel/Withdrawals')->middleware('can:loader_commissions')->name('commission-withdrawals');
+        Route::inertia('/reset-password', 'AdminPanel/ResetPassword')->middleware('can:loader_passwords')->name('reset-password');
+        Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
+    });
+
     // Super Admin / Administrator dashboard (page access; each API call re-checks abilities).
     Route::prefix('admin')->name('admin.')->middleware('can:staff')->group(function () {
         // Admin Panel (premium dashboard; every number and action comes from the API).
@@ -77,6 +87,7 @@ Route::middleware('auth')->group(function () {
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
         Route::inertia('/reset-password', 'AdminPanel/ResetPassword')->name('reset-password');
         Route::inertia('/maintenance', 'AdminPanel/Maintenance')->name('maintenance');
+        Route::inertia('/employees', 'AdminPanel/Employees')->name('employees');
         Route::inertia('/platform', 'Admin/Overview')->name('platform');
         Route::inertia('/administrators', 'Admin/Users', ['role' => 'admin'])->middleware('can:super-admin')->name('administrators');
         Route::inertia('/agents', 'Admin/Users', ['role' => 'agent'])->middleware('can:manage_agents')->name('agents');

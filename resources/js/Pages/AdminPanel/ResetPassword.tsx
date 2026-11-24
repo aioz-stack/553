@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Btn, ConfirmDialog, Details, I, Note, Panel, SearchInput, StatusPill, Toast, TypePill, fieldClass, fmt, when, type ConfirmAction } from '../../Components/AdminPanel/kit';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api, errorMessage } from '../../lib/api';
+import { usePanel } from '../../lib/panel';
 import { useApi } from '../../lib/useApi';
 import type { Account, PageMeta } from './types';
 
@@ -14,10 +15,11 @@ const strong = (p: string) => p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p
  * never shown, and the reset is written to the audit log.
  */
 export default function ResetPassword() {
+  const panel = usePanel(); // Admin Panel or Loader Panel (same server rules: agents and players only)
   const initial = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('user')) || null : null;
   const [q, setQ] = useState('');
   const term = q.trim().replace(/^(PL|AG)-0*/i, '');
-  const results = useApi<{ data: Account[]; meta: PageMeta }>(term ? '/admin/panel/accounts' : null, { kind: 'all', q: term || undefined, per_page: 8 });
+  const results = useApi<{ data: Account[]; meta: PageMeta }>(term ? `${panel.api}/accounts` : null, { kind: 'all', q: term || undefined, per_page: 8 });
   const [selected, setSelected] = useState<Account | null>(null);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -27,7 +29,7 @@ export default function ResetPassword() {
   // Opened from an account's "Reset Password" action.
   useEffect(() => {
     if (!initial) return;
-    api.get<{ data: Account }>(`/admin/panel/accounts/${initial}`)
+    api.get<{ data: Account }>(`${panel.api}/accounts/${initial}`)
       .then((r) => setSelected(r.data.data))
       .catch((e) => setToast({ ok: false, text: errorMessage(e) }));
   }, [initial]);
@@ -52,7 +54,7 @@ export default function ResetPassword() {
       ),
       confirm: 'Reset Password',
       variant: 'danger',
-      run: async () => (await api.put<{ message: string }>(`/admin/panel/accounts/${selected.id}/password`, { password, password_confirmation: confirmation })).data.message,
+      run: async () => (await api.put<{ message: string }>(`${panel.api}/accounts/${selected.id}/password`, { password, password_confirmation: confirmation })).data.message,
     });
 
   return (
@@ -137,7 +139,7 @@ export default function ResetPassword() {
         </Panel>
       </div>
       <Note>
-        <b>Note:</b> Existing passwords are never shown. Each reset is recorded in the audit log with the administrator, the account and the time.
+        <b>Note:</b> Existing passwords are never shown. Each reset is recorded in the audit log with who reset it, the account and the time. Admin accounts cannot be reset here.
       </Note>
 
       <ConfirmDialog

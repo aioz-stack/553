@@ -420,7 +420,8 @@ class PanelController extends Controller
     public function resetPassword(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor->isSuperAdmin() || $actor->isAdministrator(), 403);
+        // Admins, and Loader Accounts with the Reset Passwords permission.
+        abort_unless($actor->isSuperAdmin() || $actor->isAdministrator() || $actor->hasLoaderPermission(\App\Enums\LoaderPermission::Passwords), 403);
 
         if (! $user->isAgent() && ! $user->isPlayer()) {
             throw new BusinessRuleException('Only agent and player passwords can be reset here.', 403, 'forbidden');

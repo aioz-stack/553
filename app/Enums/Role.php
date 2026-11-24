@@ -6,6 +6,8 @@ enum Role: string
 {
     case SuperAdmin = 'super_admin';
     case Administrator = 'admin';
+    /** Employee: Load Transactions, Commission Transactions, Reset Passwords only (LoaderPermission). */
+    case Loader = 'loader';
     case Agent = 'agent';
     case Player = 'player';
 
@@ -17,6 +19,7 @@ enum Role: string
         return match ($this) {
             self::SuperAdmin => 100,
             self::Administrator => 50,
+            self::Loader => 30,
             self::Agent => 20,
             self::Player => 1,
         };
@@ -27,6 +30,7 @@ enum Role: string
         return match ($this) {
             self::SuperAdmin => 'Super Admin',
             self::Administrator => 'Administrator',
+            self::Loader => 'Loader',
             self::Agent => 'Agent',
             self::Player => 'Player',
         };

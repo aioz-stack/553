@@ -39,12 +39,13 @@ class ChipLoadService
     public function load(User $actor, User $account, int $amount, ?string $note = null, ?string $idempotencyKey = null): ChipLoad
     {
         // Agents load only their own registered players (AllocationService enforces ownership);
-        // withdrawing and approving stay with the Administrators.
-        $this->authorize($actor, $account, allowAgents: true);
+        // Loader Accounts load from their employer Admin's Chips; withdrawing stays with the Admins.
+        [$funder, $processor] = $this->funderFor($actor);
+        $this->authorize($funder, $account, allowAgents: true);
         $this->assertAmount($amount);
 
         try {
-            $transaction = $this->allocations->allocate($actor, $account, Currency::CH, $amount, $note ?: 'Chips loaded', $idempotencyKey);
+            $transaction = $this->allocations->allocate($funder, $account, Currency::CH, $amount, $note ?: 'Chips loaded', $idempotencyKey, $processor);
         } catch (InsufficientBalanceException) {
             throw new BusinessRuleException('You do not have enough Chips to load this amount.', 422, 'insufficient_balance');
         }
@@ -122,12 +123,15 @@ class ChipLoadService
 
     public function approve(User $actor, ChipLoad $load): ChipLoad
     {
-        return DB::transaction(function () use ($actor, $load) {
+        [$funder, $processor] = $this->funderFor($actor);
+
+        return DB::transaction(function () use ($funder, $processor, $load) {
             $load = $this->lockPending($load);
-            $this->authorize($actor, $load->account);
+            $this->authorize($funder, $load->account);
+            $actor = $processor;
 
             try {
-                $transaction = $this->allocations->allocate($actor, $load->account, Currency::CH, $load->amount, 'Chips request '.$load->reference.' approved', "request-{$load->id}");
+                $transaction = $this->allocations->allocate($funder, $load->account, Currency::CH, $load->amount, 'Chips request '.$load->reference.' approved', "request-{$load->id}", $processor);
             } catch (InsufficientBalanceException) {
                 throw new BusinessRuleException('You do not have enough Chips to approve this request.', 422, 'insufficient_balance');
             }
@@ -136,7 +140,7 @@ class ChipLoadService
             ChipLoad::query()->where('wallet_transaction_id', $transaction->id)->where('id', '!=', $load->id)->delete();
             $load->forceFill([
                 'status' => ChipLoad::COMPLETED,
-                'sender_id' => $actor->id,
+                'sender_id' => $funder->id,
                 'processed_by' => $actor->id,
                 'processed_at' => now(),
                 'wallet_transaction_id' => $transaction->id,
@@ -149,9 +153,11 @@ class ChipLoadService
 
     public function reject(User $actor, ChipLoad $load, ?string $note = null): ChipLoad
     {
-        return DB::transaction(function () use ($actor, $load, $note) {
+        [$funder] = $this->funderFor($actor);
+
+        return DB::transaction(function () use ($actor, $funder, $load, $note) {
             $load = $this->lockPending($load);
-            $this->authorize($actor, $load->account);
+            $this->authorize($funder, $load->account);
             $load->forceFill([
                 'status' => ChipLoad::REJECTED,
                 'processed_by' => $actor->id,
@@ -185,6 +191,27 @@ class ChipLoadService
         }
 
         return $load;
+    }
+
+    /**
+     * Whose Chips pay for a load, and who processes it. A Loader Account (with the Load
+     * Transactions permission) works with its employer Admin's Chips and rules.
+     *
+     * @return array{0: User, 1: User}
+     */
+    private function funderFor(User $actor): array
+    {
+        if (! $actor->isLoader()) {
+            return [$actor, $actor];
+        }
+
+        if (! $actor->hasLoaderPermission(\App\Enums\LoaderPermission::Loads)) {
+            throw new BusinessRuleException('You are not allowed to process loads.', 403, 'forbidden');
+        }
+
+        $employer = $actor->employer() ?? throw new BusinessRuleException('Your employer Admin account is not active; loads are unavailable.', 409, 'no_employer');
+
+        return [$employer, $actor];
     }
 
     private function authorize(User $actor, User $account, bool $allowAgents = false): void

@@ -21,6 +21,10 @@ class RolesAndPermissionsSeeder extends Seeder
             Permission::query()->updateOrCreate(['key' => $ability->value], ['description' => $ability->description()]);
         }
 
+        foreach (\App\Enums\LoaderPermission::cases() as $permission) {
+            Permission::query()->updateOrCreate(['key' => $permission->value], ['description' => $permission->description()]);
+        }
+
         // Platform default commission: 40% of eligible platform fees.
         AgentCommissionRule::query()->firstOrCreate(
             ['agent_id' => null, 'currency' => null, 'is_active' => true],

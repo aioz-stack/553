@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\V1\LobbyController;
 use App\Http\Controllers\Api\V1\AgentPanelController;
 use App\Http\Controllers\Api\V1\Admin\PanelController;
 use App\Http\Controllers\Api\V1\PayoutController;
+use App\Http\Controllers\Api\V1\Admin\EmployeeController;
+use App\Http\Controllers\Api\V1\LoaderPanelController;
 use App\Http\Controllers\Api\V1\MaintenanceController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\PlayerController;
@@ -161,6 +163,29 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('chip-requests', [AgentPanelController::class, 'requestChips'])->middleware('throttle:wallet-actions');
         });
 
+        // Loader Panel (Loader Accounts): Load Transactions, Commission Transactions, Reset Password —
+        // each behind its own Loader permission. Nothing else of the Admin Panel is reachable.
+        Route::prefix('loader/panel')->middleware('can:loader')->group(function () {
+            Route::get('overview', [LoaderPanelController::class, 'overview']);
+            Route::get('accounts', [LoaderPanelController::class, 'accounts']);
+            Route::get('accounts/{user}', [LoaderPanelController::class, 'account']);
+
+            Route::middleware('can:loader_loads')->group(function () {
+                Route::get('load-logs', [LoaderPanelController::class, 'loadLogs']);
+                Route::get('load-logs/{chipLoad}', [LoaderPanelController::class, 'loadLog']);
+                Route::post('load-logs/{chipLoad}/approve', [LoaderPanelController::class, 'approveLoad'])->middleware('throttle:wallet-actions');
+                Route::post('load-logs/{chipLoad}/reject', [LoaderPanelController::class, 'rejectLoad']);
+                Route::post('accounts/{user}/load', [LoaderPanelController::class, 'load'])->middleware('throttle:wallet-actions');
+            });
+            Route::middleware('can:loader_commissions')->group(function () {
+                Route::get('commission-logs', [LoaderPanelController::class, 'commissionLogs']);
+                Route::get('withdrawals', [LoaderPanelController::class, 'withdrawals']);
+                Route::post('withdrawals/{payout}/approve', [LoaderPanelController::class, 'approveWithdrawal'])->middleware('throttle:wallet-actions');
+                Route::post('withdrawals/{payout}/reject', [LoaderPanelController::class, 'rejectWithdrawal']);
+            });
+            Route::put('accounts/{user}/password', [LoaderPanelController::class, 'resetPassword'])->middleware(['can:loader_passwords', 'throttle:wallet-actions']);
+        });
+
         // Admin (Super Admin + Administrators; per-endpoint abilities)
         Route::prefix('admin')->middleware('can:staff')->group(function () {
             Route::get('users', [AdminUserController::class, 'index']);
@@ -201,6 +226,16 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('commissions/{commission}/reject', [AdminCommissionController::class, 'reject']);
             Route::post('commissions/{commission}/reverse', [AdminCommissionController::class, 'reverse']);
             Route::get('commission-rules', [AdminCommissionController::class, 'rules']);
+            // Users / Employees (Loader Accounts; Administrators for the Super Admin).
+            Route::get('employees', [EmployeeController::class, 'index']);
+            Route::post('employees', [EmployeeController::class, 'store']);
+            Route::patch('employees/{user}', [EmployeeController::class, 'update']);
+            Route::put('employees/{user}/permissions', [EmployeeController::class, 'permissions']);
+            Route::post('employees/{user}/status', [EmployeeController::class, 'status']);
+            Route::put('employees/{user}/password', [EmployeeController::class, 'password'])->middleware('throttle:wallet-actions');
+            Route::get('employees/{user}/activity', [EmployeeController::class, 'activity']);
+            Route::delete('employees/{user}', [EmployeeController::class, 'destroy']);
+
             // Maintenance control (Super Admin / Administrators; checked again in the controller and service).
             Route::get('maintenance', [MaintenanceController::class, 'show']);
             Route::put('maintenance', [MaintenanceController::class, 'update'])->middleware('throttle:wallet-actions');

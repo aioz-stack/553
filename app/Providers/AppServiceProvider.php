@@ -46,6 +46,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('super-admin', fn (User $user) => $user->isActive() && $user->isSuperAdmin());
         Gate::define('agent', fn (User $user) => $user->isActive() && $user->isAgent() && $user->agent?->status === 'active');
         Gate::define('play', fn (User $user) => $user->isActive() && $user->isPlayer());
+        // Loader Accounts (employees): the Loader Panel and each of its three permissions.
+        Gate::define('loader', fn (User $user) => $user->isActive() && $user->isLoader());
+        foreach (\App\Enums\LoaderPermission::cases() as $permission) {
+            Gate::define($permission->value, fn (User $user) => $user->hasLoaderPermission($permission));
+        }
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by($request->user()?->id ?: $request->ip()));
         RateLimiter::for('auth', fn (Request $request) => [

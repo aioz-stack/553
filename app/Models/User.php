@@ -168,7 +168,7 @@ class User extends Authenticatable
             return $this->agent?->level?->value ?? 'agent';
         }
 
-        return 'admin';
+        return $this->isLoader() ? 'loader' : 'admin';
     }
 
     public function accountTypeLabel(): string
@@ -199,6 +199,34 @@ class User extends Authenticatable
     }
 
     public const SIGN_IN_DISABLED_MESSAGE = 'Player sign-in is temporarily disabled. Please try again later.';
+
+    public function isLoader(): bool
+    {
+        return $this->role === Role::Loader;
+    }
+
+    /** A Loader Account's own permission (never granted to anyone else). */
+    public function hasLoaderPermission(\App\Enums\LoaderPermission $permission): bool
+    {
+        if (! $this->isLoader() || ! $this->isActive()) {
+            return false;
+        }
+
+        return $this->relationLoaded('permissions')
+            ? $this->permissions->contains('key', $permission->value)
+            : $this->permissions()->where('key', $permission->value)->exists();
+    }
+
+    /**
+     * The Admin whose Chips a Loader Account loads (the Admin who created it). Null when that
+     * Admin is gone or no longer active — then the Loader cannot load.
+     */
+    public function employer(): ?User
+    {
+        $employer = $this->created_by ? User::query()->find($this->created_by) : null;
+
+        return $employer && $employer->isActive() && ($employer->isSuperAdmin() || $employer->isAdministrator()) ? $employer : null;
+    }
 
     public function isAdministrator(): bool
     {
@@ -247,7 +275,7 @@ class User extends Authenticatable
             return array_map(fn (Ability $a) => $a->value, Ability::cases());
         }
 
-        if (! $this->isAdministrator()) {
+        if (! $this->isAdministrator() && ! $this->isLoader()) {
             return [];
         }
 
