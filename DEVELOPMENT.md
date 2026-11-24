@@ -180,7 +180,8 @@ emulator and is why the flag defaults to false.
 | Settlement | `app/Services/Game/SettlementService.php` |
 | Per-viewer state (card visibility) | `app/Services/Game/GameStatePresenter.php` |
 | Ledger (only code that changes balances) | `app/Services/Wallet/LedgerService.php` |
-| Wallets, daily reward, reconciliation | `app/Services/Wallet/WalletService.php` |
+| Wallets, reconciliation | `app/Services/Wallet/WalletService.php` |
+| Convert Commission to Wallet, Team Overview | `app/Services/Agent/TeamService.php` |
 | Allocation / adjustments / freezing | `app/Services/Wallet/AllocationService.php` |
 | Commissions / cash payout requests (flagged) | `app/Services/Agent/CommissionService.php`, `PayoutService.php` |
 | Users, hierarchy, referral codes | `app/Services/Users/UserManagementService.php` |
@@ -241,9 +242,8 @@ Enforcement: Gates (one per ability + `staff`, `super-admin`, `agent`, `play`), 
 - `LedgerService::transfer()` runs in a DB transaction, locks wallets with `SELECT … FOR UPDATE`
   in id order, refuses negative balances and frozen sources, and is idempotent (same key → same
   transaction; same key with different parameters → 409) — so every deduction and win is processed once.
-- Issuance (null source): Super Admin allocations, the optional daily Chips reward
-  (`FEATURE_DAILY_CHIPS_REWARD`, `DAILY_CHIPS_REWARD_AMOUNT`), and Single Player Gold (house reserves and the
-  Out of Gold claim).
+- Issuance (null source): Super Admin allocations and Single Player Gold (house reserves and the Out of Gold
+  claim). The free daily Chips reward was removed (2026-11-24); old `DAILY_REWARD` rows stay readable in history.
 - `php artisan pusoy:reconcile` (daily) checks every balance against the ledger and that escrow
   equals active holds + room carry-over banks + held Single Player reserves.
 - **Sync:** every wallet change pushes the owner's new balance on their private `user.{id}` channel
@@ -387,7 +387,7 @@ scales to the screen like a game canvas; artwork is original SVG (`BeachLandscap
 In the native app the home locks to landscape (`@capacitor/screen-orientation`, status bar hidden)
 and returns to portrait when you leave it; in a portrait browser the stage is rotated 90°. Every
 control is live: profile/level, Gold (gold coins) and Chips (casino chip) balances shown separately with
-live `wallet.updated` (each "+" opens the wallet — there is no deposit), daily bonus,
+live `wallet.updated` (each "+" opens the wallet — there is no deposit),
 leaderboard, notifications, Friends List (search, add, accept/decline, online/last seen, invite),
 Single Player, Multiplayer, Sound ON/OFF, Settings, Logout.
 
@@ -730,6 +730,18 @@ through a service (validation, row locks, ledger, idempotency keys, audit log). 
   Inertia as `auth.user.theme`), so it survives refreshes and new sign-ins. Every component has light and dark colours.
 - **Agent side:** Agent Overview → My Network (`GET agent/panel`): level, upline, both links, Chips, commission available /
   withdrawn, downline, Request Chips, Withdraw Commission (`POST agent/payout-requests`).
+- **Convert Commission to Wallet** (Admin Overview and Agent Overview, directly below the registration links;
+  `TeamService`): shows total accumulated commission, available (balance − pending withdrawal requests) and converted
+  so far. The modal (Commission Amount, Amount to Convert, Minimum Conversion, Cancel / Confirm Conversion) posts
+  `commission/convert`; the server enforces the 10-Chip minimum and the available limit, locks the user row, and moves
+  commission wallet → own Chips wallet as one `COMMISSION_CONVERSION` ledger transfer. The idempotency key is
+  `commission-convert:{user}:{request_id}` (one per opened modal), so a double click or retry converts once. Audit:
+  `commission.converted`.
+- **Team Overview** (below it; `GET team/overview`): Total Player Wallets (Chips player wallets), Total Agent Wallets
+  (agents' Chips wallets) and Agents Commission (commissions earned by downline agents, excluding rejected/reversed),
+  computed live from the database over the user's own downline only: the `users.sponsor_id` tree, plus for agents the
+  `agents.parent_agent_id` tree and those agents' `agent_players`. The user is never counted; the Super Admin sees the
+  whole platform.
 - Migration `2026_11_19_190000_admin_panel_hierarchy` backfills a code for every account, players' sponsors from their
   agents, and the level rates. Tests use a `superAdmin()` helper that issues the Super Admin a 1,000,000-Chip float.
 
@@ -769,7 +781,8 @@ Rate limits: `api` 120/min, `auth` 10/min/IP + 5/min/username, game & wallet act
 | --- | --- |
 | Auth | `POST auth/register`, `auth/login`, `auth/logout`, `GET auth/me`, `POST auth/forgot-password`, `auth/reset-password`, `GET/DELETE auth/devices` |
 | Player | `GET/PATCH profile`, `PUT profile/password`, `GET profile/stats`, `profile/games`, `leaderboard`, `notifications`, `POST notifications/read` |
-| Wallet | `GET wallet`, `wallet/transactions`, `POST wallet/daily-reward`, `wallet/allocate` (admin/agent; Chips only). No deposit / withdraw routes |
+| Wallet | `GET wallet`, `wallet/transactions`, `wallet/allocate` (admin/agent; Chips only). No deposit / withdraw routes |
+| Commission & team | `GET commission/wallet`, `POST commission/convert {amount, request_id}`, `GET team/overview` (Super Admin, Administrator, every agent level; players 403) |
 | Rooms | `GET rooms` (`?game_mode=`), `rooms/{id}`, `POST rooms/{id}/join`, `rooms/private`, `rooms/host` (Round Bank / Banker Mode table, host seated), `rooms/{id}/invite` |
 | Tables | `GET tables/current`, `tables/{id}`, `POST tables/{id}/ready|leave|heartbeat` |
 | Games | `GET games/{id}`, `games/{id}/cards`, `POST games/{id}/submit`, `games/{id}/bet`, `games/{id}/lucky`, `games/{id}/preview`, `GET games/{id}/results` |
@@ -908,3 +921,18 @@ Not done / not verified:
   restored client-side; orientation locking made race-free. Verified in an emulation of Capacitor's routing
   (Splash → Onboarding → Login → Home → Lobby, Single Player with a query string, reload on an inner page:
   all client-side, no 404s); 96 mobile tests.
+
+### 2026-11-24 — Commission conversion, Team Overview, no daily Chips
+
+- Convert Commission to Wallet and Team Overview sections for Administrators, Agents, Master Agents and Silver Agents
+  (see Admin Panel). Players get 403 on the new routes.
+- The free daily Chips reward is gone everywhere: `POST wallet/daily-reward`, `WalletService::claimDailyReward`, the
+  `FEATURE_DAILY_CHIPS_REWARD` / `DAILY_CHIPS_REWARD_AMOUNT` settings, `GET wallet` meta, the web Dashboard button,
+  the mobile Home gift button and the Lobby "Daily Spin". Remove those two keys from any `.env`. The Out of Gold claim
+  (Single Player) is unrelated and unchanged.
+- Tests: `tests/Feature/TeamTest.php`, `resources/js/Components/AdminPanel/TeamSections.test.tsx`; ledger test now checks
+  the daily route is gone.
+- Dummy test data: `php artisan db:seed --class=DummyAgentsSeeder` (local only — refuses to run when `APP_ENV=production`,
+  not part of `DatabaseSeeder`). Creates `dummyagent` → `dummymaster` → `dummysilver` → `dummyplayer` (password
+  "password") through the referral + approval flow, and gives each dummy agent 200 Chips of Paid commission (an
+  issued `COMMISSION_PAYMENT` into its commission wallet plus a commission record with `game_session_id` 0). Safe to re-run.

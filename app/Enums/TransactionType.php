@@ -19,6 +19,9 @@ enum TransactionType: string
     case ChipWithdrawal = 'CHIP_WITHDRAWAL';
     /** An agent's commission moved into its own Chips (approved commission withdrawal). */
     case CommissionWithdrawal = 'COMMISSION_WITHDRAWAL';
+    /** The user converted their own commission into their Chips wallet (Convert Commission to Wallet). */
+    case CommissionConversion = 'COMMISSION_CONVERSION';
+    /** History only: the retired free daily Chips reward. */
     case DailyReward = 'DAILY_REWARD';
     case LuckyBonus = 'LUCKY_BONUS';
     /** Out of Gold: the free 1,000 Gold claim (Single Player). */

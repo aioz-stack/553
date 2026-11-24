@@ -248,17 +248,6 @@ export default function MultiplayerLobby() {
     }
   };
 
-  const dailySpin = async () => {
-    try {
-      const r = await api<{ message: string }>('/wallet/daily-reward', { method: 'POST' });
-      play('win');
-      say(true, r.message);
-      window.dispatchEvent(new Event('pusoy:wallet'));
-    } catch (e) {
-      say(false, errorText(e));
-    }
-  };
-
   const counts = list?.meta.counts ?? { all: 0, public: 0, private: 0 };
   const pages = list?.meta.pages ?? 1;
   const rows = list?.data ?? [];
@@ -353,15 +342,6 @@ export default function MultiplayerLobby() {
                 <rect x="4" y="11" width="32" height="7" rx="2" fill="#ff5a4a" />
                 <rect x="17.5" y="11" width="5" height="25" fill="#ffd34d" />
                 <path d="M20 11 C14 2 8 6 12 10 M20 11 C26 2 32 6 28 10" fill="none" stroke="#ffd34d" strokeWidth="3" />
-              </svg>
-            </SideItem>
-            <SideItem label="Daily Spin" onClick={dailySpin}>
-              <svg viewBox="0 0 40 40" className="h-[60px] w-[60px]" aria-hidden="true">
-                <circle cx="20" cy="20" r="16" fill="#ffd34d" stroke="#8a4a00" strokeWidth="2" />
-                {Array.from({ length: 8 }, (_, i) => (
-                  <path key={i} d="M20 20 L20 6 A14 14 0 0 1 29.9 10.1Z" fill={i % 2 ? '#e0262f' : '#fff3d0'} transform={`rotate(${i * 45} 20 20)`} />
-                ))}
-                <circle cx="20" cy="20" r="4" fill="#8a4a00" />
               </svg>
             </SideItem>
           </div>

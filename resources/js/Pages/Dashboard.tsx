@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import ApexChart from '../Components/ApexChart';
 import PageShell from '../Components/PageShell';
 import { IconCards, IconTrophy, IconWallet } from '../Components/PlatformIcons';
-import { Alert, Button, Card, LinkButton, StatCard } from '../Components/ui';
-import { api, errorMessage } from '../lib/api';
+import { Alert, Card, LinkButton, StatCard } from '../Components/ui';
+import { api } from '../lib/api';
 import { points } from '../lib/format';
 import type { TableState, Wallet } from '../lib/types';
 import { useApi } from '../lib/useApi';
@@ -23,10 +23,9 @@ interface Stats {
  * Player dashboard (the original Baseplate demo dashboard lives in Pages/Baseplate).
  */
 export default function Dashboard() {
-  const wallet = useApi<{ data: Wallet[]; meta: { daily_reward_enabled: boolean; daily_reward_claimed: boolean } }>('/wallet');
+  const wallet = useApi<{ data: Wallet[] }>('/wallet');
   const stats = useApi<{ data: Stats }>('/profile/stats');
   const [seat, setSeat] = useState<TableState | null>(null);
-  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     api.get<{ data: TableState | null }>('/tables/current').then((r) => setSeat(r.data.data)).catch(() => undefined);
@@ -35,16 +34,6 @@ export default function Dashboard() {
   const chips = wallet.data?.data.find((w) => w.currency === 'CH' && w.type === 'player');
   const gold = wallet.data?.data.find((w) => w.currency === 'GD' && w.type === 'player');
   const s = stats.data?.data;
-
-  const claim = async () => {
-    try {
-      const r = await api.post('/wallet/daily-reward');
-      setMessage({ tone: 'success', text: r.data.message });
-      wallet.reload();
-    } catch (e) {
-      setMessage({ tone: 'error', text: errorMessage(e) });
-    }
-  };
 
   return (
     <PageShell title="Dashboard">
@@ -56,7 +45,6 @@ export default function Dashboard() {
           </button>
         </Alert>
       )}
-      {message && <Alert tone={message.tone}>{message.text}</Alert>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
         <StatCard icon={<IconWallet />} label="Chips" value={points(chips?.balance)} hint="Multiplayer only" />
@@ -87,11 +75,6 @@ export default function Dashboard() {
         <Card title="Quick actions">
           <div className="flex flex-col gap-3">
             <LinkButton href="/lobby">Find a table</LinkButton>
-            {wallet.data?.meta.daily_reward_enabled && (
-              <Button variant="outline" onClick={claim} disabled={wallet.data.meta.daily_reward_claimed}>
-                {wallet.data.meta.daily_reward_claimed ? 'Daily Chips claimed ✓' : 'Claim free daily Chips'}
-              </Button>
-            )}
             <LinkButton href="/history" variant="outline">
               Game history
             </LinkButton>

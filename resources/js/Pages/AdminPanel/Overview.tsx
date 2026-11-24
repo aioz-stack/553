@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ChipStack, CopyLink, Dialog, Details, I, Note, Panel, Segments, StatTile, StatusPill, Table, Toast, TypePill, AmountDialog, fmt, when, type AmountAction, type Column } from '../../Components/AdminPanel/kit';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { useApi } from '../../lib/useApi';
+import TeamSections from '../../Components/AdminPanel/TeamSections';
 import type { LoadLog, CommissionLog, Withdrawal } from './types';
 import { Eye, Signed, TxLabel, commissionRows, loadRows, withdrawalRows } from '../../Components/AdminPanel/rows';
 
@@ -106,6 +107,8 @@ export default function Overview() {
       <Note>
         <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved.
       </Note>
+
+      <TeamSections onChanged={reload} />
 
       <Panel
         title="Recent Transactions"

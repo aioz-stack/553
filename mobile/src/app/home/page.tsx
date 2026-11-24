@@ -11,12 +11,12 @@ import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
 import { Avatar, ChipIcon } from '@/components/game';
 import { CandyText, CrownArt, ExitArt, GearArt, GoldCoins, LogoCrest, RoundBankArt, SpeakerArt } from '@/components/HomeArt';
-import { IconBell, IconGift, IconPlus, IconTrophy } from '@/components/icons';
+import { IconBell, IconPlus, IconTrophy } from '@/components/icons';
 import LandscapeStage, { useToStage } from '@/components/LandscapeStage';
 import { Glitter, RimGlint } from '@/components/Sparkles';
 import { springStyle } from '@/lib/spring';
 import { Screen } from '@/components/ui';
-import { api, errorText } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFetch } from '@/lib/hooks';
 import { savePrefs } from '@/lib/prefs';
@@ -204,10 +204,8 @@ export default function Home() {
   // Single Player Gold wallet (Total Amount): the same server source as the game screens.
   const { wallet: goldWallet } = useGoldWallet(user?.id);
   const stats = useFetch<{ data: { level: Level } }>(user ? '/profile/stats' : null);
-  const wallet = useFetch<{ meta: { daily_reward_enabled: boolean; daily_reward_claimed: boolean } }>(user ? '/wallet' : null);
   const unread = useFetch<{ meta: { unread: number } }>(user ? '/notifications' : null).data?.meta.unread ?? 0;
   const [seat, setSeat] = useState<TableState | null>(null);
-  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [soundOn] = useSound();
   const [picker, setPicker] = useState(false);
   const [settings, setSettings] = useState(false);
@@ -257,28 +255,9 @@ export default function Home() {
     }
   }, [user]);
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const level = stats.data?.data.level ?? user?.level;
   const name = user ? (user.display_name ?? user.name) : '';
   const xpPct = level ? Math.min(100, Math.round((level.into_level / level.for_next) * 100)) : 0;
-  const bonus = wallet.data?.meta;
-
-  const claim = async () => {
-    try {
-      const r = await api<{ message: string }>('/wallet/daily-reward', { method: 'POST' });
-      play('win');
-      setToast({ ok: true, text: r.message });
-      wallet.reload();
-      window.dispatchEvent(new Event('pusoy:wallet'));
-    } catch (e) {
-      setToast({ ok: false, text: errorText(e) });
-    }
-  };
 
   const signOut = async () => {
     play('tap');
@@ -319,11 +298,6 @@ export default function Home() {
         <BalancePill x={1320} w={260} label="Chips balance" value={chipCount} icon={<ChipIcon size={74} className="drop-shadow-[0_4px_4px_rgb(0_0_0/0.4)]" />} seed={11} delay={1.5} />
 
         {/* Quick icons under the balance */}
-        {bonus?.daily_reward_enabled && (
-          <SmallRound x={1290} y={152} label={bonus.daily_reward_claimed ? 'Daily bonus claimed' : 'Claim daily bonus'} onClick={claim} tone={bonus.daily_reward_claimed ? 'from-slate-400 to-slate-600' : 'from-candy-400 to-candy-500'} dot={!bonus.daily_reward_claimed} motion={bonus.daily_reward_claimed ? '' : 'lx-wiggle inline-block'}>
-            <IconGift className="h-10 w-10" />
-          </SmallRound>
-        )}
         <SmallRound x={1380} y={152} label="Leaderboard" href="/leaderboard/" tone="from-[#ffd75a] to-[#e89a00]" motion="lx-bob inline-block">
           <IconTrophy className="h-10 w-10 text-[#5a2600]" />
         </SmallRound>
@@ -403,11 +377,6 @@ export default function Home() {
         )}
         {picker && <SinglePlayerPicker onClose={() => setPicker(false)} onContinue={(sel) => router.push(practiceUrl(sel))} />}
 
-        {toast && (
-          <div role="status" className={`absolute left-1/2 top-[150px] z-20 -translate-x-1/2 rounded-full border-4 px-8 py-3 font-display text-[28px] font-black shadow-lg ${toast.ok ? 'border-[#4ee36b] bg-[#0f2a1c] text-[#b9ffcb]' : 'border-red-400 bg-[#3a0d14] text-red-100'}`}>
-            {toast.text}
-          </div>
-        )}
       </LandscapeStage>
     </Screen>
   );

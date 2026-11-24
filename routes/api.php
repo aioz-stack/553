@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V1\LobbyController;
 use App\Http\Controllers\Api\V1\AgentPanelController;
 use App\Http\Controllers\Api\V1\Admin\PanelController;
 use App\Http\Controllers\Api\V1\PayoutController;
+use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\PracticeController;
 use App\Http\Controllers\Api\V1\RoomController;
@@ -62,7 +63,13 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Own wallet
         Route::get('wallet', [WalletController::class, 'balances']);
         Route::get('wallet/transactions', [WalletController::class, 'transactions']);
-        Route::post('wallet/daily-reward', [WalletController::class, 'claimDailyReward'])->middleware('throttle:wallet-actions');
+
+        // Convert Commission to Wallet + Team Overview (Administrators and every agent level).
+        Route::middleware('role:super_admin,admin,agent')->group(function () {
+            Route::get('commission/wallet', [TeamController::class, 'commission']);
+            Route::post('commission/convert', [TeamController::class, 'convert'])->middleware('throttle:wallet-actions');
+            Route::get('team/overview', [TeamController::class, 'overview']);
+        });
 
         // Allocation (Super Admin / Administrator / Agent; rules in AllocationService)
         Route::post('wallet/allocate', [AdminWalletController::class, 'allocate'])->middleware(['role:super_admin,admin,agent', 'throttle:wallet-actions']);

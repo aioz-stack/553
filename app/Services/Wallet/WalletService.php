@@ -88,31 +88,6 @@ class WalletService
     }
 
     /**
-     * Free daily Chips reward. One per UTC day, enforced by idempotency key.
-     */
-    public function claimDailyReward(User $user): WalletTransaction
-    {
-        $date = now('UTC')->toDateString();
-        $amount = (int) config('pusoy.daily_chips_reward_amount') * 100;
-
-        $transaction = $this->ledger->transfer(new TransferRequest(
-            type: TransactionType::DailyReward,
-            currency: Currency::CH,
-            source: null,
-            destination: $this->for($user, Currency::CH),
-            amount: $amount,
-            reason: 'Daily free Chips reward',
-            actor: $user,
-            idempotencyKey: "daily-reward:{$user->id}:{$date}",
-            relatedPlayerId: $user->id,
-        ));
-
-        $user->profile()->updateOrCreate([], ['last_daily_reward_on' => $date]);
-
-        return $transaction;
-    }
-
-    /**
      * Ledger reconciliation: every wallet balance must equal the net of its
      * ledger movements, and escrow must equal active holds + room banks.
      *

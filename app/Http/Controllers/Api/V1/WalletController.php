@@ -23,10 +23,6 @@ class WalletController extends Controller
 
         return response()->json([
             'data' => WalletResource::collection($request->user()->wallets()->orderBy('type')->orderBy('currency')->get())->resolve($request),
-            'meta' => [
-                'daily_reward_enabled' => (bool) config('pusoy.features.daily_chips_reward'),
-                'daily_reward_claimed' => $request->user()->profile?->last_daily_reward_on?->isToday() ?? false,
-            ],
         ]);
     }
 
@@ -55,20 +51,6 @@ class WalletController extends Controller
         TransactionResource::$viewerWalletIds = $walletIds;
 
         return TransactionResource::collection($transactions);
-    }
-
-    public function claimDailyReward(Request $request, WalletService $wallets): JsonResponse
-    {
-        if (! config('pusoy.features.daily_chips_reward') || ! $request->user()->isPlayer()) {
-            throw new BusinessRuleException('Daily rewards are not available.', 403, 'feature_disabled');
-        }
-
-        $transaction = $wallets->claimDailyReward($request->user());
-
-        return response()->json([
-            'message' => $transaction->wasRecentlyCreated ? 'Daily Chips reward claimed.' : 'You already claimed today\'s reward.',
-            'data' => ['reference' => $transaction->reference, 'amount' => (new TransactionResource($transaction))->resolve($request)['amount']],
-        ], $transaction->wasRecentlyCreated ? 201 : 200);
     }
 
 }

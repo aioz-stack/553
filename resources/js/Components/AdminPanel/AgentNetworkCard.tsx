@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AmountDialog, Btn, CopyLink, Figure, I, Panel, StatusPill, Toast, TypePill, fmt, when, type AmountAction } from './kit';
 import { useApi } from '../../lib/useApi';
+import TeamSections from './TeamSections';
 
 interface AgentPanel {
   level: 'agent' | 'master' | 'silver';
@@ -59,6 +60,8 @@ export default function AgentNetworkCard() {
         <CopyLink title="Player Registration Link" url={d.links.player} icon={<I.users className="h-7 w-7" />} hint="Players who register here join your downline once approved" />
         <CopyLink title={d.links.agent_level ? `${d.links.agent_level} Registration Link` : 'Agent Registration Link'} url={d.links.agent} icon={<I.userPlus className="h-7 w-7" />} hint={d.links.agent_level ? `Registers ${d.links.agent_level}s under you` : 'Silver Agents cannot recruit agents'} />
       </div>
+
+      <TeamSections onChanged={reload} />
 
       {d.chip_requests.length > 0 && (
         <Panel title="My Chips Requests" icon={<I.clock className="h-6 w-6" />}>

@@ -18,12 +18,7 @@ return [
     | (Multiplayer). Neither is cash — there are no deposits, withdrawals,
     | redemption or payouts of any kind.
     */
-    'features' => [
-        // Optional free daily Chips reward for players.
-        'daily_chips_reward' => (bool) env('FEATURE_DAILY_CHIPS_REWARD', true),
-    ],
-
-    'daily_chips_reward_amount' => (int) env('DAILY_CHIPS_REWARD_AMOUNT', 100),
+    'features' => [],
 
     // Player-created private rooms play for Chips, fee-free, and use this
     // platform-chosen payout mode (players never choose payout modes).

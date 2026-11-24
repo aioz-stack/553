@@ -22,7 +22,7 @@ export default function Wallet() {
             icon={<IconWallet />}
             label={w.currency === 'CH' ? 'Chips (Multiplayer)' : 'Gold (Single Player)'}
             value={points(w.balance, w.currency)}
-            hint={w.is_frozen ? 'Frozen' : w.currency === 'CH' ? 'Credited by your agent, daily rewards and Multiplayer winnings' : 'Won and lost in Single Player'}
+            hint={w.is_frozen ? 'Frozen' : w.currency === 'CH' ? 'Credited by your agent and Multiplayer winnings' : 'Won and lost in Single Player'}
           />
         ))}
       </div>

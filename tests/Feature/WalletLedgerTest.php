@@ -140,13 +140,10 @@ test('reconciliation matches balances against the ledger', function () {
     expect($this->wallets->reconcile()['ok'])->toBeFalse();
 });
 
-test('the daily Chips reward can only be claimed once per day', function () {
-    $player = User::factory()->create();
-
-    $first = $this->wallets->claimDailyReward($player);
-    $second = $this->wallets->claimDailyReward($player);
-
-    expect($second->id)->toBe($first->id)
-        ->and(balance($player))->toBe(config('pusoy.daily_chips_reward_amount') * 100)
-        ->and(WalletTransaction::query()->where('type', 'DAILY_REWARD')->count())->toBe(1);
+test('the free daily Chips reward is gone for every account type', function () {
+    foreach ([User::factory()->player()->create(), User::factory()->agent()->create(), superAdmin()] as $user) {
+        expect($this->actingAs($user)->postJson('/api/v1/wallet/daily-reward')->status())->toBeIn([404, 405]);
+        $this->actingAs($user)->getJson('/api/v1/wallet')->assertOk()->assertJsonMissingPath('meta.daily_reward_enabled');
+    }
+    expect(WalletTransaction::query()->where('type', 'DAILY_REWARD')->count())->toBe(0);
 });
