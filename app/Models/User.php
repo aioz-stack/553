@@ -156,7 +156,7 @@ class User extends Authenticatable
     }
 
     /**
-     * The account type shown in the Admin Panel: admin, agent, master, silver or player.
+     * The account type shown in the Admin Panel: admin, agent (Incorporator), master or player.
      */
     public function accountType(): string
     {
@@ -177,7 +177,6 @@ class User extends Authenticatable
             'player' => 'Player',
             'agent' => 'Incorporator',
             'master' => 'Master Agent',
-            'silver' => 'Silver Agent',
             default => $this->role->label(),
         };
     }

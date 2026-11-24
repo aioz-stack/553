@@ -45,7 +45,7 @@ export default function LoaderOverview() {
           <StatTile tone="blue" title="Commission Transactions" subtitle="Commission records" icon={<I.coins className="h-10 w-10" />} value={fmt(d.commissions.total)} label="Commission transactions" footer={<Link href="/loader/commission-withdrawals" className="underline">{d.commissions.withdrawals_pending} withdrawal requests pending →</Link>} />
         )}
         {panel.loaderCan('loader_passwords') && (
-          <StatTile tone="green" title="Reset Password" subtitle="Agents, Master Agents, Silver Agents, Players" icon={<I.lock className="h-10 w-10" />} value="Reset" label="Reset Password" footer={<Link href="/loader/reset-password" className="underline">Open Reset Password →</Link>} />
+          <StatTile tone="green" title="Reset Password" subtitle="Incorporators, Master Agents, Players" icon={<I.lock className="h-10 w-10" />} value="Reset" label="Reset Password" footer={<Link href="/loader/reset-password" className="underline">Open Reset Password →</Link>} />
         )}
       </div>
 

@@ -9,11 +9,10 @@ import { useApi } from '../../lib/useApi';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import type { CommissionLog, PageMeta } from './types';
 
-type Level = 'agent' | 'master' | 'silver';
+type Level = 'agent' | 'master';
 const LEVELS: Array<[Level, string]> = [
   ['agent', 'Incorporators'],
   ['master', 'Master Agents'],
-  ['silver', 'Silver Agents'],
 ];
 
 /** Admin Panel → Commission Logs: every commission earned up the hierarchy, with rates per level. */
@@ -39,7 +38,7 @@ export default function CommissionLogs() {
 
   useEffect(() => {
     if (data?.meta.rates && rates === null) {
-      setRates({ agent: String(data.meta.rates.agent), master: String(data.meta.rates.master), silver: String(data.meta.rates.silver) });
+      setRates({ agent: String(data.meta.rates.agent), master: String(data.meta.rates.master) });
     }
   }, [data, rates]);
 
@@ -47,7 +46,7 @@ export default function CommissionLogs() {
     if (!rates) return;
     setSaving(true);
     try {
-      const r = await api.put<{ message: string }>('/admin/panel/commission-rates', { agent: Number(rates.agent), master: Number(rates.master), silver: Number(rates.silver) });
+      const r = await api.put<{ message: string }>('/admin/panel/commission-rates', { agent: Number(rates.agent), master: Number(rates.master) });
       setToast({ ok: true, text: r.data.message });
       reload();
     } catch (e) {
@@ -79,7 +78,7 @@ export default function CommissionLogs() {
   ];
 
   return (
-    <AdminPanelLayout title="Commission Logs" subtitle={panel.isAgent ? 'Commissions earned by you and the agents below you' : 'Commissions earned by Agents, Master Agents and Silver Agents'}>
+    <AdminPanelLayout title="Commission Logs" subtitle={panel.isAgent ? 'Commissions earned by you and the agents below you' : 'Commissions earned by Incorporators and Master Agents'}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {LEVELS.map(([l, label]) => (
           <Figure key={l} label={`${label} — ${data?.meta.rates[l] ?? '…'}%`} value={data ? `${fmt(data.meta.breakdown[l].total, 2)} Chips` : '…'} tone="gold" hint={data ? `${data.meta.breakdown[l].count} commission records${level || status || q ? ' (filtered)' : ''}` : undefined} />
@@ -89,7 +88,7 @@ export default function CommissionLogs() {
       <Panel title="Commission Rates" icon={<I.percent className="h-6 w-6" />}>
         <div className="space-y-3 px-5 py-4">
           <p className="text-sm text-[#5b5274] dark:text-white/65">
-            Percent of the platform fee collected from each player's game. The player's direct sponsor earns its rate; each upline level earns the difference up to its own rate (for example under a Silver Agent: Silver 30%, Master 40−30 = 10%, Agent 50−40 = 10%). {panel.isAgent || panel.isLoader ? 'Rates are set by the Administrator.' : 'Individual agents can be given their own rate from the Agents page.'}
+            Percent of the platform fee collected from each player's game. The player's direct sponsor earns its rate; each upline level earns the difference up to its own rate (for example under a Master Agent: Master 40%, Incorporator 50−40 = 10%). {panel.isAgent || panel.isLoader ? 'Rates are set by the Administrator.' : 'Individual agents can be given their own rate from the Agents page.'}
           </p>
           <div className="flex flex-wrap items-end gap-3">
             {LEVELS.map(([l, label]) => (

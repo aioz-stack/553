@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 
 /**
  * Convert Commission to Wallet and Team Overview (Administrators, Agents, Master Agents and
- * Silver Agents; routes are limited to those roles and the service checks again).
+ * Master Agents; routes are limited to those roles and the service checks again).
  */
 class TeamController extends Controller
 {

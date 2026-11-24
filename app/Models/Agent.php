@@ -30,7 +30,7 @@ class Agent extends Model
     }
 
     /**
-     * This agent and every upline agent, nearest first (Silver → Master → Agent).
+     * This agent and every upline agent, nearest first (Master → Incorporator).
      *
      * @return list<self>
      */

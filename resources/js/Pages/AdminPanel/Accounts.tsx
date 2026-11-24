@@ -34,14 +34,14 @@ import type { Account, PageMeta } from './types';
 type Kind = 'agents' | 'players' | 'pending' | 'banned' | 'archived';
 
 const AGENT_PAGE: Partial<Record<Kind, { title: string; subtitle: string; empty: string }>> = {
-  agents: { title: 'My Agents', subtitle: 'Master and Silver Agents in your downline', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
+  agents: { title: 'My Agents', subtitle: 'Master Agents in your downline', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
   players: { title: 'My Players', subtitle: 'Active players in your downline — load Chips to the players registered to you', empty: 'No active players yet. Share your Player Registration Link.' },
   pending: { title: 'Pending Users', subtitle: 'Registrations through your links, waiting for the Administrator’s approval', empty: 'No registrations are waiting.' },
 };
 
 const PAGE: Record<Kind, { title: string; subtitle: string; empty: string }> = {
-  agents: { title: 'Agents', subtitle: 'Incorporators, Master Agents and Silver Agents', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
-  players: { title: 'Active Players', subtitle: 'Every active player on the platform, under their Agent, Master Agent or Silver Agent', empty: 'No active players match.' },
+  agents: { title: 'Agents', subtitle: 'Incorporators and Master Agents', empty: 'No agents yet. Share your Agent Registration Link to recruit.' },
+  players: { title: 'Active Players', subtitle: 'Every active player on the platform, under their Incorporator or Master Agent', empty: 'No active players match.' },
   pending: { title: 'Pending Users', subtitle: 'New registrations waiting for approval', empty: 'No registrations are waiting.' },
   banned: { title: 'Ban Users', subtitle: 'Banned and suspended accounts', empty: 'No banned or suspended accounts.' },
   archived: { title: 'Archive', subtitle: 'Retired accounts, kept with their full history', empty: 'The archive is empty.' },
@@ -71,7 +71,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
   // Maintenance (Full / Agents-Players): every Chips and commission action here touches an agent or a player.
   const txLocked = useMaintenance().transactions_blocked;
   const [q, setQ] = useState('');
-  const [level, setLevel] = useState<'' | 'agent' | 'master' | 'silver'>('');
+  const [level, setLevel] = useState<'' | 'agent' | 'master'>('');
   const [type, setType] = useState<'' | 'player' | 'agent'>('');
   const [page, setPage] = useState(1);
   const { data, loading, reload } = useApi<{ data: Account[]; meta: PageMeta }>(`${panel.api}/accounts`, {
@@ -306,7 +306,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
       <Panel title={info.title} icon={kind === 'pending' ? <I.clock className="h-6 w-6" /> : kind === 'banned' ? <I.ban className="h-6 w-6" /> : kind === 'archived' ? <I.archive className="h-6 w-6" /> : <I.users className="h-6 w-6" />} actions={data?.meta && <span className="text-sm font-bold text-[#6b6385] dark:text-white/55">{fmt(data.meta.total)} accounts</span>}>
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search username, name, email or ID…" />
-          {kind === 'agents' && <Picker label="Level" value={level} onChange={(v) => { setLevel(v); setPage(1); }} options={[['', 'All levels'], ['agent', 'Incorporators'], ['master', 'Master Agents'], ['silver', 'Silver Agents']]} />}
+          {kind === 'agents' && <Picker label="Level" value={level} onChange={(v) => { setLevel(v); setPage(1); }} options={[['', 'All levels'], ['agent', 'Incorporators'], ['master', 'Master Agents']]} />}
           {(kind === 'pending' || kind === 'banned' || kind === 'archived') && <Picker label="Account type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={[['', 'Agents and players'], ['agent', 'Agents'], ['player', 'Players']]} />}
         </div>
         <Table label={info.title} columns={columns} rows={data?.data} loading={loading && !data} rowKey={(a) => a.id} empty={info.empty} />

@@ -19,8 +19,7 @@ use Illuminate\Support\Str;
 /**
  * Account creation, following the one hierarchy rule (App\Services\Users\Hierarchy):
  *  - Admins create Agents (an Administrator also needs manage_agents);
- *  - Agents create Master Agents and Players, Master Agents create Silver Agents and Players,
- *    Silver Agents create Players only — always directly under the creator;
+ *  - Incorporators create Master Agents and Players, Master Agents create Players only — always directly under the creator;
  *  - only a Super Admin creates Super Admins and Administrators.
  * The creator is the permanent sponsor; an agent's level and parent come from the creator.
  */

@@ -21,7 +21,7 @@ export default function LoadLogs() {
   const txLocked = useMaintenance().transactions_blocked;
   const [status, setStatus] = useState<Status>('');
   const [direction, setDirection] = useState<'' | 'load' | 'withdraw' | 'request'>('');
-  const [type, setType] = useState<'' | 'agent' | 'master' | 'silver' | 'player' | 'admin'>('');
+  const [type, setType] = useState<'' | 'agent' | 'master' | 'player' | 'admin'>('');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const params = { status: status || undefined, direction: direction || undefined, account_type: type || undefined, q: q.trim() || undefined, page };
@@ -147,7 +147,7 @@ export default function LoadLogs() {
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <SearchInput value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Search ID, sender or account…" />
           <Picker label="Transaction type" value={direction} onChange={(v) => { setDirection(v); setPage(1); }} options={[['', 'All transactions'], ['load', 'Load Chips'], ['withdraw', 'Withdraw Chips'], ['request', 'Chips requests']]} />
-          <Picker label="Account type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={[['', 'All accounts'], ['agent', 'Agents'], ['master', 'Master Agents'], ['silver', 'Silver Agents'], ['player', 'Players'], ...(panel.isAgent ? [] : ([['admin', 'Administrators']] as Array<['admin', string]>))]} />
+          <Picker label="Account type" value={type} onChange={(v) => { setType(v); setPage(1); }} options={[['', 'All accounts'], ['agent', 'Incorporators'], ['master', 'Master Agents'], ['player', 'Players'], ...(panel.isAgent ? [] : ([['admin', 'Administrators']] as Array<['admin', string]>))]} />
         </div>
         <Table label="Load logs" columns={cols} rows={data?.data} loading={loading && !data} rowKey={(r) => r.id} empty="No transactions match these filters." />
         <Pager meta={data?.meta} onPage={setPage} />

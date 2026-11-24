@@ -5,7 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** A Shop exchange of Keys for Gold (final once completed; see KeyExchangeService). */
+/** A Shop exchange of Keys for Chips (final once completed; see KeyExchangeService). reward_currency
+ * says what was paid: CH, or GD for exchanges made before the Shop paid Chips. */
 class KeyExchange extends Model
 {
     public const COMPLETED = 'completed';
@@ -16,7 +17,7 @@ class KeyExchange extends Model
 
     protected function casts(): array
     {
-        return ['keys_amount' => 'integer', 'gold_amount' => 'integer'];
+        return ['keys_amount' => 'integer', 'reward_amount' => 'integer'];
     }
 
     public function user(): BelongsTo
@@ -29,8 +30,8 @@ class KeyExchange extends Model
         return $this->belongsTo(WalletTransaction::class, 'keys_transaction_id');
     }
 
-    public function goldTransaction(): BelongsTo
+    public function rewardTransaction(): BelongsTo
     {
-        return $this->belongsTo(WalletTransaction::class, 'gold_transaction_id');
+        return $this->belongsTo(WalletTransaction::class, 'reward_transaction_id');
     }
 }

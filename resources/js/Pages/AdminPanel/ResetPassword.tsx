@@ -10,7 +10,7 @@ const strong = (p: string) => p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p
 
 /**
  * Admin Panel → Reset Password (Super Admin and Administrators only; the server checks again).
- * Find an Agent, Master Agent, Silver Agent or Player by username, account ID, name or email,
+ * Find an Incorporator, Master Agent or Player by username, account ID, name or email,
  * check who it is, then set and confirm a new password. The password is hashed on the server,
  * never shown, and the reset is written to the audit log.
  */
@@ -58,7 +58,7 @@ export default function ResetPassword() {
     });
 
   return (
-    <AdminPanelLayout title="Reset Password" subtitle="Set a new password for any Agent, Master Agent, Silver Agent or Player">
+    <AdminPanelLayout title="Reset Password" subtitle="Set a new password for any Incorporator, Master Agent or Player">
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Find an account" icon={<I.users className="h-6 w-6" />}>
           <div className="space-y-4 px-5 py-4">

@@ -182,11 +182,11 @@ export function StatusPill({ status }: { status: string }) {
 const TYPE: Record<string, string> = {
   agent: 'bg-violet-100 text-violet-700 ring-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:ring-violet-500/30',
   master: 'bg-indigo-100 text-indigo-700 ring-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/30',
-  silver: 'bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-400/15 dark:text-amber-200 dark:ring-amber-400/30',
+  loader: 'bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-400/15 dark:text-amber-200 dark:ring-amber-400/30',
   player: 'bg-sky-100 text-sky-700 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/30',
   admin: 'bg-zinc-200 text-zinc-800 ring-zinc-300 dark:bg-white/10 dark:text-white/80 dark:ring-white/15',
 };
-const TYPE_LABEL: Record<string, string> = { agent: 'Incorporator', master: 'Master Agent', silver: 'Silver Agent', player: 'Player', admin: 'Administrator' };
+const TYPE_LABEL: Record<string, string> = { agent: 'Incorporator', master: 'Master Agent', loader: 'Loader', player: 'Player', admin: 'Administrator' };
 
 export function TypePill({ type, label }: { type: string | null | undefined; label?: string | null }) {
   const t = type ?? 'admin';

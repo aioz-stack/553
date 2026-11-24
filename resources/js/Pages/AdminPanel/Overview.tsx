@@ -12,7 +12,7 @@ import { Eye, Signed, TxLabel, commissionRows, loadRows, withdrawalRows } from '
 interface OverviewData {
   me: { username: string; is_super_admin: boolean };
   /** Agent Panel only. */
-  level?: 'agent' | 'master' | 'silver';
+  level?: 'agent' | 'master';
   level_label?: string;
   upline?: { username: string } | null;
   allocation_frozen?: boolean;
@@ -20,7 +20,7 @@ interface OverviewData {
   pending_chip_requests?: number;
   chip_requests?: Array<{ reference: string; amount: string; status: string; note: string | null; created_at: string }>;
   my_chips: string;
-  active_agents: { total: number; agent: number; master: number; silver: number };
+  active_agents: { total: number; agent: number; master: number };
   active_players: number;
   pending_users: number;
   links: { code: string; player: string | null; agent: string | null; agent_level: string | null };
@@ -30,7 +30,7 @@ interface OverviewData {
 type Tab = 'load' | 'commission' | 'withdrawal';
 
 /**
- * Overview of the Admin Panel (whole platform) and of the Agent / Master Agent / Silver Agent
+ * Overview of the Admin Panel (whole platform) and of the Incorporator / Master Agent
  * Panel (the agent's own downline): summary tiles, permanent referral links, Convert
  * Commission to Wallet, Team Overview and recent transactions — all live from the API.
  */
@@ -107,11 +107,11 @@ export default function Overview() {
         <StatTile
           tone="blue"
           title={agent ? 'My Downline Agents' : 'Total Active Agents'}
-          subtitle={agent ? (d?.level === 'silver' ? 'Silver Agents recruit players only' : 'Active agents below you') : 'Agents + Master Agents + Silver Agents'}
+          subtitle={agent ? (d?.level === 'master' ? 'Master Agents recruit players only' : 'Active agents below you') : 'Incorporators + Master Agents'}
           icon={<I.users className="h-10 w-10" />}
           value={d ? fmt(d.active_agents.total) : '…'}
           label={agent ? 'My Downline Agents' : 'Total Active Agents'}
-          footer={d && (agent ? `Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}` : `Incorporators ${fmt(d.active_agents.agent)} · Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}`)}
+          footer={d && (agent ? `Master Agents ${fmt(d.active_agents.master)}` : `Incorporators ${fmt(d.active_agents.agent)} · Master Agents ${fmt(d.active_agents.master)}`)}
         />
         <StatTile
           tone="green"
@@ -124,8 +124,8 @@ export default function Overview() {
         />
       </div>
 
-      {/* Only the links this role may use: Admin → Agents; Agent → Master Agents + Players;
-          Master Agent → Silver Agents + Players; Silver Agent → Players. The server enforces the same. */}
+      {/* Only the links this role may use: Admin → Incorporators; Incorporator → Master Agents + Players;
+          Master Agent → Players. The server enforces the same. */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {(!d || d.links.agent) && (
           <CopyLink title={d?.links.agent_level ? `${d.links.agent_level} Registration Link` : 'Agent Registration Link'} url={d?.links.agent ?? null} icon={<I.userPlus className="h-7 w-7" />} hint={d?.links.agent_level ? `Registers ${d.links.agent_level}s under your account` : undefined} />

@@ -63,7 +63,6 @@ class PanelController extends Controller
                 'total' => (int) $agents->sum(),
                 'agent' => (int) ($agents['agent'] ?? 0),
                 'master' => (int) ($agents['master'] ?? 0),
-                'silver' => (int) ($agents['silver'] ?? 0),
             ],
             'active_players' => User::query()->where('role', Role::Player->value)->where('status', UserStatus::Active->value)->count(),
             'pending_users' => User::query()->where('status', UserStatus::Pending->value)->count(),
@@ -98,7 +97,7 @@ class PanelController extends Controller
             'q' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'in:completed,pending,rejected'],
             'direction' => ['nullable', 'in:load,withdraw,request'],
-            'account_type' => ['nullable', 'in:player,agent,master,silver,admin'],
+            'account_type' => ['nullable', 'in:player,agent,master,admin'],
         ]);
 
         $page = $this->scopeLoads(ChipLoad::query())->with(['sender', 'account', 'processor', 'transaction'])
@@ -158,7 +157,7 @@ class PanelController extends Controller
         $request->validate([
             'q' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'in:pending,approved,paid,rejected,reversed'],
-            'level' => ['nullable', 'in:agent,master,silver'],
+            'level' => ['nullable', 'in:agent,master'],
         ]);
 
         $base = $this->scopeCommissions(AgentCommission::query())
@@ -189,7 +188,6 @@ class PanelController extends Controller
         $data = $request->validate([
             'agent' => ['required', 'numeric', 'min:0', 'max:100'],
             'master' => ['required', 'numeric', 'min:0', 'max:100'],
-            'silver' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
         $rates = $this->commissions->setLevelRates($request->user(), array_map(fn ($p) => (int) round($p * 100), $data));
 
@@ -260,7 +258,7 @@ class PanelController extends Controller
         $data = $request->validate([
             'kind' => ['required', 'in:agents,players,pending,banned,archived,all'],
             'q' => ['nullable', 'string', 'max:64'],
-            'level' => ['nullable', 'in:agent,master,silver'],
+            'level' => ['nullable', 'in:agent,master'],
             'type' => ['nullable', 'in:player,agent'],
         ]);
 
@@ -413,7 +411,7 @@ class PanelController extends Controller
 
     /**
      * Admin Panel → Reset Password: Super Admin and Administrators set a new password for an
-     * Agent, Master Agent, Silver Agent or Player. The password is hashed by the model, never
+     * Incorporator, Master Agent or Player. The password is hashed by the model, never
      * returned or logged; the account's API tokens are revoked so the old password's sign-ins
      * end at once. The audit log records who reset whose password, and when.
      */
@@ -582,7 +580,6 @@ class PanelController extends Controller
             'player' => 'Player',
             'agent' => 'Incorporator',
             'master' => 'Master Agent',
-            'silver' => 'Silver Agent',
             default => 'Administrator',
         };
     }

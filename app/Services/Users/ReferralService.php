@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
  * Every account has ONE permanent referral code (users.referral_code) and two links:
  *   {APP_URL}/register/player?ref=CODE  — registers a Player under the account;
  *   {APP_URL}/register/agent?ref=CODE   — registers the next agent level under it
- *     (Administrator → Agent → Master Agent → Silver Agent; Silver Agents have no Agent link).
+ *     (Administrator → Incorporator → Master Agent; Master Agents have no Agent link).
  *
  * Registration through a link creates a PENDING account whose sponsor (users.sponsor_id)
  * is fixed at that moment and never changes. Approval activates it and builds the
@@ -71,7 +71,7 @@ class ReferralService
         $code = $this->codeFor($user);
         $base = rtrim((string) config('app.url'), '/');
         $level = $this->recruitLevel($user);
-        // Player links belong to agents only (Agent, Master Agent, Silver Agent); Admins recruit Agents.
+        // Player links belong to agents only (Incorporator, Master Agent); Admins recruit Incorporators.
         $canRefer = Hierarchy::canCreatePlayers($user);
 
         return [
@@ -184,7 +184,7 @@ class ReferralService
             }
 
             if ($user->isAgent()) {
-                // The level comes from the sponsor (Administrator → Agent → Master → Silver).
+                // The level comes from the sponsor (Administrator → Incorporator → Master Agent).
                 $level = $this->recruitLevel($sponsor);
                 if ($level === null) {
                     throw new BusinessRuleException('The sponsor can no longer register agents.', 409, 'invalid_state');
@@ -198,7 +198,7 @@ class ReferralService
                     'created_by' => $actor->id,
                 ]);
             } elseif (! Hierarchy::canCreatePlayers($sponsor)) {
-                throw new BusinessRuleException('Players can only join under an Agent, Master Agent or Silver Agent.', 409, 'invalid_state');
+                throw new BusinessRuleException('Players can only join under an Incorporator or a Master Agent.', 409, 'invalid_state');
             } else {
                 AgentPlayer::query()->firstOrCreate(['player_id' => $user->id], [
                     'agent_id' => $sponsor->agent->id,

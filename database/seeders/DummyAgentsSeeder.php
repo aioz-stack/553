@@ -24,10 +24,12 @@ use RuntimeException;
  * Creates a dummy agent chain under the Super Admin through the real referral + approval flow
  * (password for all: "password"):
  *
- *   dummyagent    Agent          (sponsor: superadmin)
+ *   dummyagent    Incorporator   (sponsor: superadmin)
  *   dummymaster   Master Agent   (sponsor: dummyagent)
- *   dummysilver   Silver Agent   (sponsor: dummymaster)
- *   dummyplayer   Player         (sponsor: dummysilver)
+ *   dummyplayer   Player         (sponsor: dummymaster)
+ *
+ * (Databases seeded before Silver Agent was removed also have dummysilver, now a Master Agent
+ * under dummyagent with dummyplayer as its player.)
  *
  * Each dummy agent gets 200 Chips of commission: a Paid commission record plus the matching
  * ledger credit into its commission wallet, so "Convert Commission to Wallet", Team Overview
@@ -60,10 +62,9 @@ class DummyAgentsSeeder extends Seeder
 
         $agent = $join($super, 'agent', 'dummyagent', 'Dummy Agent');
         $master = $join($agent, 'agent', 'dummymaster', 'Dummy Master Agent');
-        $silver = $join($master, 'agent', 'dummysilver', 'Dummy Silver Agent');
-        $player = $join($silver, 'player', 'dummyplayer', 'Dummy Player');
+        $player = $join($master, 'player', 'dummyplayer', 'Dummy Player');
 
-        foreach ([$agent, $master, $silver] as $user) {
+        foreach ([$agent, $master] as $user) {
             $user->loadMissing('agent');
             $commission = AgentCommission::query()->firstOrCreate(
                 ['agent_id' => $user->agent->id, 'game_session_id' => self::DUMMY_SESSION, 'player_id' => $player->id],

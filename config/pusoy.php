@@ -74,15 +74,15 @@ return [
     | seat before the match starts (never during the countdown).
     */
     /*
-    | Shop: Keys → Gold exchange packages (whole Keys → whole Gold). Final and non-refundable; Gold can
-    | never be turned back into Keys. Keyed by package id.
+    | Shop: Keys → Chips exchange packages (whole Keys → whole Chips). Final and non-refundable; Chips
+    | can never be turned back into Keys. Keyed by package id.
     */
     'shop' => [
         'key_packages' => [
-            'k1' => ['keys' => 1, 'gold' => 5],
-            'k2' => ['keys' => 2, 'gold' => 10],
-            'k5' => ['keys' => 5, 'gold' => 25],
-            'k10' => ['keys' => 10, 'gold' => 50],
+            'k1' => ['keys' => 1, 'chips' => 5],
+            'k2' => ['keys' => 2, 'chips' => 10],
+            'k5' => ['keys' => 5, 'chips' => 25],
+            'k10' => ['keys' => 10, 'chips' => 50],
         ],
     ],
 

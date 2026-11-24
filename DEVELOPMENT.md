@@ -1311,3 +1311,42 @@ Not done / not verified:
 - **Policy:** there is no refund and no Gold → Keys path. Gold received this way is ordinary Single Player Gold.
 - Migration `2026_11_25_140000_create_key_exchanges_table`.
 - Tests: `tests/Feature/ShopKeyExchangeTest.php`, `mobile/src/components/lobby/ShopModal.test.tsx`.
+
+## Shop now exchanges Keys for Chips (was Gold)
+
+- Packages: 1 Key → 5 Chips, 2 → 10, 5 → 25, 10 → 50 (`config('pusoy.shop.key_packages')`, key `chips`).
+- `KeyExchangeService` moves Keys out and Chips into the player's Chips wallet in one transaction (two
+  `KEY_EXCHANGE` ledger rows, KY and CH). The rest is unchanged: idempotent, final, logged and audited.
+- `key_exchanges` columns are now currency-neutral: `reward_amount`, `reward_currency`, `reward_transaction_id`
+  (migration `2026_11_25_150000_shop_exchanges_reward_chips`). Earlier exchanges keep `reward_currency = GD`, so
+  the history still shows them as Gold.
+- API: `GET /shop` returns `packages[].chips`, `balances.chips` and `history[].amount` + `currency`. The pop-up
+  shows Chips icons and wording, and its notice and confirmation say Chips can't be converted back into Keys.
+- Keys are still loaded only by a Super Admin, so the Chips that can enter through the Shop are capped by the Keys
+  issued.
+
+## Silver Agent removed
+
+- **Hierarchy now:** Super Admin / Administrator → **Incorporator** → **Master Agent** → Players.
+  - Admins create Incorporators.
+  - Incorporators create Master Agents and Players.
+  - Master Agents create Players only: no Agent Registration Link, and no "My Agents" list in their panel.
+  - Earlier sections of this file that mention Silver Agents describe the old hierarchy.
+- **Removed in code:** `AgentLevel::Silver` (`AgentLevel::tryFrom('silver')` is null, so the API can't use it), and
+  `Master → recruits()` is now null.
+  - `Hierarchy::assertCanCreate` refuses agents from Master Agents for every path: links, approval and direct creation.
+  - Request validators no longer accept `silver` (account / level filters).
+  - Commission level rates are Incorporator and Master Agent only; the overview counts and the panel/menu logic for
+    the silver level are gone.
+  - On the web: level pickers, the commission rates form, overview tiles, the panel name and maintenance / reset
+    texts. The Employees list's Loader pill now has its own `loader` style.
+- **Migration** `2026_11_25_160000_remove_silver_agent_level`: every Silver Agent becomes a **Master Agent** under
+  the Incorporator above its old Master Agent (`agents.parent_agent_id` and `users.sponsor_id` updated).
+  - Unchanged: login, wallets and balances, all ledger and commission history, and its players (`agent_players`).
+  - Each change gets an audit row (`agent.silver_level_removed`) with the old level, parent and sponsor.
+  - The Silver level commission rule is deactivated, not deleted. Existing commission records keep the rate they
+    were paid at.
+  - Not reversible. Locally `dummysilver` became a Master Agent under `dummyagent`.
+- `DummyAgentsSeeder` now builds dummyagent → dummymaster → dummyplayer.
+- Tests: `HierarchyTest` (no Silver anywhere, plus the migration keeps players, wallets and history),
+  `AdminPanelTest`, `AgentPanelTest`, `TeamTest`, `PlatformAccessTest`, `LoaderAccountTest`.

@@ -21,7 +21,7 @@ interface NavItem {
  * The Admin Panel shell: a deep-purple sidebar with gold accents (in both themes), a
  * header with the page title, a Light / Dark toggle (saved in the browser and on the
  * account, so it follows the user after a refresh or a new sign-in), the notification
- * bell and the signed-in user. Agents, Master Agents and Silver Agents get the same shell
+ * bell and the signed-in user. Incorporators and Master Agents get the same shell
  * as their Agent Panel, with the navigation of their role. Reverb `panel.updated` events
  * (and returning to the tab) refresh whatever the open page shows.
  */
@@ -89,9 +89,9 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
     ...(panel.isAgent ? [] : [{ label: 'Maintenance', href: '/admin/maintenance', icon: <I.shield className="h-5 w-5" /> }]),
     ...(panel.isAgent ? [] : [{ label: 'Users / Employees', href: '/admin/employees', icon: <I.user className="h-5 w-5" /> }]),
   ];
-  // Agents see only their own downline; Silver Agents recruit no agents, so they have no Agents list.
+  // Agents see only their own downline; Master Agents recruit no agents, so they have no Agents list.
   const people: NavItem[] = panel.isLoader ? [] : [
-    ...(panel.level === 'silver' ? [] : [{ label: panel.isAgent ? 'My Agents' : 'Agents', href: `${b}/accounts/agents`, icon: <I.user className="h-[18px] w-[18px]" /> }]),
+    ...(panel.level === 'master' ? [] : [{ label: panel.isAgent ? 'My Agents' : 'Agents', href: `${b}/accounts/agents`, icon: <I.user className="h-[18px] w-[18px]" /> }]),
     { label: panel.isAgent ? 'My Players' : 'Active Players', href: `${b}/accounts/active-players`, icon: <I.users className="h-[18px] w-[18px]" /> },
     { label: 'Pending Users', href: `${b}/accounts/pending-users`, icon: <I.clock className="h-[18px] w-[18px]" />, badge: counts.data?.data.pending_users },
     ...(panel.isAgent ? [] : [{ label: 'Ban Users', href: '/admin/accounts/ban-users', icon: <I.ban className="h-[18px] w-[18px]" />, badge: counts.data?.data.banned_users }]),

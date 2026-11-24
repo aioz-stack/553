@@ -17,13 +17,13 @@ use App\Support\Points;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Shop: exchange Keys for Gold at the fixed packages in config('pusoy.shop.key_packages').
+ * Shop: exchange Keys for Chips at the fixed packages in config('pusoy.shop.key_packages').
  *
  * One database transaction does everything: the player's row and Keys wallet are locked, the Keys
- * balance is checked, the Keys leave the Keys wallet and the Gold enters the Gold wallet (two ledger
+ * balance is checked, the Keys leave the Keys wallet and the Chips enter the Chips wallet (two ledger
  * entries, KEY_EXCHANGE), and the exchange is logged. Any failure rolls all of it back — neither
  * wallet changes. A repeated request with the same idempotency key returns the first result and
- * never deducts twice. Exchanges are final: there is no refund and no Gold → Keys.
+ * never deducts twice. Exchanges are final: there is no refund and no Chips → Keys.
  */
 class KeyExchangeService
 {
@@ -32,7 +32,7 @@ class KeyExchangeService
         private readonly WalletService $wallets,
     ) {}
 
-    /** @return array<string, array{keys: int, gold: int}> */
+    /** @return array<string, array{keys: int, chips: int}> */
     public static function packages(): array
     {
         return config('pusoy.shop.key_packages', []);
@@ -46,14 +46,14 @@ class KeyExchangeService
 
         $pack = self::packages()[$package] ?? throw new BusinessRuleException('Choose one of the Shop packages.', 422, 'invalid_package');
         $keys = (int) $pack['keys'] * Points::SCALE;
-        $gold = (int) $pack['gold'] * Points::SCALE;
+        $chips = (int) $pack['chips'] * Points::SCALE;
 
         if ($done = $this->previous($user, $idempotencyKey)) {
             return $done;
         }
 
         try {
-            $exchange = DB::transaction(function () use ($user, $package, $keys, $gold, $idempotencyKey) {
+            $exchange = DB::transaction(function () use ($user, $package, $keys, $chips, $idempotencyKey) {
                 // One exchange at a time per player; re-check the key under the lock.
                 User::query()->whereKey($user->id)->lockForUpdate()->first();
                 if ($done = $this->previous($user, $idempotencyKey)) {
@@ -63,34 +63,34 @@ class KeyExchangeService
                 app(MaintenanceService::class)->assertTransactionsAllowed($user, $user);
 
                 $keyWallet = Wallet::query()->whereKey($this->wallets->for($user, Currency::KY)->id)->lockForUpdate()->firstOrFail();
-                $goldWallet = $this->wallets->for($user, Currency::GD);
+                $chipsWallet = $this->wallets->for($user, Currency::CH);
 
                 if ($keyWallet->balance < $keys) {
                     throw new InsufficientBalanceException;
                 }
 
-                $meta = ['package' => $package, 'keys' => $keys, 'gold' => $gold];
+                $meta = ['package' => $package, 'keys' => $keys, 'chips' => $chips];
                 $keysTx = $this->ledger->transfer(new TransferRequest(
                     type: TransactionType::KeyExchange,
                     currency: Currency::KY,
                     source: $keyWallet,
                     destination: null,
                     amount: $keys,
-                    reason: 'Shop: '.Points::decimal($keys).' Keys exchanged for '.Points::decimal($gold).' Gold',
+                    reason: 'Shop: '.Points::decimal($keys).' Keys exchanged for '.Points::decimal($chips).' Chips',
                     actor: $user,
                     idempotencyKey: "keyx:{$user->id}:{$idempotencyKey}:keys",
                     relatedPlayerId: $user->id,
                     metadata: $meta,
                 ));
-                $goldTx = $this->ledger->transfer(new TransferRequest(
+                $chipsTx = $this->ledger->transfer(new TransferRequest(
                     type: TransactionType::KeyExchange,
-                    currency: Currency::GD,
+                    currency: Currency::CH,
                     source: null,
-                    destination: $goldWallet,
-                    amount: $gold,
-                    reason: 'Shop: Gold from '.Points::decimal($keys).' Keys',
+                    destination: $chipsWallet,
+                    amount: $chips,
+                    reason: 'Shop: Chips from '.Points::decimal($keys).' Keys',
                     actor: $user,
-                    idempotencyKey: "keyx:{$user->id}:{$idempotencyKey}:gold",
+                    idempotencyKey: "keyx:{$user->id}:{$idempotencyKey}:chips",
                     relatedPlayerId: $user->id,
                     metadata: $meta,
                 ));
@@ -99,18 +99,19 @@ class KeyExchangeService
                 $exchange = KeyExchange::query()->updateOrCreate(['user_id' => $user->id, 'idempotency_key' => $idempotencyKey], [
                     'package' => $package,
                     'keys_amount' => $keys,
-                    'gold_amount' => $gold,
+                    'reward_amount' => $chips,
+                    'reward_currency' => Currency::CH->value,
                     'status' => KeyExchange::COMPLETED,
                     'failure_reason' => null,
                     'keys_transaction_id' => $keysTx->id,
-                    'gold_transaction_id' => $goldTx->id,
+                    'reward_transaction_id' => $chipsTx->id,
                 ]);
-                AuditLogger::log($user, 'shop.key_exchange', $exchange, null, $meta + ['keys_reference' => $keysTx->reference, 'gold_reference' => $goldTx->reference]);
+                AuditLogger::log($user, 'shop.key_exchange', $exchange, null, $meta + ['keys_reference' => $keysTx->reference, 'chips_reference' => $chipsTx->reference]);
 
                 return $exchange;
             });
         } catch (InsufficientBalanceException) {
-            $this->reject($user, $package, $keys, $gold, $idempotencyKey, 'insufficient_keys');
+            $this->reject($user, $package, $keys, $chips, $idempotencyKey, 'insufficient_keys');
 
             throw new BusinessRuleException('Not enough Keys for this package. You need '.Points::decimal($keys).' Keys.', 422, 'insufficient_keys');
         }
@@ -126,18 +127,18 @@ class KeyExchangeService
     }
 
     /** Log a refused attempt (nothing moved). */
-    private function reject(User $user, string $package, int $keys, int $gold, string $idempotencyKey, string $reason): void
+    private function reject(User $user, string $package, int $keys, int $chips, string $idempotencyKey, string $reason): void
     {
         KeyExchange::query()->updateOrCreate(
             ['user_id' => $user->id, 'idempotency_key' => $idempotencyKey],
-            ['package' => $package, 'keys_amount' => $keys, 'gold_amount' => $gold, 'status' => KeyExchange::REJECTED, 'failure_reason' => $reason],
+            ['package' => $package, 'keys_amount' => $keys, 'reward_amount' => $chips, 'reward_currency' => Currency::CH->value, 'status' => KeyExchange::REJECTED, 'failure_reason' => $reason],
         );
     }
 
-    /** Push the new Keys and Gold balances to the player's private channel only. */
+    /** Push the new Keys and Chips balances to the player's private channel only. */
     private function pushBalances(User $user): void
     {
-        foreach ([Currency::KY, Currency::GD] as $currency) {
+        foreach ([Currency::KY, Currency::CH] as $currency) {
             $balance = (int) Wallet::query()->where('user_id', $user->id)->where('currency', $currency->value)->where('type', 'player')->value('balance');
             event(new UserEvent($user->id, GameEvents::WALLET_UPDATED, ['currency' => $currency->value, 'balance' => Points::decimal($balance)]));
         }

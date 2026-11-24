@@ -14,9 +14,8 @@ use App\Models\User;
  * asks this class, so no form, link or API call can step outside it:
  *
  *   Admin (Super Admin / Administrator) → creates Agents
- *   Agent                               → creates Master Agents and Players
- *   Master Agent                        → creates Silver Agents and Players
- *   Silver Agent                        → creates Players only
+ *   Agent (Incorporator)                → creates Master Agents and Players
+ *   Master Agent                        → creates Players only
  *   Player                              → creates nothing
  *
  * Platform staff (Super Admins and Administrators) are created only by a Super Admin; Loader
@@ -62,9 +61,9 @@ final class Hierarchy
         }
 
         return match ($role) {
-            Role::Player => self::canCreatePlayers($creator) ? null : throw $deny('Only Agents, Master Agents and Silver Agents can create players.'),
+            Role::Player => self::canCreatePlayers($creator) ? null : throw $deny('Only Incorporators and Master Agents can create players.'),
             Role::Agent => self::agentLevelFor($creator) ?? throw $deny($creator->isAgent()
-                ? 'Silver Agents can create players only.'
+                ? 'Master Agents can create players only.'
                 : 'You are not allowed to create agent accounts.'),
             Role::Administrator, Role::SuperAdmin => $creator->isSuperAdmin() ? null : throw $deny('Only a Super Admin can create administrator accounts.'),
             Role::Loader => $creator->isActive() && ($creator->isSuperAdmin() || $creator->isAdministrator()) ? null : throw $deny('Only Admins can create Loader Accounts.'),

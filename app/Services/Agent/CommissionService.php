@@ -26,15 +26,15 @@ use Illuminate\Support\Facades\DB;
 /**
  * Agent commissions = a share of the platform fee actually collected from each
  * player in a completed, settled game, paid up the hierarchy
- * (Administrator → Agent → Master Agent → Silver Agent → Player).
+ * (Administrator → Incorporator → Master Agent → Player).
  *
  * Rates (basis points of the fee): each agent's own override rule, else its
- * level's default (Agent 50%, Master Agent 40%, Silver Agent 30%), else the
+ * level's default (Incorporator 50%, Master Agent 40%), else the
  * platform default. The player's direct sponsor earns its rate; each upline
  * agent earns its OVERRIDE — the difference between its rate and the highest
  * rate already paid below it (never negative):
  *
- *   player under a Silver Agent: Silver 30% · Master 40−30 = 10% · Agent 50−40 = 10%
+ *   player under a Master Agent: Master 40% · Incorporator 50−40 = 10%
  *
  * so the chain together never takes more than the top rate and the platform
  * keeps the rest. A player directly under the Administrator earns nobody a

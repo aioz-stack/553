@@ -21,7 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * The Agent Panel (Agents, Master Agents and Silver Agents): the same screens as the Admin
+ * The Agent Panel (Incorporators and Master Agents): the same screens as the Admin
  * Panel — Overview, Load Logs, Commission Logs, Commission Withdrawal, Agents / Players —
  * served by the same code, limited to the signed-in agent and its own downline. Agents can
  * load Chips to their own players, request Chips and request commission withdrawals; every
@@ -60,7 +60,6 @@ class AgentPanelController extends PanelController
                 'total' => (int) $levels->sum(),
                 'agent' => (int) ($levels['agent'] ?? 0),
                 'master' => (int) ($levels['master'] ?? 0),
-                'silver' => (int) ($levels['silver'] ?? 0),
             ],
             'active_players' => (clone $downline)->where('role', Role::Player->value)->where('status', UserStatus::Active->value)->count(),
             'my_players' => count($team['owned']),

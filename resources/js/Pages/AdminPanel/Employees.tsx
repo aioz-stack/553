@@ -94,7 +94,7 @@ export default function Employees() {
         </span>
       ),
     },
-    { key: 'role', label: 'Role', render: (e) => <TypePill type={e.role === 'loader' ? 'silver' : 'admin'} label={e.role_label} /> },
+    { key: 'role', label: 'Role', render: (e) => <TypePill type={e.role === 'loader' ? 'loader' : 'admin'} label={e.role_label} /> },
     {
       key: 'perm',
       label: 'Permissions',
@@ -170,7 +170,7 @@ export default function Employees() {
   return (
     <AdminPanelLayout title="Users / Employees" subtitle="Staff accounts with their own sign-in — Loader Accounts and Administrators">
       <Note>
-        <b>Loader Accounts</b> can only use Load Transactions (loads use the Chips of the Admin who created them), Commission Transactions (review commission withdrawals) and Reset Password for Agents, Master Agents, Silver Agents and Players. They never reach the Admin dashboard, maintenance, settings, rates or the agent hierarchy.
+        <b>Loader Accounts</b> can only use Load Transactions (loads use the Chips of the Admin who created them), Commission Transactions (review commission withdrawals) and Reset Password for Incorporators, Master Agents and Players. They never reach the Admin dashboard, maintenance, settings, rates or the agent hierarchy.
       </Note>
       <Panel
         title="Employees"

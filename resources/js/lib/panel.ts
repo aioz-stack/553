@@ -2,10 +2,10 @@ import { usePage } from '@inertiajs/react';
 import { useEffect, useRef } from 'react';
 import type { SharedProps } from './types';
 
-export type PanelLevel = 'agent' | 'master' | 'silver';
+export type PanelLevel = 'agent' | 'master';
 
 export interface PanelInfo {
-  /** Agents, Master Agents and Silver Agents use the Agent Panel; staff the Admin Panel. */
+  /** Incorporators and Master Agents use the Agent Panel; staff the Admin Panel. */
   isAgent: boolean;
   /** Loader Accounts (employees) use the Loader Panel. */
   isLoader: boolean;
@@ -16,18 +16,18 @@ export interface PanelInfo {
   base: '/admin' | '/agent' | '/loader';
   /** API base (the agent one is limited to its own downline; the loader one to its three modules). */
   api: '/admin/panel' | '/agent/panel' | '/loader/panel';
-  /** "Admin Panel", "Agent Panel", "Master Agent Panel", "Silver Agent Panel", "Loader Panel". */
+  /** "Admin Panel", "Agent Panel", "Master Agent Panel", "Loader Panel". */
   name: string;
 }
 
-const NAMES: Record<PanelLevel, string> = { agent: 'Agent Panel', master: 'Master Agent Panel', silver: 'Silver Agent Panel' };
+const NAMES: Record<PanelLevel, string> = { agent: 'Agent Panel', master: 'Master Agent Panel' };
 
 /** Which panel the signed-in user gets. The server enforces the same split on every request. */
 export function usePanel(): PanelInfo {
   const { auth } = usePage<SharedProps>().props;
   const user = auth.user as (SharedProps['auth']['user'] & { account_type?: string }) | null;
   const isAgent = user?.role === 'agent';
-  const level = isAgent && (user?.account_type === 'master' || user?.account_type === 'silver') ? (user.account_type as PanelLevel) : isAgent ? 'agent' : null;
+  const level = isAgent && user?.account_type === 'master' ? 'master' : isAgent ? 'agent' : null;
 
   const abilities = new Set(user?.abilities ?? []);
   const loaderCan = (p: string) => user?.role === 'loader' && abilities.has(p);

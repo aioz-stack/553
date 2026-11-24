@@ -127,7 +127,7 @@ export default function Wallets() {
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
       {currency === 'GD' && <Alert tone="info">Gold is Single Player only. A credit or debit here adjusts a player's Gold; it can never be used in Multiplayer or exchanged for Chips.</Alert>}
       {currency === 'CH' && <Alert tone="info">Chips are Multiplayer only. They are never cash, never paid out, and never exchanged for Gold.</Alert>}
-      {currency === 'KY' && <Alert tone="info">Keys are a separate player wallet shown in the Main Lobby. Only a Super Admin loads or removes Keys here (audited); they are never cash. Players can exchange Keys for Gold in the Shop (one-way, final); never for Chips.</Alert>}
+      {currency === 'KY' && <Alert tone="info">Keys are a separate player wallet shown in the Main Lobby. Only a Super Admin loads or removes Keys here (audited); they are never cash. Players can exchange Keys for Chips in the Shop (one-way, final); never for Gold.</Alert>}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Chips" value={totals ? points(totals.CH.total, 'CH') : '…'} hint={totals ? `Players ${points(totals.CH.by_type.player.total)} · Allocation ${points(totals.CH.by_type.allocation.total)}` : undefined} />

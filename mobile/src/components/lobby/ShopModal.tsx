@@ -2,34 +2,35 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { GoldCoins } from '@/components/HomeArt';
-import { KeyIcon } from '@/components/game';
+import { ChipIcon, KeyIcon } from '@/components/game';
 import { api, errorText, idempotencyKey } from '@/lib/api';
 import { when } from '@/lib/hooks';
 import { play } from '@/lib/sound';
 
 /**
- * Shop (Main Lobby pop-up, 80% × 80% of the screen): exchange Keys for Gold at the four fixed
+ * Shop (Main Lobby pop-up, 80% × 80% of the screen): exchange Keys for Chips at the four fixed
  * packages. The server decides everything (GET /shop, POST /shop/key-exchanges): it checks your
- * Keys, takes them and adds the Gold in one transaction, refuses duplicates (idempotency key) and
+ * Keys, takes them and adds the Chips in one transaction, refuses duplicates (idempotency key) and
  * logs the exchange. Each exchange needs an explicit confirmation that it is final and
  * non-refundable. Sizes use container units of the pop-up, so it scales with any screen.
  */
 interface Pack {
   id: string;
   keys: number;
-  gold: number;
+  chips: number;
 }
 interface Exchange {
   id: number;
   package: string;
   keys: string;
-  gold: string;
+  amount: string;
+  /** CH (older exchanges may show GD: they paid Gold). */
+  currency: string;
   created_at: string;
 }
 interface ShopState {
   packages: Pack[];
-  balances: { keys: string; gold: string };
+  balances: { keys: string; chips: string };
   history: Exchange[];
 }
 
@@ -139,7 +140,7 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
       });
       play('win');
       setState((s) => (s ? { ...s, balances: r.data.balances } : s));
-      setToast({ ok: true, text: `Success! ${plural(confirm.keys).toLowerCase()} exchanged for ${fmt(confirm.gold)} Gold.` });
+      setToast({ ok: true, text: `Success! ${plural(confirm.keys).toLowerCase()} exchanged for ${fmt(confirm.chips)} Chips.` });
       setConfirm(null);
       window.dispatchEvent(new Event('pusoy:wallet'));
     } catch (e) {
@@ -229,7 +230,7 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                 <ul className="mt-[0.6cqh] space-y-[0.6cqh]" aria-label="Exchange history">
                   {state?.history.map((x) => (
                     <li key={x.id} className="rounded-[1cqh] bg-white/5 px-[1cqh] py-[0.5cqh]" style={{ fontSize: h(2.4) }}>
-                      <span className="font-black">−{fmt(n(x.keys))} Keys</span> → <span className="font-black text-[#ffe14d]">+{fmt(n(x.gold))} Gold</span>
+                      <span className="font-black">−{fmt(n(x.keys))} Keys</span> → <span className="font-black text-[#ffe14d]">+{fmt(n(x.amount))} {x.currency === 'GD' ? 'Gold' : 'Chips'}</span>
                       <span className="block text-white/50">{when(x.created_at)}</span>
                     </li>
                   ))}
@@ -251,7 +252,7 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                 {(state?.packages ?? []).map((p) => {
                   const short = keys !== undefined && keys < p.keys;
                   return (
-                    <li key={p.id} className="flex min-h-0 flex-col items-center justify-between rounded-[2cqh] border-[0.5cqh] border-[#e8b340] bg-[radial-gradient(90%_70%_at_50%_35%,#8a1418,#3a0507)] px-[1cqh] py-[1.4cqh] shadow-[inset_0_0_2cqh_rgb(0_0_0/0.6)]" aria-label={`${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.gold} Gold`}>
+                    <li key={p.id} className="flex min-h-0 flex-col items-center justify-between rounded-[2cqh] border-[0.5cqh] border-[#e8b340] bg-[radial-gradient(90%_70%_at_50%_35%,#8a1418,#3a0507)] px-[1cqh] py-[1.4cqh] shadow-[inset_0_0_2cqh_rgb(0_0_0/0.6)]" aria-label={`${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.chips} Chips`}>
                       <span className="font-display font-black text-[#ffe9b0] drop-shadow-[0_0.4cqh_0_rgb(0_0_0/0.6)]" style={{ fontSize: h(5) }}>
                         {plural(p.keys)}
                       </span>
@@ -260,19 +261,19 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                         ▼
                       </span>
                       <span className="flex items-center gap-[0.8cqh] font-display font-black" style={{ fontSize: h(5.4), lineHeight: 1 }}>
-                        <span className="inline-block [&>svg]:!h-full [&>svg]:!w-full" style={{ width: h(7), height: h(7) }}>
-                          <GoldCoins size={36} />
+                        <span className="inline-block [&>svg]:!h-full [&>svg]:!w-full" style={{ width: h(6.4), height: h(6.4) }}>
+                          <ChipIcon size={36} />
                         </span>
-                        = {fmt(p.gold)}
+                        = {fmt(p.chips)}
                       </span>
                       <span className="font-display font-black text-[#ffd34d]" style={{ fontSize: h(3) }}>
-                        GOLD
+                        CHIPS
                       </span>
                       <button
                         type="button"
                         onClick={() => choose(p)}
                         disabled={busy || !state}
-                        aria-label={`Exchange ${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.gold} Gold`}
+                        aria-label={`Exchange ${p.keys} ${p.keys === 1 ? 'Key' : 'Keys'} for ${p.chips} Chips`}
                         className={`lx-tile mt-[0.8cqh] flex w-full items-center justify-center gap-[0.8cqh] rounded-full border-[0.5cqh] py-[0.9cqh] font-display font-black text-white shadow-[0_0.7cqh_0_rgb(0_0_0/0.45)] disabled:opacity-60 ${short ? 'border-white/30 bg-gradient-to-b from-[#6b6b6b] to-[#3a3a3a]' : 'border-[#ffd34d] bg-gradient-to-b from-[#ff4a4a] to-[#a50d14]'}`}
                         style={{ fontSize: h(3) }}
                       >
@@ -290,7 +291,7 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                 </p>
                 <ul className="grid grid-cols-2 gap-x-[3cqh] text-white/85" style={{ fontSize: h(2.4) }}>
                   <li>• Keys used in an exchange are non-refundable.</li>
-                  <li>• Gold received cannot be converted back into Keys.</li>
+                  <li>• Chips received cannot be converted back into Keys.</li>
                   <li>• All completed exchanges are final.</li>
                   <li>• Review and confirm each exchange before it is completed.</li>
                 </ul>
@@ -306,14 +307,14 @@ export default function ShopModal({ onClose, onGetKeys }: { onClose: () => void;
                   Confirm exchange
                 </p>
                 <p className="mt-[1cqh] font-display font-black" style={{ fontSize: h(4.2) }}>
-                  {plural(confirm.keys)} → {fmt(confirm.gold)} GOLD
+                  {plural(confirm.keys)} → {fmt(confirm.chips)} CHIPS
                 </p>
                 <p className="mt-[0.6cqh] text-white/75" style={{ fontSize: h(2.8) }}>
                   Keys after: {fmt((keys ?? 0) - confirm.keys)} · This exchange is final.
                 </p>
                 <label className="mx-auto mt-[2cqh] flex max-w-[90%] cursor-pointer items-start gap-[1.4cqh] rounded-[1.4cqh] bg-black/35 p-[1.4cqh] text-left" style={{ fontSize: h(2.9) }}>
                   <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-[0.4cqh] h-[3.6cqh] w-[3.6cqh] shrink-0 accent-[#ffc531]" aria-label="I understand this exchange is final and non-refundable" />
-                  <span>I understand that the Keys are non-refundable, the Gold cannot be converted back into Keys, and this exchange is final.</span>
+                  <span>I understand that the Keys are non-refundable, the Chips cannot be converted back into Keys, and this exchange is final.</span>
                 </label>
                 <div className="mt-[2.4cqh] flex justify-center gap-[2cqh]">
                   <button type="button" disabled={busy} onClick={() => setConfirm(null)} className="lx-tile rounded-full border-[0.5cqh] border-white/60 bg-black/35 px-[4cqh] py-[1.2cqh] font-display font-black disabled:opacity-50" style={{ fontSize: h(3.4) }}>

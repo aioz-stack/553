@@ -3,22 +3,21 @@
 namespace App\Enums;
 
 /**
- * Agent levels, top to bottom: Administrator → Agent → Master Agent → Silver Agent.
- * Each account's Agent Registration Link creates the next level down; every level
- * (and the Administrator) can register Players with its Player Registration Link.
+ * Agent levels, top to bottom: Administrator → Incorporator (agent) → Master Agent → Players.
+ * The Administrator's Agent Registration Link creates Incorporators, an Incorporator's creates
+ * Master Agents; every agent level registers Players with its Player Registration Link.
+ * (Silver Agent was removed: existing ones became Master Agents — see the 2026_11_25_160000 migration.)
  */
 enum AgentLevel: string
 {
     case Agent = 'agent';
     case Master = 'master';
-    case Silver = 'silver';
 
     public function label(): string
     {
         return match ($this) {
             self::Agent => 'Incorporator',
             self::Master => 'Master Agent',
-            self::Silver => 'Silver Agent',
         };
     }
 
@@ -27,8 +26,7 @@ enum AgentLevel: string
     {
         return match ($this) {
             self::Agent => self::Master,
-            self::Master => self::Silver,
-            self::Silver => null,
+            self::Master => null,
         };
     }
 
@@ -38,7 +36,6 @@ enum AgentLevel: string
         return match ($this) {
             self::Agent => 5000,
             self::Master => 4000,
-            self::Silver => 3000,
         };
     }
 }

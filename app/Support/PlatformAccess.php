@@ -11,7 +11,7 @@ use Laravel\Sanctum\PersonalAccessToken;
  *
  * | Role                                          | Web App (session) | Mobile Game (app token) |
  * | Super Admin, Administrator, Loader (staff)    | allowed           | blocked                 |
- * | Agent, Master Agent, Silver Agent             | allowed           | blocked                 |
+ * | Incorporator, Master Agent                    | allowed           | blocked                 |
  * | Player                                        | blocked           | allowed                 |
  *
  * The platform is how the account is signed in, not anything the request claims: the Web App

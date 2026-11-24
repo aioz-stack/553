@@ -27,7 +27,7 @@ enum LoaderPermission: string
         return match ($this) {
             self::Loads => 'View all Chips loads; load Chips to agents and players and process Chips requests (from the employer Admin\'s Chips)',
             self::Commissions => 'View commissions and process commission withdrawal (conversion) requests',
-            self::Passwords => 'Reset passwords of Agents, Master Agents, Silver Agents and Players',
+            self::Passwords => 'Reset passwords of Incorporators, Master Agents and Players',
         };
     }
 

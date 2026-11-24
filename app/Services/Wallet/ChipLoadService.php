@@ -24,7 +24,7 @@ use Illuminate\Support\Str;
  *  - approve() / reject() a request — approval loads the Chips from the reviewer's own wallet.
  *
  * An account's Chips wallet is its player wallet (Players) or its allocation wallet
- * (Agents, Master / Silver Agents, Administrators). Every movement goes through the
+ * (Incorporators, Master Agents, Administrators). Every movement goes through the
  * ledger (row locks, no negative balances, idempotency keys) and is recorded in the
  * Load Logs with the staff member responsible.
  */

@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Convert Commission to Wallet and Team Overview — Administrators (incl. Super Admin), Agents,
- * Master Agents and Silver Agents only.
+ * Master Agents only.
  *
  * Conversion moves Chips from the user's commission wallet into their own Chips wallet
  * (allocation wallet) at once: minimum 10 Chips, never more than the available commission
@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\DB;
  *
  * Team Overview totals the user's whole downline (Total Player Wallets, Total Agent Wallets):
  *  - Super Admin: every agent and player on the platform;
- *  - Administrator, Agent, Master Agent, Silver Agent: everyone below them at every level, through
+ *  - Administrator, Incorporator, Master Agent: everyone below them at every level, through
  *    both trees — the permanent sponsor tree (users.sponsor_id) and the agent structure (sub-agents
  *    through agents.parent_agent_id and the players linked to any agent in the downline).
  * Each account is counted once; the user themself is never counted.

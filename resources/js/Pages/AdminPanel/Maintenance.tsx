@@ -16,7 +16,7 @@ const MODES: Array<{ value: MaintenanceModeValue; title: string; tone: string; a
     value: 'full',
     title: 'Full Maintenance',
     tone: 'from-rose-500 to-red-700',
-    affects: ['Player Mobile Game closed — full-screen maintenance artwork, landscape', 'Matchmaking, table entry and gameplay blocked', 'All Agent, Master Agent, Silver Agent and Player transactions disabled', 'Panels stay viewable'],
+    affects: ['Player Mobile Game closed — full-screen maintenance artwork, landscape', 'Matchmaking, table entry and gameplay blocked', 'All Incorporator, Master Agent and Player transactions disabled', 'Panels stay viewable'],
   },
   {
     value: 'mobile_game',
@@ -28,7 +28,7 @@ const MODES: Array<{ value: MaintenanceModeValue; title: string; tone: string; a
     value: 'agents_players',
     title: 'Agents/Players',
     tone: 'from-amber-400 to-orange-600',
-    affects: ['Transactions of Agents, Master Agents, Silver Agents and Players disabled (Load / Withdraw Chips, requests, commission conversion and withdrawals)', 'Panels stay available with a maintenance notice', 'The mobile game keeps running'],
+    affects: ['Transactions of Incorporators, Master Agents and Players disabled (Load / Withdraw Chips, requests, commission conversion and withdrawals)', 'Panels stay available with a maintenance notice', 'The mobile game keeps running'],
   },
   {
     value: 'off',

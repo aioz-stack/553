@@ -25,24 +25,24 @@ function agpJoin(User $admin, string $code, string $type, string $username): Use
     return app(ReferralService::class)->approve($admin, $user);
 }
 
-/** Agent → Master → Silver, one player each, plus an unrelated agent with its own player. */
+/** Incorporator → two Master Agents, one player each, plus an unrelated Incorporator with its own player. */
 function agpTree(): array
 {
     $super = superAdmin();
     $agent = agpJoin($super, app(ReferralService::class)->codeFor($super), 'agent', 'tagent');
     $master = agpJoin($super, $agent->referral_code, 'agent', 'tmaster');
-    $silver = agpJoin($super, $master->referral_code, 'agent', 'tsilver');
+    $master2 = agpJoin($super, $agent->referral_code, 'agent', 'tmaster2');
     $pAgent = agpJoin($super, $agent->referral_code, 'player', 'pagent');
     $pMaster = agpJoin($super, $master->referral_code, 'player', 'pmaster');
-    $pSilver = agpJoin($super, $silver->referral_code, 'player', 'psilver');
+    $pMaster2 = agpJoin($super, $master2->referral_code, 'player', 'pmaster2');
     $other = agpJoin($super, app(ReferralService::class)->codeFor($super), 'agent', 'tother');
     $pOther = agpJoin($super, $other->referral_code, 'player', 'pother');
 
-    foreach ([$agent, $master, $silver, $other] as $u) {
+    foreach ([$agent, $master, $master2, $other] as $u) {
         fund($u, 100_000);
     }
 
-    return compact('super', 'agent', 'master', 'silver', 'pAgent', 'pMaster', 'pSilver', 'other', 'pOther');
+    return compact('super', 'agent', 'master', 'master2', 'pAgent', 'pMaster', 'pMaster2', 'other', 'pOther');
 }
 
 test('the Master Agent panel shows its own downline only, with the same screens as the Admin Panel', function () {
@@ -53,25 +53,24 @@ test('the Master Agent panel shows its own downline only, with the same screens 
         ->assertJsonPath('data.level', 'master')
         ->assertJsonPath('data.upline.username', 'tagent')
         ->assertJsonPath('data.my_chips', '1000.00')
-        ->assertJsonPath('data.active_agents.total', 1)->assertJsonPath('data.active_agents.silver', 1)
-        ->assertJsonPath('data.active_players', 2)->assertJsonPath('data.my_players', 1);
+        ->assertJsonPath('data.active_agents.total', 0)->assertJsonMissingPath('data.active_agents.silver')
+        ->assertJsonPath('data.active_players', 1)->assertJsonPath('data.my_players', 1);
 
     $players = collect($this->getJson('/api/v1/agent/panel/accounts?kind=players')->assertOk()->json('data'));
-    expect($players->pluck('username')->sort()->values()->all())->toBe(['pmaster', 'psilver'])
-        // Chips can be loaded only to the players registered to this agent.
-        ->and($players->firstWhere('username', 'pmaster')['can_load'])->toBeTrue()
-        ->and($players->firstWhere('username', 'psilver')['can_load'])->toBeFalse();
-    expect(collect($this->getJson('/api/v1/agent/panel/accounts?kind=agents')->json('data'))->pluck('username')->all())->toBe(['tsilver']);
+    expect($players->pluck('username')->all())->toBe(['pmaster'])
+        // Chips can be loaded to the players registered to this agent.
+        ->and($players->firstWhere('username', 'pmaster')['can_load'])->toBeTrue();
+    // Master Agents recruit no agents.
+    expect($this->getJson('/api/v1/agent/panel/accounts?kind=agents')->json('data'))->toBe([]);
 
     // Nothing outside the tree, upward or sideways.
-    foreach (['pother', 'tagent', 'pagent', 'tother'] as $username) {
+    foreach (['pother', 'tagent', 'pagent', 'tother', 'tmaster2', 'pmaster2'] as $username) {
         $this->getJson('/api/v1/agent/panel/accounts/'.User::query()->where('username', $username)->value('id'))->assertNotFound();
     }
-    $this->getJson("/api/v1/agent/panel/accounts/{$t['pSilver']->id}")->assertOk()->assertJsonPath('data.username', 'psilver');
 
     // Load Logs: the master's own loads and its downline's, never the outsider's.
     $loads = collect($this->getJson('/api/v1/agent/panel/load-logs?per_page=100')->assertOk()->json('data'));
-    expect($loads->pluck('account.username')->unique()->sort()->values()->all())->toBe(['tmaster', 'tsilver'])
+    expect($loads->pluck('account.username')->unique()->sort()->values()->all())->toBe(['tmaster'])
         ->and($this->getJson('/api/v1/agent/panel/load-logs/'.ChipLoad::query()->where('account_id', $t['other']->id)->value('id'))->status())->toBe(404);
 });
 
@@ -86,10 +85,10 @@ test('an agent loads Chips to its own players from the panel, and nothing else',
     expect(balance($t['pMaster'], Currency::CH, WalletType::Player))->toBe(25_000)
         ->and(balance($t['master'], Currency::CH, WalletType::Allocation))->toBe(75_000);
 
-    // A downline agent's player is not the master's own; outsiders are invisible; no overdraft.
-    $this->postJson("/api/v1/agent/panel/accounts/{$t['pSilver']->id}/load", ['amount' => '10'])->assertForbidden();
+    // Another Master Agent's player and outsiders are invisible; no overdraft.
+    $this->postJson("/api/v1/agent/panel/accounts/{$t['pMaster2']->id}/load", ['amount' => '10'])->assertNotFound();
     $this->postJson("/api/v1/agent/panel/accounts/{$t['pOther']->id}/load", ['amount' => '10'])->assertNotFound();
-    $this->postJson("/api/v1/agent/panel/accounts/{$t['silver']->id}/load", ['amount' => '10'])->assertNotFound();
+    $this->postJson("/api/v1/agent/panel/accounts/{$t['master2']->id}/load", ['amount' => '10'])->assertNotFound();
     $this->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/load", ['amount' => '999999'])->assertStatus(422)->assertJsonPath('error', 'insufficient_balance');
 
     // Real time: the player, the master and the whole upline are told to refresh.
@@ -97,12 +96,14 @@ test('an agent loads Chips to its own players from the panel, and nothing else',
         && empty(array_diff([$t['pMaster']->id, $t['master']->id, $t['agent']->id, $t['super']->id], $e->recipients())));
     // Wallet balance changes are signalled too (Team Overview totals), never to outsiders.
     Event::assertDispatched(PanelUpdated::class, fn (PanelUpdated $e) => $e->kind === 'wallet' && in_array($t['agent']->id, $e->recipients(), true) && ! in_array($t['other']->id, $e->recipients(), true));
+    // The Incorporator sees its Master Agent's player but it is not its own: no loading to it.
+    $this->actingAs($t['agent'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/load", ['amount' => '10'])->assertForbidden();
     expect(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
 
 test('agents cannot use any Administrator action', function () {
     $t = agpTree();
-    $request = ChipLoad::create(['reference' => 'RQX', 'direction' => ChipLoad::REQUEST, 'account_id' => $t['silver']->id, 'account_type' => 'silver', 'amount' => 100, 'status' => ChipLoad::PENDING]);
+    $request = ChipLoad::create(['reference' => 'RQX', 'direction' => ChipLoad::REQUEST, 'account_id' => $t['master2']->id, 'account_type' => 'master', 'amount' => 100, 'status' => ChipLoad::PENDING]);
     $pending = app(ReferralService::class)->register(['name' => 'Wait', 'username' => 'waiting', 'email' => 'w@t.test', 'password' => 'secret123'], $t['master']->referral_code, 'player');
     $this->actingAs($t['master']);
 
@@ -126,10 +127,10 @@ test('agents cannot use any Administrator action', function () {
 
 test('commission logs and withdrawals cover the agent and the agents below it', function () {
     $t = agpTree();
-    $row = fn (User $u, int $amount, int $session) => AgentCommission::create(['agent_id' => $u->agent->id, 'player_id' => $t['pSilver']->id, 'game_session_id' => $session, 'currency' => 'CH', 'fee_basis' => 1, 'rate_bps' => 1, 'amount' => $amount, 'status' => CommissionStatus::Paid]);
+    $row = fn (User $u, int $amount, int $session) => AgentCommission::create(['agent_id' => $u->agent->id, 'player_id' => $t['pMaster2']->id, 'game_session_id' => $session, 'currency' => 'CH', 'fee_basis' => 1, 'rate_bps' => 1, 'amount' => $amount, 'status' => CommissionStatus::Paid]);
     $row($t['agent'], 100, 1);
     $row($t['master'], 200, 1);
-    $row($t['silver'], 300, 1);
+    $row($t['master2'], 300, 1);
     $row($t['other'], 400, 1);
     // Commission to withdraw: the master asks for part of it.
     app(\App\Services\Wallet\LedgerService::class)->transfer(new \App\Services\Wallet\TransferRequest(\App\Enums\TransactionType::CommissionPayment, Currency::CH, null, app(WalletService::class)->for($t['master'], Currency::CH, WalletType::Commission), 5_000));
@@ -139,23 +140,23 @@ test('commission logs and withdrawals cover the agent and the agents below it', 
 
     $this->actingAs($t['master']);
     $logs = collect($this->getJson('/api/v1/agent/panel/commission-logs')->assertOk()->json('data'));
-    expect($logs->pluck('recipient.username')->sort()->values()->all())->toBe(['tmaster', 'tsilver']);
+    expect($logs->pluck('recipient.username')->all())->toBe(['tmaster']);
 
     $this->getJson('/api/v1/agent/panel/withdrawals')->assertOk()
         ->assertJsonCount(1, 'data')->assertJsonPath('data.0.agent.username', 'tmaster')
         ->assertJsonPath('meta.summary.available', '30.00')->assertJsonPath('meta.summary.pending', '20.00')->assertJsonPath('meta.summary.pending_count', 1);
 
-    // The top agent sees all three levels of its tree.
+    // The Incorporator sees itself and both Master Agents below it.
     expect(collect($this->actingAs($t['agent'])->getJson('/api/v1/agent/panel/commission-logs')->json('data'))->pluck('recipient.username')->sort()->values()->all())
-        ->toBe(['tagent', 'tmaster', 'tsilver']);
+        ->toBe(['tagent', 'tmaster', 'tmaster2']);
 });
 
-test('the Silver Agent panel has no agents below it but the same overview', function () {
+test('a Master Agent panel has no agents below it but the same overview', function () {
     $t = agpTree();
-    $this->actingAs($t['silver'])->getJson('/api/v1/agent/panel/overview')->assertOk()
-        ->assertJsonPath('data.level', 'silver')->assertJsonPath('data.links.agent', null)
+    $this->actingAs($t['master2'])->getJson('/api/v1/agent/panel/overview')->assertOk()
+        ->assertJsonPath('data.level', 'master')->assertJsonPath('data.links.agent', null)
         ->assertJsonPath('data.active_agents.total', 0)->assertJsonPath('data.active_players', 1);
-    $this->actingAs($t['silver'])->getJson('/api/v1/agent/panel/accounts?kind=agents')->assertOk()->assertJsonCount(0, 'data');
+    $this->actingAs($t['master2'])->getJson('/api/v1/agent/panel/accounts?kind=agents')->assertOk()->assertJsonCount(0, 'data');
 });
 
 test('an agent withdraws Chips only from its own players, back into its own Chips', function () {
@@ -169,9 +170,10 @@ test('an agent withdraws Chips only from its own players, back into its own Chip
         ->and(balance($t['master'], Currency::CH, WalletType::Allocation))->toBe(82_000);
 
     $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/withdraw", ['amount' => '999'])->assertStatus(422)->assertJsonPath('error', 'insufficient_balance');
-    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pSilver']->id}/withdraw", ['amount' => '1'])->assertForbidden();
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster2']->id}/withdraw", ['amount' => '1'])->assertNotFound();
+    $this->actingAs($t['agent'])->postJson("/api/v1/agent/panel/accounts/{$t['pMaster']->id}/withdraw", ['amount' => '1'])->assertForbidden();
     $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['pOther']->id}/withdraw", ['amount' => '1'])->assertNotFound();
-    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['silver']->id}/withdraw", ['amount' => '1'])->assertNotFound();
+    $this->actingAs($t['master'])->postJson("/api/v1/agent/panel/accounts/{$t['master2']->id}/withdraw", ['amount' => '1'])->assertNotFound();
     expect(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
 
@@ -196,7 +198,7 @@ test('Admin Reset Password: Super Admin and Administrators reset agent and playe
         ->and(json_encode($log->toArray()))->not->toContain('newpass123');
 
     // Administrators may reset agents (any level) too.
-    $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$t['silver']->id}/password", $body)->assertOk();
+    $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$t['master2']->id}/password", $body)->assertOk();
     // Never administrators or Super Admins; never by agents or players.
     $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$t['super']->id}/password", $body)->assertForbidden();
     $this->actingAs($t['agent'])->putJson("/api/v1/admin/panel/accounts/{$t['pAgent']->id}/password", $body)->assertForbidden();
@@ -204,5 +206,5 @@ test('Admin Reset Password: Super Admin and Administrators reset agent and playe
     expect($this->actingAs($t['agent'])->putJson("/api/v1/agent/panel/accounts/{$t['pAgent']->id}/password", $body)->status())->toBeIn([404, 405]);
 
     // Search for the Reset Password page: every agent and player, any status.
-    $this->actingAs($t['super'])->getJson('/api/v1/admin/panel/accounts?kind=all&q=tsil')->assertOk()->assertJsonPath('data.0.username', 'tsilver');
+    $this->actingAs($t['super'])->getJson('/api/v1/admin/panel/accounts?kind=all&q=tmaster2')->assertOk()->assertJsonPath('data.0.username', 'tmaster2');
 });

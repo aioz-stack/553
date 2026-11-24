@@ -22,13 +22,12 @@ function paAccounts(): array
     $join = fn (string $code, string $type, string $u) => $refs->approve($super, $refs->register(['name' => $u, 'username' => $u, 'email' => "{$u}@t.test", 'password' => 'secret123'], $code, $type));
     $agent = $join($refs->codeFor($super), 'agent', 'paagent');
     $master = $join($agent->referral_code, 'agent', 'pamaster');
-    $silver = $join($master->referral_code, 'agent', 'pasilver');
-    $player = $join($silver->referral_code, 'player', 'paplayer');
+    $player = $join($master->referral_code, 'player', 'paplayer');
     $super->forceFill(['username' => 'pasuper', 'password' => 'secret123'])->save();
     $admin = User::factory()->create(['role' => Role::Administrator, 'username' => 'paadmin', 'password' => 'secret123']);
     $loader = User::factory()->create(['role' => Role::Loader, 'username' => 'paloader', 'password' => 'secret123']);
 
-    return compact('super', 'admin', 'loader', 'agent', 'master', 'silver', 'player');
+    return compact('super', 'admin', 'loader', 'agent', 'master', 'player');
 }
 
 test('login matrix: Web App for Admins, staff and every agent level; Mobile Game for Players only', function () {
@@ -71,7 +70,7 @@ test('the web refusal tells the player to use the mobile app', function () {
 test('an app token of a non-player cannot be used (and is revoked); a player token works', function () {
     $a = paAccounts();
 
-    foreach (['super', 'admin', 'loader', 'agent', 'master', 'silver'] as $role) {
+    foreach (['super', 'admin', 'loader', 'agent', 'master'] as $role) {
         $token = $a[$role]->createToken('old phone')->plainTextToken; // e.g. issued before the lock
         app('auth')->forgetGuards();
         $this->withToken($token)->getJson('/api/v1/auth/me')->assertForbidden()->assertJsonPath('error', 'web_only');
@@ -93,7 +92,7 @@ test('a player browser session cannot be used on the web or its API; staff sessi
 
     $this->actingAs($a['super'])->get('/admin')->assertOk();
     $this->actingAs($a['master'])->get('/agent')->assertOk();
-    $this->actingAs($a['silver'])->getJson('/api/v1/agent/panel/overview')->assertOk();
+    $this->actingAs($a['master'])->getJson('/api/v1/agent/panel/overview')->assertOk();
     $this->actingAs($a['loader'])->get('/loader')->assertOk();
 });
 

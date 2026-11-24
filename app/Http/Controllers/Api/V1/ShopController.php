@@ -13,29 +13,29 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * Shop (Main Lobby pop-up): Keys → Gold exchange packages. Everything is decided on the server
+ * Shop (Main Lobby pop-up): Keys → Chips exchange packages. Everything is decided on the server
  * (KeyExchangeService); the app only shows the packages, balances and history from here.
  */
 class ShopController extends Controller
 {
-    /** GET /shop — packages, your Keys and Gold, and your latest exchanges. */
+    /** GET /shop — packages, your Keys and Chips, and your latest exchanges. */
     public function index(Request $request, WalletService $wallets): JsonResponse
     {
         $user = $request->user();
 
         return response()->json([
             'data' => [
-                'packages' => collect(KeyExchangeService::packages())->map(fn (array $p, string $id) => ['id' => $id, 'keys' => $p['keys'], 'gold' => $p['gold']])->values(),
+                'packages' => collect(KeyExchangeService::packages())->map(fn (array $p, string $id) => ['id' => $id, 'keys' => $p['keys'], 'chips' => $p['chips']])->values(),
                 'balances' => [
                     'keys' => Points::decimal($wallets->for($user, Currency::KY)->balance),
-                    'gold' => Points::decimal($wallets->for($user, Currency::GD)->balance),
+                    'chips' => Points::decimal($wallets->for($user, Currency::CH)->balance),
                 ],
                 'history' => $this->history($request),
             ],
         ]);
     }
 
-    /** POST /shop/key-exchanges — exchange Keys for Gold (confirmed, idempotent, final). */
+    /** POST /shop/key-exchanges — exchange Keys for Chips (confirmed, idempotent, final). */
     public function exchange(Request $request, KeyExchangeService $shop, WalletService $wallets): JsonResponse
     {
         $data = $request->validate([
@@ -51,12 +51,12 @@ class ShopController extends Controller
         $user = $request->user();
 
         return response()->json([
-            'message' => 'Exchanged '.Points::decimal($exchange->keys_amount).' Keys for '.Points::decimal($exchange->gold_amount).' Gold.',
+            'message' => 'Exchanged '.Points::decimal($exchange->keys_amount).' Keys for '.Points::decimal($exchange->reward_amount).' '.Currency::from($exchange->reward_currency)->label().'.',
             'data' => [
                 'exchange' => $this->present($exchange),
                 'balances' => [
                     'keys' => Points::decimal($wallets->for($user, Currency::KY)->fresh()->balance),
-                    'gold' => Points::decimal($wallets->for($user, Currency::GD)->fresh()->balance),
+                    'chips' => Points::decimal($wallets->for($user, Currency::CH)->fresh()->balance),
                 ],
             ],
         ], $exchange->wasRecentlyCreated || $exchange->wasChanged('status') ? 201 : 200); // 200 = an earlier identical request
@@ -76,7 +76,8 @@ class ShopController extends Controller
             'id' => $e->id,
             'package' => $e->package,
             'keys' => Points::decimal($e->keys_amount),
-            'gold' => Points::decimal($e->gold_amount),
+            'amount' => Points::decimal($e->reward_amount),
+            'currency' => $e->reward_currency,
             'status' => $e->status,
             'created_at' => $e->created_at?->toIso8601String(),
         ];

@@ -22,7 +22,7 @@ interface TeamOverview {
 
 /**
  * "Convert Commission to Wallet" and "Team Overview" for Administrators, Agents, Master
- * Agents and Silver Agents. Every figure comes from the server; the server also enforces
+ * Agents. Every figure comes from the server; the server also enforces
  * the 10-Chip minimum, the available limit and one conversion per request id.
  */
 export default function TeamSections({ onChanged, txLocked = false }: { onChanged?: () => void; /** maintenance: conversion closed */ txLocked?: boolean }) {

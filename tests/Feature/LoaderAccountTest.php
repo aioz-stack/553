@@ -142,7 +142,7 @@ test('Commission Transactions: a Loader reviews withdrawal requests but never to
     expect(AgentPayoutRequest::query()->find($payout->id)->reviewed_by)->toBe($w['loader']->id)
         ->and(balance($w['agent'], Currency::CH, WalletType::Allocation))->toBe(3_000);
 
-    $this->actingAs($w['loader'])->putJson('/api/v1/admin/panel/commission-rates', ['agent' => 99, 'master' => 1, 'silver' => 1])->assertForbidden();
+    $this->actingAs($w['loader'])->putJson('/api/v1/admin/panel/commission-rates', ['agent' => 99, 'master' => 1])->assertForbidden();
     expect($this->actingAs($w['loader'])->putJson('/api/v1/loader/panel/commission-rates', ['agent' => 99])->status())->toBeIn([404, 405]);
 });
 

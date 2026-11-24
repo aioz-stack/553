@@ -76,8 +76,8 @@ export function useMaintenance(): MaintenanceStatus {
 }
 
 export const MODE_EFFECTS: Record<MaintenanceModeValue, string> = {
-  full: 'The mobile game is closed (maintenance screen) and all Agent, Master Agent, Silver Agent and Player transactions are disabled.',
+  full: 'The mobile game is closed (maintenance screen) and all Incorporator, Master Agent and Player transactions are disabled.',
   mobile_game: 'Only the Player Mobile Game is closed (maintenance screen). All panels and transactions keep working.',
-  agents_players: 'Transactions of Agents, Master Agents, Silver Agents and Players are disabled. The mobile game keeps running.',
+  agents_players: 'Transactions of Incorporators, Master Agents and Players are disabled. The mobile game keeps running.',
   off: 'Normal operation: the mobile game and all transactions are open.',
 };

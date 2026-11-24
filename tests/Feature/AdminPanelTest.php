@@ -40,17 +40,16 @@ function apRegister($test, User $admin, ?string $code, string $type, string $use
     return $user->fresh(['agent', 'sponsor']);
 }
 
-/** Administrator → Agent → Master Agent → Silver Agent, all through Agent Registration Links. */
+/** Administrator → Incorporator → Master Agent, through Agent Registration Links. */
 function apChain($test, User $admin): array
 {
     $agent = apRegister($test, $admin, $admin->referral_code ?? app(ReferralService::class)->codeFor($admin), 'agent', 'agentjohn');
     $master = apRegister($test, $admin, $agent->referral_code, 'agent', 'mastermae');
-    $silver = apRegister($test, $admin, $master->referral_code, 'agent', 'silverjuan');
 
-    return [$agent, $master, $silver];
+    return [$agent, $master];
 }
 
-test('permanent referral links build the hierarchy: Administrator → Agent → Master Agent → Silver Agent → Players', function () {
+test('permanent referral links build the hierarchy: Administrator → Incorporator → Master Agent → Players', function () {
     $admin = superAdmin();
     $links = $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertOk()->json('data.links');
     // Admins recruit Agents only: an Agent link, no Player link.
@@ -58,23 +57,22 @@ test('permanent referral links build the hierarchy: Administrator → Agent → 
     // The same links every time (permanent).
     expect($this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->json('data.links'))->toBe($links);
 
-    [$agent, $master, $silver] = apChain($this, $admin);
+    [$agent, $master] = apChain($this, $admin);
     expect($agent->agent->level->value)->toBe('agent')->and($agent->agent->parent_agent_id)->toBeNull()->and($agent->sponsor_id)->toBe($admin->id)
-        ->and($master->agent->level->value)->toBe('master')->and($master->agent->parent_agent_id)->toBe($agent->agent->id)
-        ->and($silver->agent->level->value)->toBe('silver')->and($silver->agent->parent_agent_id)->toBe($master->agent->id);
+        ->and($master->agent->level->value)->toBe('master')->and($master->agent->parent_agent_id)->toBe($agent->agent->id);
 
-    // A Silver Agent has a Player link but no Agent link, and its code cannot register agents.
-    $this->actingAs($silver)->getJson('/api/v1/agent/panel')->assertOk()
-        ->assertJsonPath('data.level', 'silver')->assertJsonPath('data.links.agent', null);
-    $this->getJson("/api/v1/auth/referral/{$silver->referral_code}?type=agent")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
+    // A Master Agent has a Player link but no Agent link, and its code cannot register agents.
+    $this->actingAs($master)->getJson('/api/v1/agent/panel')->assertOk()
+        ->assertJsonPath('data.level', 'master')->assertJsonPath('data.links.agent', null);
+    $this->getJson("/api/v1/auth/referral/{$master->referral_code}?type=agent")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
 
-    // Player links: under the Silver Agent (linked on approval). The Administrator's code registers no players.
-    $p1 = apRegister($this, $admin, $silver->referral_code, 'player', 'playermark');
-    expect($p1->agentLink->agent_id)->toBe($silver->agent->id)->and($p1->sponsor_id)->toBe($silver->id);
+    // Player links: under the Master Agent (linked on approval). The Administrator's code registers no players.
+    $p1 = apRegister($this, $admin, $master->referral_code, 'player', 'playermark');
+    expect($p1->agentLink->agent_id)->toBe($master->agent->id)->and($p1->sponsor_id)->toBe($master->id);
     $this->getJson("/api/v1/auth/referral/{$links['code']}?type=player")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
 
     // The public lookup tells the registration page who is inviting and what is created.
-    $this->getJson("/api/v1/auth/referral/{$master->referral_code}?type=agent")->assertOk()->assertJsonPath('data.level', 'Silver Agent')->assertJsonPath('data.sponsor', 'mastermae');
+    $this->getJson("/api/v1/auth/referral/{$agent->referral_code}?type=agent")->assertOk()->assertJsonPath('data.level', 'Master Agent')->assertJsonPath('data.sponsor', 'agentjohn');
 });
 
 test('referrals are validated on the server: bad codes, players\' codes and agent sign-ups without a link are refused', function () {
@@ -135,15 +133,15 @@ test('the sponsor is permanent: a player with an agent cannot be re-assigned', f
 
 test('dashboard numbers come from the database: my Chips, active agents by level, active players', function () {
     $admin = superAdmin(); // 1,000,000 Chips float
-    [$agent, $master, $silver] = apChain($this, $admin);
-    apRegister($this, $admin, $silver->referral_code, 'player', 'pone');
+    [$agent, $master] = apChain($this, $admin);
+    apRegister($this, $admin, $master->referral_code, 'player', 'pone');
     apRegister($this, $admin, $agent->referral_code, 'player', 'ptwo');
     $banned = apRegister($this, $admin, $master->referral_code, 'player', 'pthree');
     $this->actingAs($admin)->postJson("/api/v1/admin/panel/accounts/{$banned->id}/status", ['action' => 'ban', 'reason' => 'Cheating'])->assertOk();
 
     $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertOk()
         ->assertJsonPath('data.my_chips', '1000000.00')
-        ->assertJsonPath('data.active_agents.total', 3)->assertJsonPath('data.active_agents.master', 1)->assertJsonPath('data.active_agents.silver', 1)
+        ->assertJsonPath('data.active_agents.total', 2)->assertJsonPath('data.active_agents.master', 1)->assertJsonMissingPath('data.active_agents.silver')
         ->assertJsonPath('data.active_players', 2)
         ->assertJsonPath('data.banned_users', 1);
 });
@@ -212,12 +210,12 @@ test('agents request Chips (Pending); staff approve from their own Chips or reje
 
 test('commissions flow up the hierarchy: the direct sponsor earns its rate, each upline its override', function () {
     $admin = superAdmin();
-    [$agent, $master, $silver] = apChain($this, $admin);
+    [$agent, $master] = apChain($this, $admin);
     $room = GameRoom::factory()->create(['entry_amount' => 2500, 'platform_fee_bps' => 1000]); // fee 1000, 250 per player
     $tables = app(TableService::class);
     $players = [];
     foreach (range(1, 4) as $i) {
-        $p = apRegister($this, $admin, $silver->referral_code, 'player', "silverp{$i}");
+        $p = apRegister($this, $admin, $master->referral_code, 'player', "masterp{$i}");
         fund($p, $room->entry_amount);
         $seat = $tables->join($p, $room);
         $players[] = $p;
@@ -232,21 +230,22 @@ test('commissions flow up the hierarchy: the direct sponsor earns its rate, each
     }
 
     $byAgent = AgentCommission::query()->where('game_session_id', $session->id)->get()->groupBy('agent_id');
-    // Per player (250): Silver 30% = 75, Master 40−30 = 10% = 25, Agent 50−40 = 10% = 25.
-    expect($byAgent[$silver->agent->id]->sum('amount'))->toBe(300)->and($byAgent[$silver->agent->id]->first()->note)->toBe('direct')
-        ->and($byAgent[$master->agent->id]->sum('amount'))->toBe(100)->and($byAgent[$master->agent->id]->first()->note)->toBe('override')
+    // Per player (250): Master 40% = 100, Incorporator 50−40 = 10% = 25.
+    expect($byAgent[$master->agent->id]->sum('amount'))->toBe(400)->and($byAgent[$master->agent->id]->first()->note)->toBe('direct')
+        ->and($byAgent[$agent->agent->id]->first()->note)->toBe('override')
         ->and($byAgent[$agent->agent->id]->sum('amount'))->toBe(100)
         ->and(AgentCommission::query()->sum('amount'))->toBe(500); // never more than the top rate (50%)
 
     $logs = $this->actingAs($admin)->getJson('/api/v1/admin/panel/commission-logs')->assertOk();
-    expect($logs->json('meta.breakdown.silver.total'))->toBe('3.00')->and($logs->json('meta.breakdown.master.total'))->toBe('1.00')
-        ->and($logs->json('meta.rates'))->toBe(['agent' => 50, 'master' => 40, 'silver' => 30]);
+    expect($logs->json('meta.breakdown.master.total'))->toBe('4.00')->and($logs->json('meta.breakdown.agent.total'))->toBe('1.00')
+        ->and($logs->json('meta.breakdown'))->not->toHaveKey('silver')
+        ->and($logs->json('meta.rates'))->toBe(['agent' => 50, 'master' => 40]);
     $this->actingAs($admin)->getJson('/api/v1/admin/panel/commission-logs?level=master')->assertJsonCount(4, 'data');
 
     // Rates per level, and one account's own override.
-    $this->actingAs($admin)->putJson('/api/v1/admin/panel/commission-rates', ['agent' => 45, 'master' => 35, 'silver' => 20])->assertOk()->assertJsonPath('data.silver', 20);
-    $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$silver->id}/commission-rate", ['rate' => 25])->assertOk()->assertJsonPath('data.commission_rate', 25);
-    $this->actingAs($agent)->putJson('/api/v1/admin/panel/commission-rates', ['agent' => 99, 'master' => 1, 'silver' => 1])->assertForbidden();
+    $this->actingAs($admin)->putJson('/api/v1/admin/panel/commission-rates', ['agent' => 45, 'master' => 35])->assertOk()->assertJsonPath('data.master', 35);
+    $this->actingAs($admin)->putJson("/api/v1/admin/panel/accounts/{$master->id}/commission-rate", ['rate' => 25])->assertOk()->assertJsonPath('data.commission_rate', 25);
+    $this->actingAs($agent)->putJson('/api/v1/admin/panel/commission-rates', ['agent' => 99, 'master' => 1])->assertForbidden();
 });
 
 test('ban, suspend, reactivate, archive and restore: blocked accounts are signed out and refused; history is kept', function () {
