@@ -580,7 +580,7 @@ class PanelController extends Controller
     {
         return match ($type) {
             'player' => 'Player',
-            'agent' => 'Agent',
+            'agent' => 'Incorporator',
             'master' => 'Master Agent',
             'silver' => 'Silver Agent',
             default => 'Administrator',

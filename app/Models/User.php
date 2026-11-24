@@ -175,7 +175,7 @@ class User extends Authenticatable
     {
         return match ($this->accountType()) {
             'player' => 'Player',
-            'agent' => 'Agent',
+            'agent' => 'Incorporator',
             'master' => 'Master Agent',
             'silver' => 'Silver Agent',
             default => $this->role->label(),

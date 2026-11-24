@@ -186,7 +186,7 @@ const TYPE: Record<string, string> = {
   player: 'bg-sky-100 text-sky-700 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/30',
   admin: 'bg-zinc-200 text-zinc-800 ring-zinc-300 dark:bg-white/10 dark:text-white/80 dark:ring-white/15',
 };
-const TYPE_LABEL: Record<string, string> = { agent: 'Agent', master: 'Master Agent', silver: 'Silver Agent', player: 'Player', admin: 'Administrator' };
+const TYPE_LABEL: Record<string, string> = { agent: 'Incorporator', master: 'Master Agent', silver: 'Silver Agent', player: 'Player', admin: 'Administrator' };
 
 export function TypePill({ type, label }: { type: string | null | undefined; label?: string | null }) {
   const t = type ?? 'admin';

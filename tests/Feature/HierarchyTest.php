@@ -43,7 +43,7 @@ test('registration links: each role gets exactly the links its level may use', f
     $links = fn (User $u) => app(ReferralService::class)->links($u->fresh());
 
     // [creator, agent link level, player link?]
-    foreach ([['super', 'Agent', false], ['admin', 'Agent', false], ['agent', 'Master Agent', true], ['master', 'Silver Agent', true], ['silver', null, true], ['player', null, false]] as [$who, $level, $players]) {
+    foreach ([['super', 'Incorporator', false], ['admin', 'Incorporator', false], ['agent', 'Master Agent', true], ['master', 'Silver Agent', true], ['silver', null, true], ['player', null, false]] as [$who, $level, $players]) {
         $l = $links($t[$who]);
         expect($l['agent_level'])->toBe($level, "{$who} agent level")
             ->and($l['agent'] !== null)->toBe($level !== null, "{$who} agent link")

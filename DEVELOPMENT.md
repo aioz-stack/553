@@ -696,7 +696,7 @@ Premium dashboard for the Super Admin and Administrators (`resources/js/Layouts/
 `App\Http\Controllers\Api\V1\Admin\PanelController`). Every number is read from the database and every action goes
 through a service (validation, row locks, ledger, idempotency keys, audit log). Tests: `tests/Feature/AdminPanelTest.php`.
 
-- **Hierarchy:** Administrator → **Agent** → **Master Agent** → **Silver Agent**; Players can sit under any of them.
+- **Hierarchy:** Administrator → **Agent** (shown as **Incorporator**) → **Master Agent** → **Silver Agent**; Players can sit under any of them.
   `agents.level` (`App\Enums\AgentLevel`) and `agents.parent_agent_id`; `users.sponsor_id` is the permanent referrer.
   The old `admin/users/{id}/assign-agent` only assigns players that have no sponsor yet (409 `sponsor_locked` otherwise).
 - **Permanent referral links:** every account has one code (`users.referral_code`) and two links,
@@ -1129,3 +1129,14 @@ Not done / not verified:
   the server's messages (wrong credentials, pending / suspended / banned, platform rules, maintenance) under the button.
 - The register / forgot-password pages still exist for registration links and password resets but are no longer linked
   from the login screens. Tests: `mobile/src/app/login/page.test.tsx`; the web login is covered by AuthAndCrudTest.
+
+## Account type name: Agent → Incorporator
+
+- The top hierarchy level below the Administrator is now **displayed** as **Incorporator**:
+  Administrator → **Incorporator** → Master Agent → Silver Agent → Players.
+- Display-only rename: `AgentLevel::Agent->label()`, `User::accountTypeLabel()`, `PanelController::typeLabel()` and the
+  web `TYPE_LABEL` map (`Components/AdminPanel/kit.tsx`). Internal values stay `agent` (role, `agents.level`, API
+  `account_type`, routes `/agent`), so no migration or data change. "Agent" as the generic word for every agent level
+  (Agents / Players menu, Agent Panel, Agent Registration Link) is unchanged.
+- The Administrator's registration link, its invite banner ("registering as Incorporator"), pending approvals,
+  account lists, sponsor labels and the Overview's active-agent breakdown all use the new name.

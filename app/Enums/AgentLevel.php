@@ -16,7 +16,7 @@ enum AgentLevel: string
     public function label(): string
     {
         return match ($this) {
-            self::Agent => 'Agent',
+            self::Agent => 'Incorporator',
             self::Master => 'Master Agent',
             self::Silver => 'Silver Agent',
         };

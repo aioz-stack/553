@@ -111,7 +111,7 @@ export default function Overview() {
           icon={<I.users className="h-10 w-10" />}
           value={d ? fmt(d.active_agents.total) : '…'}
           label={agent ? 'My Downline Agents' : 'Total Active Agents'}
-          footer={d && (agent ? `Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}` : `Agents ${fmt(d.active_agents.agent)} · Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}`)}
+          footer={d && (agent ? `Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}` : `Incorporators ${fmt(d.active_agents.agent)} · Master ${fmt(d.active_agents.master)} · Silver ${fmt(d.active_agents.silver)}`)}
         />
         <StatTile
           tone="green"

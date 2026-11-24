@@ -11,7 +11,7 @@ import type { CommissionLog, PageMeta } from './types';
 
 type Level = 'agent' | 'master' | 'silver';
 const LEVELS: Array<[Level, string]> = [
-  ['agent', 'Agents'],
+  ['agent', 'Incorporators'],
   ['master', 'Master Agents'],
   ['silver', 'Silver Agents'],
 ];
