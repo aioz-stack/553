@@ -4,6 +4,7 @@ import { Eye, withdrawalRows } from '../../Components/AdminPanel/rows';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
+import { TX_LOCKED_HINT, useMaintenance } from '../../lib/maintenance';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import type { PageMeta, Withdrawal } from './types';
 
@@ -16,6 +17,7 @@ type Status = '' | 'pending' | 'approved' | 'rejected';
 export default function Withdrawals() {
   const panel = usePanel();
   const agent = panel.isAgent;
+  const txLocked = useMaintenance().transactions_blocked;
   const [request, setRequest] = useState<AmountAction | null>(null);
   const [status, setStatus] = useState<Status>('');
   const [q, setQ] = useState('');
@@ -60,7 +62,7 @@ export default function Withdrawals() {
       render: (r) => (
         <span className="inline-flex gap-2">
           <Eye onClick={() => setDetail(r)} />
-          {r.status === 'pending' && !agent && (
+          {r.status === 'pending' && !agent && !txLocked && (
             <>
               <ActionIcon label={`Approve withdrawal ${r.reference}`} tone="green" onClick={() => review(r, true)}>
                 <I.check className="h-5 w-5" />
@@ -88,7 +90,7 @@ export default function Withdrawals() {
         actions={
           <>
             {agent && (
-              <Btn variant="success" size="sm" disabled={!s || Number(s.available) <= 0} onClick={() => s && setRequest({ title: 'Withdraw Commission', verb: 'Withdraw', target: 'of commission into your own Chips (after approval)', path: '/agent/payout-requests', limit: s.available, limitLabel: 'Available commission', variant: 'success' })}>
+              <Btn variant="success" size="sm" disabled={txLocked || !s || Number(s.available) <= 0} title={txLocked ? TX_LOCKED_HINT : undefined} onClick={() => s && setRequest({ title: 'Withdraw Commission', verb: 'Withdraw', target: 'of commission into your own Chips (after approval)', path: '/agent/payout-requests', limit: s.available, limitLabel: 'Available commission', variant: 'success' })}>
                 <I.percent className="h-4 w-4" /> Withdraw Commission
               </Btn>
             )}

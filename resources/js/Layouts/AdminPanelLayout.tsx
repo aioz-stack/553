@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { I, Crown } from '../Components/AdminPanel/kit';
 import { api } from '../lib/api';
+import { MaintenanceProvider, useMaintenance } from '../lib/maintenance';
 import { PANEL_REFRESH, usePanel } from '../lib/panel';
 import { useTheme } from '../lib/ThemeContext';
 import type { SharedProps } from '../lib/types';
@@ -73,6 +74,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
     { label: 'Load Logs', href: `${b}/load-logs`, icon: <I.logs className="h-5 w-5" /> },
     { label: 'Commission Logs', href: `${b}/commission-logs`, icon: <I.coins className="h-5 w-5" /> },
     { label: 'Commission Withdrawal', href: `${b}/commission-withdrawals`, icon: <I.wallet className="h-5 w-5" /> },
+    ...(panel.isAgent ? [] : [{ label: 'Maintenance', href: '/admin/maintenance', icon: <I.shield className="h-5 w-5" /> }]),
   ];
   // Agents see only their own downline; Silver Agents recruit no agents, so they have no Agents list.
   const people: NavItem[] = [
@@ -136,6 +138,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
     );
 
   return (
+    <MaintenanceProvider>
     <div className="min-h-screen bg-[#f4f1fb] font-sans text-[#1c1530] dark:bg-[#0b0814] dark:text-white">
       <Head title={title} />
 
@@ -202,8 +205,40 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
             </span>
           </div>
         </header>
-        <main className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8">{children}</main>
+        <main className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8">
+          <MaintenanceBanner isAgent={panel.isAgent} />
+          {children}
+        </main>
       </div>
+    </div>
+    </MaintenanceProvider>
+  );
+}
+
+/** Live notice while a maintenance mode is on (Admins see every mode; agents see what affects them). */
+function MaintenanceBanner({ isAgent }: { isAgent: boolean }) {
+  const m = useMaintenance();
+  if (m.mode === 'off' || (isAgent && !m.transactions_blocked)) return null;
+
+  return (
+    <div role="status" className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">
+      <I.shield className="mt-0.5 h-5 w-5 shrink-0" />
+      <p>
+        <b>Maintenance: {m.label}.</b>{' '}
+        {isAgent
+          ? 'Transactions (Load / Withdraw Chips, Chips requests, commission conversion and withdrawals) are temporarily unavailable. You can still view your panel.'
+          : m.transactions_blocked
+            ? `Agent and player transactions are disabled${m.game_blocked ? ' and the mobile game is closed' : ''}.`
+            : 'The mobile game is closed; all transactions keep working.'}
+        {!isAgent && (
+          <>
+            {' '}
+            <Link href="/admin/maintenance" className="font-bold underline">
+              Maintenance settings
+            </Link>
+          </>
+        )}
+      </p>
     </div>
   );
 }

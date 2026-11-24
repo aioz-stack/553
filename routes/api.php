@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\LobbyController;
 use App\Http\Controllers\Api\V1\AgentPanelController;
 use App\Http\Controllers\Api\V1\Admin\PanelController;
 use App\Http\Controllers\Api\V1\PayoutController;
+use App\Http\Controllers\Api\V1\MaintenanceController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\PracticeController;
@@ -31,6 +32,9 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->middleware('throttle:api')->group(function () {
+    // Public: the current maintenance mode (the mobile game checks it before and after sign-in).
+    Route::get('status', [MaintenanceController::class, 'status']);
+
     Route::prefix('auth')->middleware('throttle:auth')->group(function () {
         Route::post('register', [AuthController::class, 'register']);
         Route::get('referral/{code}', [AuthController::class, 'referral'])->where('code', '[A-Za-z0-9-]{3,24}');
@@ -74,61 +78,65 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Agents load Chips from the Agent Panel (agent/panel/accounts/{user}/load).
         Route::post('wallet/allocate', [AdminWalletController::class, 'allocate'])->middleware(['role:super_admin,admin', 'throttle:wallet-actions']);
 
-        // Rooms & tables
-        Route::get('rooms', [RoomController::class, 'index']);
-        Route::post('rooms/private', [RoomController::class, 'storePrivate']);
-        Route::post('rooms/host', [RoomController::class, 'host'])->middleware('throttle:game-actions');
-        Route::get('rooms/{room}', [RoomController::class, 'show']);
-        Route::post('rooms/{room}/join', [RoomController::class, 'join'])->middleware('throttle:game-actions');
-        Route::post('rooms/{room}/invite', [RoomController::class, 'invite']);
+        // Game (lobby, rooms, tables, games, Single Player): closed during Full Maintenance and
+        // Mobile Game maintenance (503 "maintenance"; the app shows the maintenance screen).
+        Route::middleware('game.open')->group(function () {
+            // Rooms & tables
+            Route::get('rooms', [RoomController::class, 'index']);
+            Route::post('rooms/private', [RoomController::class, 'storePrivate']);
+            Route::post('rooms/host', [RoomController::class, 'host'])->middleware('throttle:game-actions');
+            Route::get('rooms/{room}', [RoomController::class, 'show']);
+            Route::post('rooms/{room}/join', [RoomController::class, 'join'])->middleware('throttle:game-actions');
+            Route::post('rooms/{room}/invite', [RoomController::class, 'invite']);
 
-        // Multiplayer lobbies (553 Lobby): create / list / join / quick join / owner start
-        Route::get('lobbies', [LobbyController::class, 'index']);
-        Route::post('lobbies', [LobbyController::class, 'store'])->middleware('throttle:game-actions');
-        Route::post('lobbies/quick-join', [LobbyController::class, 'quickJoin'])->middleware('throttle:game-actions');
-        Route::get('lobbies/{room}', [LobbyController::class, 'show']);
-        Route::patch('lobbies/{room}', [LobbyController::class, 'update'])->middleware('throttle:game-actions');
-        Route::post('lobbies/{room}/join', [LobbyController::class, 'join'])->middleware('throttle:lobby-join');
-        Route::post('lobbies/{room}/start', [LobbyController::class, 'start'])->middleware('throttle:game-actions');
-        Route::post('lobbies/{room}/seat', [LobbyController::class, 'seat'])->middleware('throttle:game-actions');
-        Route::post('lobbies/{room}/kick', [LobbyController::class, 'kick'])->middleware('throttle:game-actions');
+            // Multiplayer lobbies (553 Lobby): create / list / join / quick join / owner start
+            Route::get('lobbies', [LobbyController::class, 'index']);
+            Route::post('lobbies', [LobbyController::class, 'store'])->middleware('throttle:game-actions');
+            Route::post('lobbies/quick-join', [LobbyController::class, 'quickJoin'])->middleware('throttle:game-actions');
+            Route::get('lobbies/{room}', [LobbyController::class, 'show']);
+            Route::patch('lobbies/{room}', [LobbyController::class, 'update'])->middleware('throttle:game-actions');
+            Route::post('lobbies/{room}/join', [LobbyController::class, 'join'])->middleware('throttle:lobby-join');
+            Route::post('lobbies/{room}/start', [LobbyController::class, 'start'])->middleware('throttle:game-actions');
+            Route::post('lobbies/{room}/seat', [LobbyController::class, 'seat'])->middleware('throttle:game-actions');
+            Route::post('lobbies/{room}/kick', [LobbyController::class, 'kick'])->middleware('throttle:game-actions');
 
-        Route::get('tables/current', [TableController::class, 'current']);
-        Route::get('tables/{table}', [TableController::class, 'show']);
-        Route::post('tables/{table}/ready', [TableController::class, 'ready'])->middleware('throttle:game-actions');
-        Route::post('tables/{table}/leave', [TableController::class, 'leave'])->middleware('throttle:game-actions');
-        Route::post('tables/{table}/heartbeat', [TableController::class, 'heartbeat']);
+            Route::get('tables/current', [TableController::class, 'current']);
+            Route::get('tables/{table}', [TableController::class, 'show']);
+            Route::post('tables/{table}/ready', [TableController::class, 'ready'])->middleware('throttle:game-actions');
+            Route::post('tables/{table}/leave', [TableController::class, 'leave'])->middleware('throttle:game-actions');
+            Route::post('tables/{table}/heartbeat', [TableController::class, 'heartbeat']);
 
-        // Games
-        Route::get('games/{session}', [GameController::class, 'show']);
-        Route::get('games/{session}/cards', [GameController::class, 'cards']);
-        Route::post('games/{session}/submit', [GameController::class, 'submit'])->middleware('throttle:game-actions');
-        Route::post('games/{session}/preview', [GameController::class, 'preview']);
-        Route::post('games/{session}/bet', [GameController::class, 'bet'])->middleware('throttle:game-actions');
-        Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
+            // Games
+            Route::get('games/{session}', [GameController::class, 'show']);
+            Route::get('games/{session}/cards', [GameController::class, 'cards']);
+            Route::post('games/{session}/submit', [GameController::class, 'submit'])->middleware('throttle:game-actions');
+            Route::post('games/{session}/preview', [GameController::class, 'preview']);
+            Route::post('games/{session}/bet', [GameController::class, 'bet'])->middleware('throttle:game-actions');
+            Route::post('games/{session}/lucky', [GameController::class, 'lucky'])->middleware('throttle:game-actions');
 
-        // Single Player: Round Bank Pusoy vs one bot (12 rounds, alternating banker)
-        Route::get('practice/tiers', [PracticeController::class, 'tiers']);
-        Route::get('practice/gold', [PracticeController::class, 'gold']);
-        Route::post('practice/gold/claim', [PracticeController::class, 'claimGold'])->middleware('throttle:game-actions');
-        Route::post('practice/matches/{practiceMatch}/leave', [PracticeController::class, 'leaveMatch'])->middleware('throttle:game-actions');
-        Route::post('practice/matches', [PracticeController::class, 'startMatch'])->middleware('throttle:game-actions');
-        Route::get('practice/matches/current', [PracticeController::class, 'currentMatch']);
-        Route::get('practice/matches/{practiceMatch}', [PracticeController::class, 'showMatch']);
-        Route::post('practice/matches/{practiceMatch}/deal', [PracticeController::class, 'deal'])->middleware('throttle:game-actions');
-        Route::get('practice/{practiceGame}', [PracticeController::class, 'show']);
-        Route::post('practice/{practiceGame}/preview', [PracticeController::class, 'preview']);
-        Route::post('practice/{practiceGame}/suggest', [PracticeController::class, 'suggest']);
-        Route::post('practice/{practiceGame}/lucky', [PracticeController::class, 'lucky'])->middleware('throttle:game-actions');
-        Route::post('practice/{practiceGame}/submit', [PracticeController::class, 'submit'])->middleware('throttle:game-actions');
+            // Single Player: Round Bank Pusoy vs one bot (12 rounds, alternating banker)
+            Route::get('practice/tiers', [PracticeController::class, 'tiers']);
+            Route::get('practice/gold', [PracticeController::class, 'gold']);
+            Route::post('practice/gold/claim', [PracticeController::class, 'claimGold'])->middleware('throttle:game-actions');
+            Route::post('practice/matches/{practiceMatch}/leave', [PracticeController::class, 'leaveMatch'])->middleware('throttle:game-actions');
+            Route::post('practice/matches', [PracticeController::class, 'startMatch'])->middleware('throttle:game-actions');
+            Route::get('practice/matches/current', [PracticeController::class, 'currentMatch']);
+            Route::get('practice/matches/{practiceMatch}', [PracticeController::class, 'showMatch']);
+            Route::post('practice/matches/{practiceMatch}/deal', [PracticeController::class, 'deal'])->middleware('throttle:game-actions');
+            Route::get('practice/{practiceGame}', [PracticeController::class, 'show']);
+            Route::post('practice/{practiceGame}/preview', [PracticeController::class, 'preview']);
+            Route::post('practice/{practiceGame}/suggest', [PracticeController::class, 'suggest']);
+            Route::post('practice/{practiceGame}/lucky', [PracticeController::class, 'lucky'])->middleware('throttle:game-actions');
+            Route::post('practice/{practiceGame}/submit', [PracticeController::class, 'submit'])->middleware('throttle:game-actions');
+        });
 
         // Friends
         Route::get('friends', [FriendController::class, 'index']);
         Route::post('friends', [FriendController::class, 'store'])->middleware('throttle:game-actions');
         Route::post('friends/{friendship}/accept', [FriendController::class, 'accept']);
         Route::delete('friends/{friendship}', [FriendController::class, 'destroy']);
-        Route::post('friends/{user}/invite', [FriendController::class, 'invite'])->middleware('throttle:game-actions');
-        Route::get('games/{session}/results', [GameController::class, 'results']);
+        Route::post('friends/{user}/invite', [FriendController::class, 'invite'])->middleware(['game.open', 'throttle:game-actions']);
+        Route::get('games/{session}/results', [GameController::class, 'results'])->middleware('game.open');
 
         // Agent
         Route::prefix('agent')->middleware('can:agent')->group(function () {
@@ -193,6 +201,10 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('commissions/{commission}/reject', [AdminCommissionController::class, 'reject']);
             Route::post('commissions/{commission}/reverse', [AdminCommissionController::class, 'reverse']);
             Route::get('commission-rules', [AdminCommissionController::class, 'rules']);
+            // Maintenance control (Super Admin / Administrators; checked again in the controller and service).
+            Route::get('maintenance', [MaintenanceController::class, 'show']);
+            Route::put('maintenance', [MaintenanceController::class, 'update'])->middleware('throttle:wallet-actions');
+
             // Admin Panel (dashboard, logs, accounts, Chips and commission actions).
             Route::prefix('panel')->group(function () {
                 Route::get('overview', [PanelController::class, 'overview']);

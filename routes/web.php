@@ -76,6 +76,7 @@ Route::middleware('auth')->group(function () {
         }
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
         Route::inertia('/reset-password', 'AdminPanel/ResetPassword')->name('reset-password');
+        Route::inertia('/maintenance', 'AdminPanel/Maintenance')->name('maintenance');
         Route::inertia('/platform', 'Admin/Overview')->name('platform');
         Route::inertia('/administrators', 'Admin/Users', ['role' => 'admin'])->middleware('can:super-admin')->name('administrators');
         Route::inertia('/agents', 'Admin/Users', ['role' => 'agent'])->middleware('can:manage_agents')->name('agents');

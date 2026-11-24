@@ -62,6 +62,7 @@ class ChipLoadService
         $this->assertAmount($amount);
 
         return DB::transaction(function () use ($actor, $account, $amount, $note, $idempotencyKey) {
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $account);
             try {
                 $transaction = $this->ledger->transfer(new TransferRequest(
                     type: TransactionType::ChipWithdrawal,
@@ -98,6 +99,7 @@ class ChipLoadService
         }
 
         $this->assertAmount($amount);
+        app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($agent);
 
         if (ChipLoad::query()->where('account_id', $agent->id)->where('direction', ChipLoad::REQUEST)->where('status', ChipLoad::PENDING)->count() >= 3) {
             throw new BusinessRuleException('You already have 3 Chips requests waiting for approval.', 422, 'too_many_requests');

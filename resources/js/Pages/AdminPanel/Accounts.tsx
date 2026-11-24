@@ -27,6 +27,7 @@ import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api, errorMessage } from '../../lib/api';
 import type { SharedProps } from '../../lib/types';
 import { useApi } from '../../lib/useApi';
+import { TX_LOCKED_HINT, useMaintenance } from '../../lib/maintenance';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import type { Account, PageMeta } from './types';
 
@@ -67,6 +68,8 @@ export default function Accounts({ kind }: { kind: Kind }) {
   const isSuper = auth.user?.role === 'super_admin';
   const canChips = !agent && (isSuper || abilities.has('allocate_points'));
   const canCommission = !agent && (isSuper || abilities.has('manage_commissions'));
+  // Maintenance (Full / Agents-Players): every Chips and commission action here touches an agent or a player.
+  const txLocked = useMaintenance().transactions_blocked;
   const [q, setQ] = useState('');
   const [level, setLevel] = useState<'' | 'agent' | 'master' | 'silver'>('');
   const [type, setType] = useState<'' | 'player' | 'agent'>('');
@@ -134,10 +137,10 @@ export default function Accounts({ kind }: { kind: Kind }) {
   // Chips actions, in the same order for every role: Load Chips, then Withdraw Chips right after it.
   // Agents get them only for players registered to them (the server checks the same).
   const load = (a: Account, path: string, target: string) => (
-    <ActionButton label="Load Chips" tone="green" icon={<I.plus />} onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target, path, variant: 'success' })} />
+    <ActionButton label="Load Chips" tone="green" icon={<I.plus />} disabled={txLocked} disabledHint={TX_LOCKED_HINT} onClick={() => setAmount({ title: `Load Chips · ${a.username}`, verb: 'Load', target, path, variant: 'success' })} />
   );
   const withdraw = (a: Account, path: string, target: string) => (
-    <ActionButton label="Withdraw Chips" tone="red" icon={<I.minus />} onClick={() => setAmount({ title: `Withdraw Chips · ${a.username}`, verb: 'Withdraw', target, path, limit: a.chips, limitLabel: `${a.username}'s Chips`, variant: 'danger' })} />
+    <ActionButton label="Withdraw Chips" tone="red" icon={<I.minus />} disabled={txLocked} disabledHint={TX_LOCKED_HINT} onClick={() => setAmount({ title: `Withdraw Chips · ${a.username}`, verb: 'Withdraw', target, path, limit: a.chips, limitLabel: `${a.username}'s Chips`, variant: 'danger' })} />
   );
 
   const chipsActions = (a: Account) =>
@@ -198,7 +201,7 @@ export default function Accounts({ kind }: { kind: Kind }) {
           <span className="flex flex-wrap gap-1.5">
             {a.status === 'active' && chipsActions(a)}
             {a.status === 'active' && canCommission && (
-              <ActionButton label="Withdraw Commission" tone="gold" icon={<I.percent />} onClick={() => setAmount({ title: `Withdraw Commission · ${a.username}`, verb: 'Withdraw commission of', target: `into ${a.username}'s own Chips`, path: `/admin/panel/accounts/${a.id}/withdraw-commission`, limit: a.commission, limitLabel: 'Commission balance', variant: 'gold' })} />
+              <ActionButton label="Withdraw Commission" tone="gold" icon={<I.percent />} disabled={txLocked} disabledHint={TX_LOCKED_HINT} onClick={() => setAmount({ title: `Withdraw Commission · ${a.username}`, verb: 'Withdraw commission of', target: `into ${a.username}'s own Chips`, path: `/admin/panel/accounts/${a.id}/withdraw-commission`, limit: a.commission, limitLabel: 'Commission balance', variant: 'gold' })} />
             )}
             {more(a)}
             {a.status !== 'active' && !agent && <ActionButton label="Reactivate" tone="green" icon={<I.restore />} onClick={() => status(a, 'reactivate')} />}

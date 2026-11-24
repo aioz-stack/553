@@ -60,6 +60,7 @@ class PayoutService
         return DB::transaction(function () use ($agent, $amount, $requestedBy, $note) {
             // Serialise per agent so two requests can never reserve the same balance.
             Agent::query()->whereKey($agent->id)->lockForUpdate()->first();
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($requestedBy, $agent->user);
 
             if ($amount <= 0 || $this->available($agent) < $amount) {
                 throw new BusinessRuleException('Amount exceeds the available commission balance.', 422, 'insufficient_balance');
@@ -85,6 +86,7 @@ class PayoutService
 
         return DB::transaction(function () use ($actor, $request) {
             $request = AgentPayoutRequest::query()->lockForUpdate()->findOrFail($request->id);
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $request->agent?->user);
 
             if ($request->status !== 'pending') {
                 throw new BusinessRuleException('Only pending withdrawals can be approved.', 409, 'invalid_state');

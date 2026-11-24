@@ -4,6 +4,7 @@ import { Eye, Signed, TxLabel, loadRows } from '../../Components/AdminPanel/rows
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api, errorMessage } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
+import { TX_LOCKED_HINT, useMaintenance } from '../../lib/maintenance';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import { when } from '../../Components/AdminPanel/kit';
 import type { LoadLog, PageMeta } from './types';
@@ -17,6 +18,7 @@ type Status = '' | 'completed' | 'pending' | 'rejected';
  */
 export default function LoadLogs() {
   const panel = usePanel();
+  const txLocked = useMaintenance().transactions_blocked;
   const [status, setStatus] = useState<Status>('');
   const [direction, setDirection] = useState<'' | 'load' | 'withdraw' | 'request'>('');
   const [type, setType] = useState<'' | 'agent' | 'master' | 'silver' | 'player' | 'admin'>('');
@@ -91,7 +93,7 @@ export default function LoadLogs() {
       render: (r) => (
         <span className="inline-flex gap-2">
           <Eye onClick={() => open(r)} />
-          {r.status === 'pending' && !panel.isAgent && (
+          {r.status === 'pending' && !panel.isAgent && !txLocked && (
             <>
               <ActionIcon label={`Approve request ${r.reference}`} tone="green" onClick={() => review(r, true)}>
                 <I.check className="h-5 w-5" />
@@ -114,7 +116,7 @@ export default function LoadLogs() {
         actions={
           <>
           {panel.isAgent && (
-            <Btn variant="gold" size="sm" onClick={() => setRequest({ title: 'Request Chips', verb: 'Request', target: 'from the Administrator', path: '/agent/chip-requests', variant: 'gold' })}>
+            <Btn variant="gold" size="sm" disabled={txLocked} title={txLocked ? TX_LOCKED_HINT : undefined} onClick={() => setRequest({ title: 'Request Chips', verb: 'Request', target: 'from the Administrator', path: '/agent/chip-requests', variant: 'gold' })}>
               <I.plus className="h-4 w-4" /> Request Chips
             </Btn>
           )}

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Baloo_2, Nunito } from 'next/font/google';
 import type { ReactNode } from 'react';
+import MaintenanceGate from '@/components/MaintenanceGate';
 import NativeShell from '@/components/NativeShell';
 import PushRegistration from '@/components/PushRegistration';
 import { AuthProvider } from '@/lib/auth';
@@ -37,7 +38,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <AuthProvider>
           <NativeShell />
           <PushRegistration />
-          {children}
+          {/* Admin Panel maintenance (Full / Mobile Game): the maintenance screen replaces the app. */}
+          <MaintenanceGate>{children}</MaintenanceGate>
         </AuthProvider>
       </body>
     </html>

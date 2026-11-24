@@ -79,6 +79,10 @@ class AuthController extends Controller
             throw new BusinessRuleException(User::SIGN_IN_DISABLED_MESSAGE, 403, 'player_login_disabled');
         }
 
+        if ($user->isPlayer() && in_array($credentials['platform'] ?? null, ['android', 'ios'], true)) {
+            app(\App\Services\System\MaintenanceService::class)->assertGameOpen();
+        }
+
         return $this->tokenResponse($request, $user);
     }
 

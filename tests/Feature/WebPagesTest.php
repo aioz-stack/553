@@ -42,6 +42,7 @@ dataset('agent pages', [
 dataset('admin pages', [
     ['/admin', 'AdminPanel/Overview'],
     ['/admin/reset-password', 'AdminPanel/ResetPassword'],
+    ['/admin/maintenance', 'AdminPanel/Maintenance'],
     ['/admin/load-logs', 'AdminPanel/LoadLogs'],
     ['/admin/commission-logs', 'AdminPanel/CommissionLogs'],
     ['/admin/commission-withdrawals', 'AdminPanel/Withdrawals'],

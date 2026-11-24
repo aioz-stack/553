@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import { ChipStack, CopyLink, Dialog, Details, I, Note, Panel, Segments, StatTile, StatusPill, Table, Toast, TypePill, AmountDialog, fmt, when, type AmountAction, type Column } from '../../Components/AdminPanel/kit';
+import { TX_LOCKED_HINT, useMaintenance } from '../../lib/maintenance';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { useApi } from '../../lib/useApi';
@@ -39,6 +40,7 @@ export default function Overview() {
   usePanelRefresh(reload);
   const d = data?.data;
   const agent = panel.isAgent;
+  const txLocked = useMaintenance().transactions_blocked;
   const [tab, setTab] = useState<Tab>('load');
   const [detail, setDetail] = useState<{ title: string; rows: Array<[string, React.ReactNode]> } | null>(null);
   const [issue, setIssue] = useState<AmountAction | null>(null);
@@ -90,7 +92,7 @@ export default function Overview() {
           label="My Total Chips Amount"
           footer={
             agent ? (
-              <button type="button" onClick={requestChips} className="rounded-lg bg-white/15 px-3 py-1 font-bold text-white ring-1 ring-white/25 hover:bg-white/25">
+              <button type="button" onClick={requestChips} disabled={txLocked} title={txLocked ? TX_LOCKED_HINT : undefined} className="rounded-lg bg-white/15 px-3 py-1 font-bold text-white ring-1 ring-white/25 hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50">
                 + Request Chips{d?.pending_chip_requests ? ` · ${d.pending_chip_requests} pending` : ''}
               </button>
             ) : d?.me.is_super_admin ? (
@@ -134,7 +136,7 @@ export default function Overview() {
         <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved{agent ? ' by the Administrator' : ''}.
       </Note>
 
-      <TeamSections onChanged={reload} />
+      <TeamSections onChanged={reload} txLocked={agent && txLocked} />
 
       <Panel
         title="Recent Transactions"

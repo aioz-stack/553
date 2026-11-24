@@ -1029,3 +1029,35 @@ Not done / not verified:
   it is back on). Admins and all agent levels are unaffected; registration still works (accounts wait for approval).
   Re-enable: set `PLAYER_LOGIN_ENABLED=true` in `.env`, then `php artisan config:clear` (or `config:cache` on the server).
 - The test suite runs with it on (`phpunit.xml`); `tests/Feature/PlayerLoginSwitchTest.php` covers it off and on.
+
+### 2026-11-24 — Maintenance control (Admin Panel only)
+
+- **Admin Panel → Maintenance** (`/admin/maintenance`; Super Admin and Administrators; `GET|PUT /api/v1/admin/maintenance`).
+  One mode at a time, stored in `system_settings` (`maintenance_mode`), changed with a confirmation that lists what is
+  affected, audited as `maintenance.mode` (admin, time, previous → new), with a "Recent changes" list.
+
+  | Mode | Mobile game, matchmaking, table entry, gameplay | Agent / Master / Silver / Player transactions |
+  | --- | --- | --- |
+  | Full Maintenance (`full`) | closed — full-screen artwork, landscape | disabled (panels viewable) |
+  | Mobile Game (`mobile_game`) | closed — full-screen artwork, landscape | normal |
+  | Agents/Players (`agents_players`) | normal | disabled (notice in the panels) |
+  | OFF (`off`) | normal | normal |
+
+- **Server enforcement** (`App\Services\System\MaintenanceService`, `App\Enums\MaintenanceMode`):
+  - Game routes (rooms, lobbies, tables, games, Single Player, friend invites) sit behind the `game.open` middleware →
+    `503 {error: "maintenance", maintenance: {...}}`; app sign-in (`platform` android/ios) of players is refused too.
+  - Transactions: `assertTransactionsAllowed()` runs inside the database transaction of every agent/player money
+    operation — Load / Withdraw Chips (`AllocationService::allocate`, `ChipLoadService`), Chips requests and their
+    approval, manual adjustments, commission conversion (`TeamService`), commission withdrawals (`PayoutService`),
+    commission approval / reversal and ledger reversals. It reads the setting with a shared lock while a mode change
+    takes an exclusive lock, so no transaction slips past a switch. Admin-only movements (issuing, loading an
+    Administrator) stay open; settlements of games already in play finish normally. Balances and history are untouched.
+- **Live sync:** `GET /api/v1/status` (public) and the public Reverb channel `maintenance` (`maintenance.updated`, sent
+  right after commit, best effort). Panels (`resources/js/lib/maintenance.tsx`) follow it — notice banner, disabled
+  transaction buttons, every 30 s and on tab focus as a fallback. The mobile app's `MaintenanceGate` wraps the whole app:
+  while the game is closed it shows only `public/maintenance.webp` (object-contain, never stretched, landscape lock;
+  rotated in a portrait browser), learns of changes from `/status` at start-up, every 30 s, on resume, from Reverb and
+  from any 503 "maintenance" answer, and returns to normal by itself on OFF (no reinstall).
+- Tests: `tests/Feature/MaintenanceTest.php` (admin-only, audit, the full mode matrix, every blocked transaction,
+  viewing still allowed), WebPagesTest, mobile `MaintenanceGate.test.tsx`.
+- The APK must be rebuilt (`npm run assets && npm run cap:sync && npm run cap:android`) for phones to get the screen.

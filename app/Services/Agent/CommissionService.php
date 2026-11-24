@@ -185,6 +185,7 @@ class CommissionService
 
         return DB::transaction(function () use ($actor, $commission) {
             $commission = AgentCommission::query()->lockForUpdate()->findOrFail($commission->id);
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $commission->agent?->user);
 
             if ($commission->status !== CommissionStatus::Pending) {
                 throw new BusinessRuleException('Only pending commissions can be approved.', 409, 'invalid_state');
@@ -226,6 +227,7 @@ class CommissionService
 
         return DB::transaction(function () use ($actor, $commission, $note) {
             $commission = AgentCommission::query()->lockForUpdate()->findOrFail($commission->id);
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $commission->agent?->user);
 
             if (in_array($commission->status, [CommissionStatus::Reversed, CommissionStatus::Rejected], true)) {
                 throw new BusinessRuleException('This commission can no longer be reversed.', 409, 'invalid_state');

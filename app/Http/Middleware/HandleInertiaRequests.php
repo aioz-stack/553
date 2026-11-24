@@ -50,6 +50,12 @@ class HandleInertiaRequests extends Middleware
             ],
             'features' => fn () => config('pusoy.features'),
             'reverb' => ['enabled' => config('broadcasting.default') === 'reverb'],
+            // Maintenance mode for the panels' notices and disabled transaction buttons (live updates: /api/v1/status + Reverb).
+            'maintenance' => fn () => rescue(
+                fn () => app(\App\Services\System\MaintenanceService::class)->status(),
+                fn () => \App\Services\System\MaintenanceService::present(\App\Enums\MaintenanceMode::Off),
+                false,
+            ),
         ]);
     }
 }

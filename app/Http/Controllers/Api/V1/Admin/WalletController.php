@@ -152,7 +152,11 @@ class WalletController extends Controller
         abort_unless($request->user()->isSuperAdmin(), 403);
         $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:255']]);
 
-        $reversal = $ledger->reverse($transaction, $request->user(), $data['reason']);
+        $reversal = \Illuminate\Support\Facades\DB::transaction(function () use ($ledger, $transaction, $request, $data) {
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($request->user(), $transaction->source?->user, $transaction->destination?->user);
+
+            return $ledger->reverse($transaction, $request->user(), $data['reason']);
+        });
         AuditLogger::log($request->user(), 'wallet.reverse', $transaction, null, ['reversal' => $reversal->reference, 'reason' => $data['reason']]);
 
         return response()->json(['data' => ['reference' => $reversal->reference]], 201);

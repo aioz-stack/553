@@ -77,6 +77,11 @@ export async function api<T = unknown>(path: string, options: { method?: string;
       onUnauthorized?.();
     }
 
+    // The server is in maintenance for the game: tell the maintenance gate at once.
+    if (response.status === 503 && data?.error === 'maintenance' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pusoy:maintenance', { detail: data.maintenance ?? null }));
+    }
+
     const errors = data?.errors as Record<string, string[]> | undefined;
     const message = errors ? Object.values(errors).flat().join(' ') : (data?.message ?? `Request failed (${response.status})`);
 

@@ -25,7 +25,7 @@ interface TeamOverview {
  * Agents and Silver Agents. Every figure comes from the server; the server also enforces
  * the 10-Chip minimum, the available limit and one conversion per request id.
  */
-export default function TeamSections({ onChanged }: { onChanged?: () => void }) {
+export default function TeamSections({ onChanged, txLocked = false }: { onChanged?: () => void; /** maintenance: conversion closed */ txLocked?: boolean }) {
   const wallet = useApi<{ data: CommissionWallet }>('/commission/wallet');
   const team = useApi<{ data: TeamOverview }>('/team/overview');
   usePanelRefresh(wallet.reload, team.reload);
@@ -41,7 +41,7 @@ export default function TeamSections({ onChanged }: { onChanged?: () => void }) 
         title="Convert Commission to Wallet"
         icon={<I.percent className="h-6 w-6" />}
         actions={
-          <Btn variant="success" disabled={!c || Number(c.available) < min} onClick={() => setOpen(true)}>
+          <Btn variant="success" disabled={txLocked || !c || Number(c.available) < min} title={txLocked ? 'Unavailable during maintenance' : undefined} onClick={() => setOpen(true)}>
             <I.arrowRight className="h-4 w-4" /> Convert to Wallet
           </Btn>
         }

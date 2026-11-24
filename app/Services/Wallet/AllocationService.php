@@ -55,6 +55,8 @@ class AllocationService
         $destination = $this->wallets->for($recipient, $currency, $targetType);
 
         return DB::transaction(function () use ($actor, $recipient, $currency, $amount, $reason, $idempotencyKey, $type, $source, $destination, $targetType) {
+            // Maintenance (Full / Agents-Players): no Chips move for agents or players.
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $recipient);
             $transaction = $this->ledger->transfer(new TransferRequest(
                 type: $type,
                 currency: $currency,
@@ -163,6 +165,7 @@ class AllocationService
         $credit = $signedAmount > 0;
 
         return DB::transaction(function () use ($actor, $wallet, $signedAmount, $reason, $idempotencyKey, $credit) {
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($actor, $wallet->user);
             $transaction = $this->ledger->transfer(new TransferRequest(
                 type: $credit ? TransactionType::ManualAdjustment : TransactionType::PlayerDebit,
                 currency: $wallet->currency,

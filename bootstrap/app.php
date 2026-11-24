@@ -35,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => EnsureRole::class,
+            'game.open' => \App\Http\Middleware\EnsureGameOpen::class,
         ]);
 
         // Behind aaPanel Nginx / Cloudflare: trust the proxy headers.

@@ -81,6 +81,7 @@ class TeamService
 
         return DB::transaction(function () use ($user, $amount, $key) {
             User::query()->whereKey($user->id)->lockForUpdate()->first();
+            app(\App\Services\System\MaintenanceService::class)->assertTransactionsAllowed($user);
 
             if ($done = WalletTransaction::query()->where('idempotency_key', $key)->first()) {
                 return (int) $done->amount;

@@ -38,6 +38,7 @@ class AgentPanelController extends PanelController
         $agent = $this->agentOf($me);
         $team = $this->team();
         $wallets = app(WalletService::class);
+        $level = $agent->level ?? \App\Enums\AgentLevel::Agent; // older agents have no level: the top level
 
         $levels = $team['agents'] === [] ? collect() : Agent::query()->whereIn('agents.user_id', $team['agents'])
             ->join('users', 'users.id', '=', 'agents.user_id')->where('users.status', UserStatus::Active->value)
@@ -45,9 +46,9 @@ class AgentPanelController extends PanelController
         $downline = User::query()->whereIn('id', array_merge($team['agents'], $team['players']));
 
         return response()->json(['data' => [
-            'me' => ['id' => $me->id, 'username' => $me->username, 'name' => $me->name, 'role' => $me->role->value, 'role_label' => $agent->level->label(), 'is_super_admin' => false],
-            'level' => $agent->level->value,
-            'level_label' => $agent->level->label(),
+            'me' => ['id' => $me->id, 'username' => $me->username, 'name' => $me->name, 'role' => $me->role->value, 'role_label' => $level->label(), 'is_super_admin' => false],
+            'level' => $level->value,
+            'level_label' => $level->label(),
             'upline' => $agent->parent?->user?->only(['id', 'username', 'name']),
             'my_chips' => Points::decimal($this->chips->chipsBalance($me)),
             'allocation_frozen' => (bool) $wallets->for($me, Currency::CH, WalletType::Allocation)->is_frozen,
