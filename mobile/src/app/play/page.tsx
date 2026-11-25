@@ -41,6 +41,15 @@ export default function Play() {
     const t = setTimeout(() => router.replace('/lobby/'), 2500);
     return () => clearTimeout(t);
   }, [removed, router]);
+  // The administrator ended this table's game (pusoy:terminate-table): held Chips are back in the
+  // wallets; say so briefly, then back to Game Home.
+  const terminated = table?.status === 'CLOSED' && table.end_reason === 'terminated_by_admin';
+  useEffect(() => {
+    if (!terminated) return undefined;
+    window.dispatchEvent(new Event('pusoy:wallet'));
+    const t = setTimeout(() => router.replace('/home/'), 2500);
+    return () => clearTimeout(t);
+  }, [terminated, router]);
   const secondsLeft = useSecondsLeft(session?.status === 'ARRANGING' ? session.arrangement_deadline : null, clockOffset);
   const betSecondsLeft = useSecondsLeft(session?.status === 'BETTING' ? session.betting_deadline : null, clockOffset);
 
@@ -90,6 +99,17 @@ export default function Play() {
         <div className="pt-24 text-center" role="status">
           <p className="font-display text-xl font-black">You are no longer seated at this table.</p>
           <p className="mt-2 text-sm text-white/70">Your finished rounds are settled. Returning to the Multiplayer Lobby…</p>
+        </div>
+      </Screen>
+    );
+  }
+
+  if (terminated) {
+    return (
+      <Screen title="Table" tabs={false} hud={false}>
+        <div className="pt-24 text-center" role="status" aria-label="Game ended">
+          <p className="font-display text-xl font-black">This game was ended by the administrator.</p>
+          <p className="mt-2 text-sm text-white/70">Any Chips held for the round are back in your wallet. Returning to Game Home…</p>
         </div>
       </Screen>
     );

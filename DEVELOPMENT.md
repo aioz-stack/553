@@ -1943,3 +1943,20 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - mobile `api.test` and `SessionDisconnected.test`
 - Local check: active in the mobile app, then signing in on the web was refused with the popup. The mobile app's
   next request showed the popup with its token cleared, and logging in again worked.
+
+## Force-ending a table: `php artisan pusoy:terminate-table {table}`
+
+- Ends a table's game immediately and sends its players home. Balances stay exactly as they are:
+  - A round in progress is cancelled through `GameEngine::cancel` (now with an optional end reason). Every Chip
+    held for that round goes back to its owner (ledger refunds, once per hold); nobody wins or loses it.
+    Already-settled rounds stay settled.
+  - The match ends with `end_reason = terminated_by_admin`. The lobby closes and nobody is seated any more. A
+    table still waiting to start is simply closed.
+  - The lobby **Keys entry fee is not refunded** (`--refund-keys` refunds it when no round was completed).
+  - Players are told (`table.terminated`, and the table state). It is audited (`table.terminated`). Running it
+    again does nothing.
+- **Mobile:** a player on that table's game screen sees "This game was ended by the administrator. Any Chips held
+  for the round are back in your wallet. Returning to Game Home…" and goes to **Game Home** (`/home/`) after
+  about 2.5 s, instead of the match-over sheet.
+- Tests: `TerminateTableTest` (mid-round holds returned, Keys untouched, nobody seated, state, audit, idempotent,
+  waiting table, unknown table).

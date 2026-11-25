@@ -341,9 +341,9 @@ class GameEngine
      * Cancel a game that has not completed. All entries are refunded and no
      * commissions are generated.
      */
-    public function cancel(GameSession $session, ?User $actor, string $reason): void
+    public function cancel(GameSession $session, ?User $actor, string $reason, string $endReason = 'cancelled'): void
     {
-        DB::transaction(function () use ($session, $actor, $reason) {
+        DB::transaction(function () use ($session, $actor, $reason, $endReason) {
             $session = GameSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
 
             if ($session->status->isFinal()) {
@@ -374,7 +374,7 @@ class GameEngine
 
             if ($session->isBankerRound()) {
                 // Cancelling a round ends the match; completed rounds stay settled.
-                $this->match()->end(GameTable::query()->whereKey($session->game_table_id)->lockForUpdate()->firstOrFail(), 'cancelled');
+                $this->match()->end(GameTable::query()->whereKey($session->game_table_id)->lockForUpdate()->firstOrFail(), $endReason);
             } else {
                 GameTable::query()->whereKey($session->game_table_id)->update(['status' => TableStatus::Closed->value, 'closed_at' => now()]);
             }

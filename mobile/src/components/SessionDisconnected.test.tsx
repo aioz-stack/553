@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 const replace = vi.fn();
-const setToken = vi.fn(async () => undefined);
+const setToken = vi.fn(async (_token: string | null) => undefined);
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace, push: vi.fn() }) }));
 vi.mock('@/lib/api', () => ({ setToken: (t: string | null) => setToken(t) }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5 } }) }));
