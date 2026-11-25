@@ -2,6 +2,7 @@ import { usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { Btn, Details, Dialog, Figure, I, Panel, Pager, Picker, SearchInput, StatusPill, Table, Toast, TypePill, fieldClass, fmt, when, type Column } from '../../Components/AdminPanel/kit';
 import { Eye, commissionRows } from '../../Components/AdminPanel/rows';
+import ShopSharesPanel from '../../Components/AdminPanel/ShopSharesPanel';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
 import { api, errorMessage } from '../../lib/api';
 import type { SharedProps } from '../../lib/types';
@@ -19,7 +20,10 @@ const LEVELS: Array<[Level, string]> = [
 export default function CommissionLogs() {
   const { auth } = usePage<SharedProps>().props;
   const panel = usePanel();
-  const canEdit = !panel.isAgent && auth.user?.role === 'super_admin' || (auth.user?.abilities ?? []).includes('manage_commissions');
+  // Only the Administrator sets rates (Super Admin, or an Administrator with manage_commissions).
+  // Incorporators and Master Agents never see the rate settings; the server enforces the same.
+  const isStaff = !panel.isAgent && !panel.isLoader;
+  const canEdit = isStaff && (auth.user?.role === 'super_admin' || (auth.user?.role === 'admin' && (auth.user?.abilities ?? []).includes('manage_commissions')));
   const [level, setLevel] = useState<'' | Level>('');
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
@@ -85,10 +89,11 @@ export default function CommissionLogs() {
         ))}
       </div>
 
+      {!panel.isAgent && (
       <Panel title="Commission Rates" icon={<I.percent className="h-6 w-6" />}>
         <div className="space-y-3 px-5 py-4">
           <p className="text-sm text-[#5b5274] dark:text-white/65">
-            Percent of the platform fee collected from each player's game. The player's direct sponsor earns its rate; each upline level earns the difference up to its own rate (for example under a Master Agent: Master 40%, Incorporator 50−40 = 10%). {panel.isAgent || panel.isLoader ? 'Rates are set by the Administrator.' : 'Individual agents can be given their own rate from the Agents page.'}
+            Percent of the platform fee collected from each player's game. The player's direct sponsor earns its rate; each upline level earns the difference up to its own rate (for example under a Master Agent: Master 40%, Incorporator 50−40 = 10%). {canEdit ? 'Individual agents can be given their own rate from the Agents page.' : 'Rates are set by the Administrator.'}
           </p>
           <div className="flex flex-wrap items-end gap-3">
             {LEVELS.map(([l, label]) => (
@@ -105,6 +110,8 @@ export default function CommissionLogs() {
           </div>
         </div>
       </Panel>
+      )}
+      {isStaff && <ShopSharesPanel onToast={setToast} />}
 
       <Panel title="Commission History" icon={<I.coins className="h-6 w-6" />}>
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">

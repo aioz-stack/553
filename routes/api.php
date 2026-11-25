@@ -259,6 +259,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::post('load-logs/{chipLoad}/reject', [PanelController::class, 'rejectLoad']);
                 Route::get('commission-logs', [PanelController::class, 'commissionLogs']);
                 Route::put('commission-rates', [PanelController::class, 'setRates']);
+                // Shop revenue-sharing rates (key purchases): Administrator only (checked in the service too).
+                Route::get('shop-shares', [\App\Http\Controllers\Api\V1\Admin\ShopSharesController::class, 'show']);
+                Route::put('shop-shares', [\App\Http\Controllers\Api\V1\Admin\ShopSharesController::class, 'update'])->middleware('throttle:wallet-actions');
                 Route::get('withdrawals', [PanelController::class, 'withdrawals']);
                 Route::post('withdrawals/{payout}/approve', [PanelController::class, 'approveWithdrawal'])->middleware('throttle:wallet-actions');
                 Route::post('withdrawals/{payout}/reject', [PanelController::class, 'rejectWithdrawal']);

@@ -1591,3 +1591,33 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - `RevenueConversionTest`, 7 tests: partial amount, minimum and maximum, bad input, double clicks, roles and
     access, maintenance, rate, rollback.
   - `RevenueConvert.test.ts`: the modal's validation.
+
+## Commission and revenue-sharing rates: Administrator only
+
+- Only the **Administrator** sets rates: a Super Admin, or an Administrator with the `manage_commissions` ability.
+  Incorporators, Master Agents, players and Loader Accounts can never change a rate.
+  - **UI:** the Agent Panel's Commission Logs page no longer shows any rate settings, only the commission history.
+    Admins without the ability see the rates read-only.
+  - **Server:**
+    - The rate routes are staff-only (`can:staff`) and each service checks again.
+    - Shop revenue-sharing rates: `ShopRevenueShares::canEdit`.
+    - Game commission level rates: `CommissionService::setLevelRates`.
+    - Per-agent rate and commission rules: `PanelController::setAccountRate`, `CommissionController::storeRule`.
+- **Shop revenue-sharing rates for key purchases are now managed by the Administrator.** They used to be fixed in
+  `config/pusoy.php`.
+  - Admin Panel → Commission Logs → **Shop Revenue Sharing (Key Purchases)** edits the percent for each role in
+    each scenario:
+    - player under an Admin: Admin 100%, locked
+    - player under an Incorporator: Admin / Incorporator
+    - player under a Master Agent: Admin / Incorporator / Master Agent
+  - Every scenario must total exactly 100%. Rates go from 0% to 100% with up to 2 decimals.
+  - API: `GET` / `PUT /api/v1/admin/panel/shop-shares` with `{rates: {scenario: {role: percent}}}`.
+  - Storage: `system_settings` key `shop.revenue_shares`, in basis points. Each save is written to the audit log
+    (`shop.revenue_shares`). Until the first save, the config values are the defaults.
+  - `KeyExchangeService` reads the current rates for each purchase. They apply to **future** purchases only; past
+    exchanges keep their own `key_exchange_shares.percent_bps`.
+- Tests: `ShopRevenueSharesTest`:
+  - saving applies only to new purchases
+  - totals and validation
+  - every non-Admin role is refused on every rate endpoint
+  - an Administrator needs `manage_commissions`

@@ -255,16 +255,17 @@ class KeyExchangeService
      */
     private function shares(array $tree, int $chips): array
     {
-        $percents = config("pusoy.shop.revenue_shares.{$tree['scenario']}");
-        if (! is_array($percents) || array_sum($percents) !== 100) {
+        // The Administrator's current rates (ShopRevenueShares; config defaults until saved).
+        $rates = app(ShopRevenueShares::class)->forScenario($tree['scenario']);
+        if (array_sum($rates) !== 10000) {
             throw new BusinessRuleException('The Shop revenue shares are misconfigured.', 500, 'shares_invalid');
         }
 
         // Move a missing recipient's share up to the Admin (or the platform).
         $bps = [];
-        foreach ($percents as $role => $pct) {
+        foreach ($rates as $role => $b) {
             $target = $tree[$role] ? $role : ($tree['admin'] ? 'admin' : 'platform');
-            $bps[$target] = ($bps[$target] ?? 0) + (int) $pct * 100;
+            $bps[$target] = ($bps[$target] ?? 0) + (int) $b;
         }
 
         $out = [];
