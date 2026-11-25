@@ -42,6 +42,16 @@ final class Hierarchy
         return null;
     }
 
+    /**
+     * Who may register Players through a Player Registration Link: every agent level, and the
+     * Admins (Super Admin / Administrator) — Overview "Player Registration Link". A player who
+     * joins through an Admin's link sits directly under that Admin (no agent).
+     */
+    public static function canRegisterPlayersByLink(User $sponsor): bool
+    {
+        return self::canCreatePlayers($sponsor) || ($sponsor->isActive() && ($sponsor->isSuperAdmin() || $sponsor->isAdministrator()));
+    }
+
     /** Players are created only by agents (any level), directly under their own account. */
     public static function canCreatePlayers(User $creator): bool
     {

@@ -77,7 +77,7 @@ return [
     | Shop: players buy Keys with Chips at a fixed 5 Chips = 1 Key (packages keyed by id). Final and
     | non-refundable; Keys are never turned back into Chips. The Chips paid are shared with the
     | player's hierarchy by the player's direct upline (percent, totalling 100%), into each
-    | recipient's Chips wallet:
+    | recipient's Revenue wallet (moved into their Chips with Self Convert Revenue to Chips):
     |   direct upline Admin        → Admin 100%
     |   direct upline Incorporator → Admin 40%, Incorporator 60%
     |   direct upline Master Agent → Admin 40%, Incorporator 10%, Master Agent 50%
@@ -95,6 +95,16 @@ return [
             'incorporator' => ['admin' => 40, 'incorporator' => 60],
             'master' => ['admin' => 40, 'incorporator' => 10, 'master' => 50],
         ],
+    ],
+
+    /*
+    | Self Convert Revenue to Chips (Overview of Admins, Incorporators and Master Agents): Chips
+    | credited per 1 Revenue, in basis points. 10000 = 1:1 (1 Revenue = 1 Chip).
+    */
+    'revenue_conversion' => [
+        'rate_bps' => (int) env('REVENUE_TO_CHIPS_RATE_BPS', 10000),
+        // Smallest amount of Revenue one conversion may move.
+        'min_amount' => 20,
     ],
 
     'lobby' => [

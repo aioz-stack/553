@@ -75,11 +75,13 @@ class AssignIncorporatorAdmin extends Command
 
             try {
                 DB::transaction(function () use ($share, $from, $admin, $ledger, $wallets) {
-                    $to = $wallets->for($admin, Currency::CH, WalletType::Allocation);
+                    // Same kind of wallet the share was paid into (Revenue now; Chips for older shares).
+                    $source = \App\Models\Wallet::query()->find($share->wallet_id) ?? $wallets->for($from, Currency::CH, WalletType::Allocation);
+                    $to = $wallets->for($admin, Currency::CH, $source->type instanceof WalletType ? $source->type : WalletType::from($source->type));
                     $tx = $ledger->transfer(new TransferRequest(
                         type: TransactionType::KeyExchange,
                         currency: Currency::CH,
-                        source: $wallets->for($from, Currency::CH, WalletType::Allocation),
+                        source: $source,
                         destination: $to,
                         amount: $share->amount,
                         reason: 'Shop: Admin share of exchange #'.$share->key_exchange_id.' moved from '.$from->username.' to '.$admin->username,

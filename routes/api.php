@@ -79,6 +79,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::middleware('role:super_admin,admin,agent')->group(function () {
             Route::get('commission/wallet', [TeamController::class, 'commission']);
             Route::get('team/overview', [TeamController::class, 'overview']);
+            // Self Convert Revenue to Chips: the whole Revenue wallet into the account's own Chips.
+            Route::get('revenue', [\App\Http\Controllers\Api\V1\RevenueConversionController::class, 'show']);
+            Route::post('revenue/convert', [\App\Http\Controllers\Api\V1\RevenueConversionController::class, 'convert'])->middleware('throttle:wallet-actions');
         });
 
         // Allocation (Super Admin / Administrator / Agent; rules in AllocationService)

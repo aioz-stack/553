@@ -42,7 +42,7 @@ test('registration links: each role gets exactly the links its level may use', f
     $links = fn (User $u) => app(ReferralService::class)->links($u->fresh());
 
     // [creator, agent link level, player link?]
-    foreach ([['super', 'Incorporator', false], ['admin', 'Incorporator', false], ['agent', 'Master Agent', true], ['master', null, true], ['player', null, false]] as [$who, $level, $players]) {
+    foreach ([['super', 'Incorporator', true], ['admin', 'Incorporator', true], ['agent', 'Master Agent', true], ['master', null, true], ['player', null, false]] as [$who, $level, $players]) {
         $l = $links($t[$who]);
         expect($l['agent_level'])->toBe($level, "{$who} agent level")
             ->and($l['agent'] !== null)->toBe($level !== null, "{$who} agent link")
@@ -55,8 +55,8 @@ test('registering through a link creates only what the link owner may create, un
     $t = hyChain();
     $register = fn (User $owner, string $type, string $username) => $this->postJson('/api/v1/auth/register', hyPayload($username) + ['referral_code' => app(ReferralService::class)->codeFor($owner), 'account_type' => $type]);
 
-    // Allowed: Admin → Incorporator, Incorporator → Master + Player, Master → Player.
-    foreach ([['super', 'agent'], ['admin', 'agent'], ['agent', 'agent'], ['agent', 'player'], ['master', 'player']] as $i => [$who, $type]) {
+    // Allowed: Admin → Incorporator + Player (Player Registration Link), Incorporator → Master + Player, Master → Player.
+    foreach ([['super', 'agent'], ['admin', 'agent'], ['super', 'player'], ['admin', 'player'], ['agent', 'agent'], ['agent', 'player'], ['master', 'player']] as $i => [$who, $type]) {
         $register($t[$who], $type, "ok{$i}")->assertCreated();
         $new = User::query()->where('username', "ok{$i}")->firstOrFail();
         expect($new->sponsor_id)->toBe($t[$who]->id)->and($new->status)->toBe(UserStatus::Pending);
@@ -65,13 +65,16 @@ test('registering through a link creates only what the link owner may create, un
             $expected = ['super' => 'agent', 'admin' => 'agent', 'agent' => 'master'][$who];
             expect($approved->agent->level->value)->toBe($expected)
                 ->and($approved->agent->parent_agent_id)->toBe($t[$who]->isAgent() ? $t[$who]->agent->id : null);
-        } else {
+        } elseif ($t[$who]->isAgent()) {
             expect($approved->agentLink->agent_id)->toBe($t[$who]->agent->id);
+        } else {
+            // A player of an Admin's link sits directly under that Admin, with no agent.
+            expect($approved->role)->toBe(Role::Player)->and($approved->agentLink)->toBeNull()->and($approved->sponsor_id)->toBe($t[$who]->id);
         }
     }
 
-    // Refused: Admins → Players, Master Agents → Agents (no Silver Agents any more), Players → anything.
-    foreach ([['super', 'player'], ['admin', 'player'], ['master', 'agent'], ['player', 'player'], ['player', 'agent']] as $i => [$who, $type]) {
+    // Refused: Master Agents → Agents (no Silver Agents any more), Players → anything.
+    foreach ([['master', 'agent'], ['player', 'player'], ['player', 'agent']] as $i => [$who, $type]) {
         $register($t[$who], $type, "no{$i}")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
     }
     expect(User::query()->where('username', 'like', 'no%')->count())->toBe(0);

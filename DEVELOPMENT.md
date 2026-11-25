@@ -1440,3 +1440,154 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - Locally `admin` received 2.00 and `agent` 6.00 Chips.
 - Tests: `TeamSections.test.tsx`, `TeamTest` (route gone, commission untouched), `MaintenanceTest` (uses commission
   withdrawal requests instead).
+
+## Overview cards: Total Revenue and the two-column layout
+
+- The Admin, Incorporator and Master Agent Overview now shows six cards, two per row on desktop and stacked on small
+  screens:
+
+  | Left | Right |
+  |---|---|
+  | My Total Chips Amount | **Total Revenue** |
+  | Total Active Agents | Total Active Players |
+  | Total Player Wallets | Total Agent Wallets |
+
+  The Team Overview panel's two figures became the last two cards. `TeamSections.tsx` was removed.
+- **Total Revenue** comes from `TeamService::overview` (`GET /team/overview`), reusing its downline scope.
+  - It is the Chips paid in completed Shop exchanges (Chips → Keys, `key_exchanges`) by the players in the user's
+    scope: every player for a Super Admin, the user's downline otherwise. Refused attempts don't count.
+  - The card's footer shows "Your share": what those exchanges paid this user (`key_exchange_shares`).
+  - The cards refresh live with the panel (`panel.updated` from wallet changes) and show "—" if the figures can't load.
+- Active agent / player counts and wallet totals keep their existing logic. For an Administrator the agent / player
+  counts are platform-wide, as before, while wallet totals and revenue cover their own downline.
+- Test: `TeamTest` (revenue per scope, shares, refused attempts excluded).
+
+### Master Agent Overview: no downline-agents or agent-wallet cards
+
+- The Master Agent panel's Overview no longer shows **My Downline Agents** or **Total Agent Wallets**. Master Agents
+  recruit no agents. Its cards are My Total Chips | Total Revenue, then My Active Players | Total Player Wallets
+  (2 × 2, no gaps).
+- This is display only (`Overview.tsx`, `panel.level === 'master'`). The Admin and Incorporator panels, the hierarchy,
+  agent management, wallet records and the APIs are unchanged.
+
+## Admin Overview: Player Registration Link
+
+- Admins (Super Admin and Administrator) now have a **Player Registration Link** on the Overview, next to the
+  Incorporator link. The rule is `Hierarchy::canRegisterPlayersByLink()`: Admins and every agent level. Creating
+  players directly from the staff API is still agents-only (`canCreatePlayers`).
+- The link is permanent: it uses the account's one `users.referral_code`, created once by `ReferralService::codeFor`
+  and never regenerated when the Overview loads. URL: `/register/player?ref=<code>`.
+- Registration follows the usual rules: the account is created **pending** with `sponsor_id` = the Admin, and goes
+  through approval. On approval the player sits directly under the Admin. No `agent_players` row is made, because
+  there is no agent.
+- Tracking: `links.player_registrations` counts the players who registered through the account's link (pending,
+  active or later blocked). The card shows it under the URL.
+- Card (`CopyLink` with `shareable` and `concealable`, in `kit.tsx`):
+  - The URL is masked by default; View / Hide toggles the full URL.
+  - Copy uses the clipboard.
+  - Share opens the device share sheet (`navigator.share`) and falls back to copying.
+  - The buttons wrap under the field on narrow screens.
+  - The same card is used for the agents' Player link.
+- Tests: `AdminPanelTest` (permanent link, pending, then approved under the Admin, the count) and `HierarchyTest`
+  (links and registrations per role).
+
+## Overview: Self Convert Revenue to Chips
+
+- **Where:** the Admin, Incorporator and Master Agent Overview. A centered icon and label sit directly under the
+  registration links (`Components/AdminPanel/RevenueConvert.tsx`).
+- **The confirmation shows:**
+  - Current Total Revenue: every Shop share ever earned, including Revenue already converted.
+  - Available Revenue for Conversion.
+  - Current My Total Chips Amount.
+  - The conversion rate.
+  - Total Chips to Receive.
+- **Confirm Conversion** converts the whole available Revenue. There is no amount field. With no Revenue the
+  Confirm button is disabled and a message explains why.
+- **Revenue balance:** Shop revenue shares (`KeyExchangeService`) are now paid into each recipient's **Revenue
+  wallet**: `WalletType::Share`, Chips currency, one per account. They no longer go straight into Chips.
+  - Shares paid before this change are already in Chips and are not convertible again.
+  - The platform's share of a missing recipient still goes to the platform wallet.
+- **Rate:** `config('pusoy.revenue_conversion.rate_bps')`, env `REVENUE_TO_CHIPS_RATE_BPS`. The default is 10000,
+  meaning 1 Revenue = 1 Chip.
+- **Server (`RevenueConversionService`, `GET /api/v1/revenue`, `POST /api/v1/revenue/convert {request_id}`):**
+  - Routes are limited to `super_admin`, `admin` and `agent`, and the service checks the role again. Players,
+    Loader Accounts and guests are refused. Each account converts only its own Revenue.
+  - Everything runs in one database transaction. The user row and both wallets are locked, the whole Revenue is
+    debited, the Chips are credited (`TransactionType::RevenueConversion`) and a `revenue_conversions` row is
+    written. Any failure rolls everything back.
+  - A 1:1 rate is a single ledger transfer. Any other rate burns the Revenue and mints the Chips, so the ledger
+    still reconciles.
+  - Idempotent per (user, `request_id`): a double click returns the first conversion. Once Revenue is converted it
+    has left the Revenue wallet, so it can't be converted twice.
+  - The service respects maintenance mode and writes an audit entry (`revenue.converted`).
+- **Record (`revenue_conversions`):**
+  - reference (`RV…`), account, role and agent level
+  - Revenue converted, rate, Chips credited
+  - Revenue and Chips balances before and after
+  - status and timestamps
+- **Overview after a conversion:**
+  - A success toast shows the Revenue converted and the Chips credited.
+  - The cards refresh, and live through `panel.updated`.
+  - The new **Revenue Conversions** tab in Recent Transactions lists the latest conversions, with a detail view.
+- `pusoy:assign-admin --move-shop-shares` now moves a share out of the wallet it was paid into: Revenue for new
+  shares, Chips for older ones.
+- **Tests:** `RevenueConversionTest` covers:
+  - full conversion and the record
+  - each role converting its own Revenue
+  - no Revenue, double clicks, a client-sent amount being ignored
+  - access and maintenance
+  - a rate other than 1:1
+  - rollback on failure
+
+  `ShopKeyExchangeTest` now checks that shares land in the Revenue wallet.
+- **Deploy:** run `php artisan migrate --force`, which creates `revenue_conversions`, then rebuild the web assets.
+
+## Overview: Total Revenue and Available Revenue cards
+
+- On the Admin, Incorporator and Master Agent Overview the order is:
+  1. the registration links
+  2. Self Convert Revenue to Chips, centered
+  3. **Total Revenue** and **Available Revenue**, side by side (stacked on small screens)
+
+  The Total Revenue card left the top card grid.
+- Both cards show the account's **own** figures, for every role. This was the user's choice: an Incorporator or
+  Master Agent never sees or converts the Admin's revenue. The figures come from `GET /api/v1/revenue`
+  (`RevenueConversionService::summary`), and the cards refresh live.
+  - **Total Revenue** (`total_revenue`) is every Shop share the account has ever earned (`key_exchange_shares` of
+    completed exchanges), including shares paid into Chips before the Revenue wallet existed. It is cumulative, and
+    a conversion never reduces it. Its footer still shows the Shop sales of the user's scope (`team/overview`).
+  - **Available Revenue** (`available_revenue`) is the account's Revenue wallet: what Self Convert can still move
+    into Chips. It drops to 0 after a conversion. Its footer shows the total already converted and the rate.
+- Test: `RevenueConversionTest` checks that Total Revenue is unchanged after conversions, Available Revenue drops
+  to 0, and each role sees only its own figures.
+
+## Self Convert Revenue to Chips: amount-based conversion (minimum 20)
+
+- This replaces the earlier whole-balance conversion. The modal (`RevenueConvert.tsx`) shows:
+  - **Available Revenue**, with My Total Chips and the rate.
+  - An **Amount to Convert** field (numbers only), with a "Use all" shortcut and a live "You will receive N Chips"
+    hint.
+  - **Cancel** and **Confirm Conversion** buttons, with icons.
+- Confirm stays disabled until the amount is valid:
+  - a number with at most 2 decimals
+  - at least **20** (`pusoy.revenue_conversion.min_amount`)
+  - at most the Available Revenue
+
+  An invalid amount shows a clear message under the field. While a conversion is processing, the button shows a
+  spinner. Errors appear in the modal; success shows a toast.
+- **API:** `POST /api/v1/revenue/convert {amount, request_id}`.
+  - The server checks the amount again against the locked Revenue wallet:
+    - `below_minimum` (422)
+    - `insufficient_revenue` (422)
+    - a badly formed amount gives a validation error
+  - The same request id returns the first conversion, so a double click can't pay twice. A refused request gets a
+    new id in the modal so it can be retried.
+  - `GET /api/v1/revenue` now also returns `min_amount`, and `can_convert` is true only when Available Revenue is
+    at least the minimum.
+- **Records:** `revenue_conversions.revenue_before` is the Revenue balance before the conversion; `revenue_after`
+  is the balance left after it. The ledger, audit log, rollback and live refresh are unchanged. Total Revenue
+  stays cumulative.
+- **Tests:**
+  - `RevenueConversionTest`, 7 tests: partial amount, minimum and maximum, bad input, double clicks, roles and
+    access, maintenance, rate, rollback.
+  - `RevenueConvert.test.ts`: the modal's validation.

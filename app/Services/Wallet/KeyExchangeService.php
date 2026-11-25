@@ -30,7 +30,8 @@ use Illuminate\Support\Facades\DB;
  *       Admin → Admin 100% · Incorporator → Admin 40% / Incorporator 60% ·
  *       Master Agent → Admin 40% / Incorporator 10% / Master Agent 50%
  *     — each share is one ledger entry from the player's Chips wallet straight into the
- *     recipient's Chips wallet (never a Keys wallet). A share whose recipient is missing from the
+ *     recipient's Revenue wallet (never a Keys wallet; the recipient moves it into Chips with
+ *     Self Convert Revenue to Chips — RevenueConversionService). A share whose recipient is missing from the
  *     chain goes to the Admin, and to the platform's Chips wallet when there is no Admin;
  *  4. credit the Keys to the player's Keys wallet;
  *  5. log the exchange (key_exchanges) and every share (key_exchange_shares), and audit it.
@@ -277,7 +278,7 @@ class KeyExchangeService
                 'user' => $user,
                 'bps' => $b,
                 'amount' => $amount,
-                'wallet' => $user ? $this->wallets->for($user, Currency::CH, WalletType::Allocation) : $this->wallets->platform(Currency::CH),
+                'wallet' => $user ? $this->wallets->for($user, Currency::CH, WalletType::Share) : $this->wallets->platform(Currency::CH),
             ];
         }
         // Any rounding remainder goes to the first recipient, so the shares add up to exactly the Chips paid.
@@ -300,7 +301,7 @@ class KeyExchangeService
         );
     }
 
-    /** Live balances: the player's Chips and Keys, and each recipient's Chips (their own channels only). */
+    /** Live balances: the player's Chips and Keys, and each recipient's Revenue (their own channels only). */
     private function pushBalances(KeyExchange $exchange): void
     {
         $push = function (int $userId, Currency $currency, WalletType $type) {
@@ -310,7 +311,7 @@ class KeyExchangeService
         $push($exchange->user_id, Currency::CH, WalletType::Player);
         $push($exchange->user_id, Currency::KY, WalletType::Player);
         foreach ($exchange->shares()->whereNotNull('recipient_user_id')->pluck('recipient_user_id') as $id) {
-            $push($id, Currency::CH, WalletType::Allocation);
+            $push($id, Currency::CH, WalletType::Share);
         }
     }
 }

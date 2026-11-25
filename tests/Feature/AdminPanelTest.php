@@ -52,8 +52,8 @@ function apChain($test, User $admin): array
 test('permanent referral links build the hierarchy: Administrator → Incorporator → Master Agent → Players', function () {
     $admin = superAdmin();
     $links = $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertOk()->json('data.links');
-    // Admins recruit Agents only: an Agent link, no Player link.
-    expect($links['player'])->toBeNull()->and($links['agent'])->toEndWith("/register/agent?ref={$links['code']}");
+    // Admins have an Agent (Incorporator) link and a Player Registration Link, both on the one permanent code.
+    expect($links['player'])->toEndWith("/register/player?ref={$links['code']}")->and($links['player_registrations'])->toBe(0)->and($links['agent'])->toEndWith("/register/agent?ref={$links['code']}");
     // The same links every time (permanent).
     expect($this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->json('data.links'))->toBe($links);
 
@@ -66,10 +66,9 @@ test('permanent referral links build the hierarchy: Administrator → Incorporat
         ->assertJsonPath('data.level', 'master')->assertJsonPath('data.links.agent', null);
     $this->getJson("/api/v1/auth/referral/{$master->referral_code}?type=agent")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
 
-    // Player links: under the Master Agent (linked on approval). The Administrator's code registers no players.
+    // Player links: under the Master Agent (linked on approval).
     $p1 = apRegister($this, $admin, $master->referral_code, 'player', 'playermark');
     expect($p1->agentLink->agent_id)->toBe($master->agent->id)->and($p1->sponsor_id)->toBe($master->id);
-    $this->getJson("/api/v1/auth/referral/{$links['code']}?type=player")->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
 
     // The public lookup tells the registration page who is inviting and what is created.
     $this->getJson("/api/v1/auth/referral/{$agent->referral_code}?type=agent")->assertOk()->assertJsonPath('data.level', 'Master Agent')->assertJsonPath('data.sponsor', 'agentjohn');
@@ -286,4 +285,34 @@ test('administrators need the matching ability for account actions', function ()
     $this->actingAs($admin)->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertForbidden();
     $admin->permissions()->attach(\App\Models\Permission::query()->where('key', Ability::ManagePlayers->value)->pluck('id'));
     $this->actingAs($admin->fresh())->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertOk();
+});
+
+test('Admin Overview Player Registration Link: permanent, registers pending players under the Admin, counted', function () {
+    $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
+    $admin = User::factory()->create(['role' => Role::Administrator]);
+    $links = $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertOk()->json('data.links');
+    $code = $admin->fresh()->referral_code;
+    expect($code)->not->toBeNull()->and($links['code'])->toBe($code)->and($links['player'])->toEndWith("/register/player?ref={$code}");
+
+    // Loading the Overview again never regenerates it.
+    foreach (range(1, 3) as $_) {
+        expect($this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->json('data.links.player'))->toBe($links['player']);
+    }
+    expect($admin->fresh()->referral_code)->toBe($code);
+
+    // The public lookup accepts it for players; registration is pending until approved.
+    $this->getJson("/api/v1/auth/referral/{$code}?type=player")->assertOk();
+    \Illuminate\Support\Facades\Auth::forgetGuards();
+    foreach (['lnkone', 'lnktwo'] as $u) {
+        $this->postJson('/api/v1/auth/register', ['name' => $u, 'username' => $u, 'email' => "{$u}@t.test", 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $code, 'account_type' => 'player'])->assertCreated();
+    }
+    $one = User::query()->where('username', 'lnkone')->firstOrFail();
+    expect($one->status)->toBe(UserStatus::Pending)->and($one->sponsor_id)->toBe($admin->id)->and($one->role)->toBe(Role::Player);
+
+    $approved = app(ReferralService::class)->approve(superAdmin(), $one);
+    expect($approved->status)->toBe(UserStatus::Active)->and($approved->agentLink)->toBeNull()->and($approved->sponsor_id)->toBe($admin->id);
+
+    // Every registration through the link is counted (pending ones too).
+    $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertJsonPath('data.links.player_registrations', 2);
+    expect($admin->fresh()->referral_code)->toBe($code);
 });

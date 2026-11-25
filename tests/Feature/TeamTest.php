@@ -167,3 +167,31 @@ test('the dummy agents seeder gives each dummy agent 200 Chips of convertible co
     expect(AgentCommission::query()->count())->toBe(2)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
+
+test('Total Revenue: Chips paid in the Shop by the players in each user\'s scope, plus the user\'s own share', function () {
+    $super = superAdmin();
+    $refs = app(ReferralService::class);
+    $inc = tmJoin($super, $refs->codeFor($super), 'agent', 'revinc');
+    $master = tmJoin($super, $inc->referral_code, 'agent', 'revmaster');
+    $pMaster = tmJoin($super, $master->referral_code, 'player', 'revpm');
+    $pInc = tmJoin($super, $inc->referral_code, 'player', 'revpi');
+    $other = tmJoin($super, $refs->codeFor($super), 'agent', 'revother');
+    $pOther = tmJoin($super, $other->referral_code, 'player', 'revpo');
+    fund($pMaster, 10_000);
+    fund($pInc, 10_000);
+    fund($pOther, 1_500); // 15 Chips: enough for 2 Keys, not for 10
+    $buy = fn (User $p, string $pkg, string $key) => $this->actingAs($p, 'sanctum')->postJson('/api/v1/shop/key-exchanges', ['package' => $pkg, 'idempotency_key' => $key, 'confirmed' => true])->assertCreated();
+    $buy($pMaster, 'k10', 'rev-00001'); // 50 Chips
+    $buy($pInc, 'k5', 'rev-00002');     // 25 Chips
+    $buy($pOther, 'k2', 'rev-00003');   // 10 Chips
+    // A refused attempt is not revenue.
+    $this->actingAs($pOther, 'sanctum')->postJson('/api/v1/shop/key-exchanges', ['package' => 'k10', 'idempotency_key' => 'rev-00004', 'confirmed' => true])->assertStatus(422);
+
+    $this->actingAs($master)->getJson('/api/v1/team/overview')->assertOk()
+        ->assertJsonPath('data.total_revenue', '50.00')->assertJsonPath('data.my_revenue_share', '25.00');   // Master 50%
+    $this->actingAs($inc)->getJson('/api/v1/team/overview')
+        ->assertJsonPath('data.total_revenue', '75.00')->assertJsonPath('data.my_revenue_share', '20.00');   // 10% of 50 + 60% of 25
+    $this->actingAs($other)->getJson('/api/v1/team/overview')->assertJsonPath('data.total_revenue', '10.00');
+    $this->actingAs($super)->getJson('/api/v1/team/overview')
+        ->assertJsonPath('data.total_revenue', '85.00')->assertJsonPath('data.my_revenue_share', '34.00');   // 40% of 85
+});

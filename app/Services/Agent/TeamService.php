@@ -10,6 +10,8 @@ use App\Exceptions\BusinessRuleException;
 use App\Models\Agent;
 use App\Models\AgentPayoutRequest;
 use App\Models\AgentPlayer;
+use App\Models\KeyExchange;
+use App\Models\KeyExchangeShare;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
@@ -81,7 +83,16 @@ class TeamService
         $sum = fn (array $ids, WalletType $type) => $ids === [] ? 0 : (int) Wallet::query()
             ->whereIn('user_id', $ids)->where('currency', Currency::CH->value)->where('type', $type->value)->sum('balance');
 
+        // Total Revenue: Chips paid in completed Shop exchanges (Chips → Keys) by the players in this
+        // scope (every player for a Super Admin). My share: what those exchanges paid this user.
+        $revenue = $playerIds === [] ? 0 : (int) KeyExchange::query()
+            ->whereIn('user_id', $playerIds)->where('direction', KeyExchange::CHIPS_TO_KEYS)->where('status', KeyExchange::COMPLETED)->sum('chips_amount');
+        $myShare = (int) KeyExchangeShare::query()->where('recipient_user_id', $user->id)
+            ->whereHas('exchange', fn ($q) => $q->where('status', KeyExchange::COMPLETED))->sum('amount');
+
         return [
+            'total_revenue' => Points::decimal($revenue),
+            'my_revenue_share' => Points::decimal($myShare),
             'total_player_wallets' => Points::decimal($sum($playerIds, WalletType::Player)),
             'total_agent_wallets' => Points::decimal($sum($agentIds, WalletType::Allocation)),
             'players' => count($playerIds),

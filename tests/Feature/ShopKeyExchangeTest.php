@@ -19,7 +19,7 @@ beforeEach(fn () => $this->seed(RolesAndPermissionsSeeder::class));
 
 /*
 | Shop: buy Keys with Chips (5 Chips = 1 Key). The Chips paid are shared with the hierarchy by
-| the player's direct upline, into Chips wallets:
+| the player's direct upline, into Revenue wallets (moved to Chips by Self Convert Revenue to Chips):
 |   Admin → Admin 100% · Incorporator → Admin 40 / Incorporator 60 · Master → Admin 40 / Inc 10 / Master 50
 */
 
@@ -39,9 +39,10 @@ function shopTree(): array
     return compact('admin', 'inc', 'master', 'pMaster', 'pInc', 'pAdmin');
 }
 
+/** A player's Chips; for Admins and agents, their Revenue wallet (where Shop shares are paid). */
 function shopChips(User $u): int
 {
-    return balance($u, Currency::CH, $u->isPlayer() ? WalletType::Player : WalletType::Allocation);
+    return balance($u, Currency::CH, $u->isPlayer() ? WalletType::Player : WalletType::Share);
 }
 
 function shopBuy($test, User $p, string $package, string $key)

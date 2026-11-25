@@ -32,5 +32,7 @@ enum TransactionType: string
     case KeyExchange = 'KEY_EXCHANGE';
     /** History only: the retired Share Amount → Chips conversion (and its leftover clean-up). */
     case ShareConversion = 'SHARE_CONVERSION';
+    /** Self Convert Revenue to Chips: the whole Revenue wallet moved into the account's own Chips. */
+    case RevenueConversion = 'REVENUE_CONVERSION';
     case Reversal = 'REVERSAL';
 }

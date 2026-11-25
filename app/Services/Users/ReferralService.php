@@ -64,21 +64,26 @@ class ReferralService
     }
 
     /**
-     * @return array{code: string, player: string|null, agent: string|null, agent_level: string|null}
+     * The account's permanent links (one code per account, users.referral_code: created once,
+     * never regenerated on a page load). Admins and every agent level have a Player link; Admins
+     * and Incorporators an Agent link of the next level.
+     *
+     * @return array{code: string, player: string|null, agent: string|null, agent_level: string|null, player_registrations: int}
      */
     public function links(User $user): array
     {
         $code = $this->codeFor($user);
         $base = rtrim((string) config('app.url'), '/');
         $level = $this->recruitLevel($user);
-        // Player links belong to agents only (Incorporator, Master Agent); Admins recruit Incorporators.
-        $canRefer = Hierarchy::canCreatePlayers($user);
+        $canRefer = Hierarchy::canRegisterPlayersByLink($user);
 
         return [
             'code' => $code,
             'player' => $canRefer ? "{$base}/register/player?ref={$code}" : null,
             'agent' => $level ? "{$base}/register/agent?ref={$code}" : null,
             'agent_level' => $level?->label(),
+            // Players who registered through this account's Player link (pending, active or later blocked).
+            'player_registrations' => User::query()->where('sponsor_id', $user->id)->where('registered_as', 'player')->count(),
         ];
     }
 
@@ -111,7 +116,7 @@ class ReferralService
             throw new BusinessRuleException('Choose a valid account type.', 422, 'invalid_referral');
         }
 
-        if (! Hierarchy::canCreatePlayers($sponsor)) {
+        if (! Hierarchy::canRegisterPlayersByLink($sponsor)) {
             throw new BusinessRuleException('This account cannot register players.', 422, 'invalid_referral');
         }
 
@@ -197,9 +202,9 @@ class ReferralService
                     'status' => 'active',
                     'created_by' => $actor->id,
                 ]);
-            } elseif (! Hierarchy::canCreatePlayers($sponsor)) {
-                throw new BusinessRuleException('Players can only join under an Incorporator or a Master Agent.', 409, 'invalid_state');
-            } else {
+            } elseif (! Hierarchy::canRegisterPlayersByLink($sponsor)) {
+                throw new BusinessRuleException('Players can only join under an Admin, an Incorporator or a Master Agent.', 409, 'invalid_state');
+            } elseif ($sponsor->isAgent()) {
                 AgentPlayer::query()->firstOrCreate(['player_id' => $user->id], [
                     'agent_id' => $sponsor->agent->id,
                     'assigned_by' => $actor->id,

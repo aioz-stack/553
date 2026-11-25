@@ -44,6 +44,8 @@ export const I = {
   menu: base(<path d="M4 7h16M4 12h16M4 17h16" />),
   copy: base(<><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></>),
   check: base(<path d="M5 12.5 10 17 19 7" />),
+  eyeOff: base(<><path d="M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.7M6.6 7.4C3.9 9.1 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1M9.9 9.9a2.8 2.8 0 0 0 4.2 4.2" /></>),
+  share: base(<><circle cx="18" cy="5.5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="18.5" r="2.5" /><path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1" /></>),
   eye: base(<><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></>),
   plus: base(<><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>),
   minus: base(<><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></>),
@@ -396,8 +398,34 @@ export function Note({ children, tone = 'info' }: { children: ReactNode; tone?: 
 }
 
 /** A permanent referral link with a copy button right beside it. */
-export function CopyLink({ title, url, icon, hint }: { title: string; url: string | null; icon: ReactNode; hint?: ReactNode }) {
+/** Masks the part of a link after the path so it can be shown on screen without revealing the code. */
+export function maskLink(url: string): string {
+  const q = url.indexOf('?');
+  return q < 0 ? url : `${url.slice(0, q)}?••••••••`;
+}
+
+/**
+ * A permanent link card: Copy, and optionally Share (native share sheet when the device has one,
+ * copy otherwise) and a View / Hide toggle for the full URL. `footer` sits under the field.
+ */
+export function CopyLink({ title, url, icon, hint, shareable, concealable, footer }: { title: string; url: string | null; icon: ReactNode; hint?: ReactNode; shareable?: boolean; concealable?: boolean; footer?: ReactNode }) {
   const [copied, setCopied] = useState(false);
+  const [shown, setShown] = useState(!concealable);
+  const [shared, setShared] = useState(false);
+  const share = async () => {
+    if (!url) return;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title, url });
+        setShared(true);
+        setTimeout(() => setShared(false), 1800);
+      } catch {
+        // Cancelled by the user: nothing to do.
+      }
+      return;
+    }
+    await copy();
+  };
   const copy = async () => {
     if (!url) return;
     try {
@@ -421,16 +449,28 @@ export function CopyLink({ title, url, icon, hint }: { title: string; url: strin
           <h3 className="text-base font-extrabold text-[#1c1530] dark:text-white">{title}</h3>
           {hint && <p className="text-xs text-[#857d9c] dark:text-white/50">{hint}</p>}
           {url ? (
-            <div className="mt-2 flex items-center gap-2">
-              <input readOnly value={url} aria-label={title} onFocus={(e) => e.currentTarget.select()} className="h-11 min-w-0 flex-1 rounded-xl border border-[#e3dcf5] bg-[#faf8ff] px-3 font-mono text-sm text-[#2a2240] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/90" />
+            <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+              <input readOnly value={shown ? url : maskLink(url)} aria-label={title} onFocus={(e) => shown && e.currentTarget.select()} className="h-11 min-w-[min(100%,14rem)] flex-1 rounded-xl border border-[#e3dcf5] bg-[#faf8ff] px-3 font-mono text-sm text-[#2a2240] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/90" />
+              {concealable && (
+                <button type="button" onClick={() => setShown((v) => !v)} aria-label={shown ? `Hide ${title}` : `View ${title}`} aria-pressed={shown} title={shown ? 'Hide link' : 'View link'} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#e3dcf5] bg-white text-[#6d28d9] transition hover:bg-[#f3eeff] dark:border-white/10 dark:bg-white/[0.06] dark:text-[#f5c542]">
+                  {shown ? <I.eyeOff className="h-5 w-5" /> : <I.eye className="h-5 w-5" />}
+                </button>
+              )}
               <button type="button" onClick={copy} aria-label={`Copy ${title}`} title="Copy" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#8b5cf6] to-[#6d28d9] text-white shadow-[0_6px_16px_rgb(109_40_217/0.35)] transition hover:brightness-110">
                 {copied ? <I.check className="h-5 w-5" /> : <I.copy className="h-5 w-5" />}
               </button>
+              {shareable && (
+                <button type="button" onClick={share} aria-label={`Share ${title}`} title="Share" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#f5c542] to-[#d99a0b] text-[#3b2600] shadow-[0_6px_16px_rgb(217_154_11/0.35)] transition hover:brightness-110">
+                  <I.share className="h-5 w-5" />
+                </button>
+              )}
             </div>
           ) : (
             <p className="mt-2 text-sm text-[#857d9c] dark:text-white/50">Not available for this account.</p>
           )}
           {copied && <p role="status" className="mt-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">Copied!</p>}
+          {shared && <p role="status" className="mt-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">Shared!</p>}
+          {footer && url && <p className="mt-2 text-xs font-semibold text-[#5b5274] dark:text-white/60">{footer}</p>}
         </div>
       </div>
     </Panel>
