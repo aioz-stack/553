@@ -52,6 +52,17 @@ class Login extends Controller
                 throw ValidationException::withMessages(['username' => User::SIGN_IN_DISABLED_MESSAGE]);
             }
 
+            // One active login per player: a duplicate disconnects every session (this one included).
+            try {
+                app(\App\Services\Users\PlayerSessions::class)->beginLogin($user, $request->session()->getId());
+            } catch (\App\Exceptions\BusinessRuleException) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                throw ValidationException::withMessages(['session' => \App\Services\Users\PlayerSessions::MESSAGE]);
+            }
+
             $request->session()->regenerate();
             $user->forceFill(['last_login_at' => now()])->save();
 

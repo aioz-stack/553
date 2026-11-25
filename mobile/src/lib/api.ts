@@ -72,6 +72,19 @@ export async function api<T = unknown>(path: string, options: { method?: string;
   const data = response.status === 204 ? null : await response.json().catch(() => null);
 
   if (!response.ok) {
+    // One active login per player: every session of this account was signed out (a duplicate
+    // login, or this device was replaced). The app-wide popup explains it and goes to the login.
+    if ((data?.error === 'account_already_connected' || data?.error === 'session_replaced') && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('pusoy:disconnected', {
+          detail: {
+            title: data?.title ?? (data?.error === 'session_replaced' ? 'Signed Out' : 'Account Already Connected'),
+            message: String(data?.message ?? '').replace(/^Account Already Connected\.\s*/, ''),
+          },
+        }),
+      );
+    }
+
     if (response.status === 401 && token) {
       await setToken(null);
       onUnauthorized?.();

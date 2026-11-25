@@ -88,6 +88,9 @@ class AuthController extends Controller
             app(\App\Services\System\MaintenanceService::class)->assertGameOpen();
         }
 
+        // One active login per player: a duplicate disconnects every session (this one included).
+        app(\App\Services\Users\PlayerSessions::class)->beginLogin($user);
+
         return $this->tokenResponse($request, $user);
     }
 

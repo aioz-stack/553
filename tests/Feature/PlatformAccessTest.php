@@ -49,11 +49,13 @@ test('login matrix: Web App for every role (players included); Mobile Game for P
             $app = $this->postJson('/api/v1/auth/login', array_filter(['username' => $user->username, 'password' => 'secret123', 'platform' => $platform]));
             if ($isPlayer) {
                 $app->assertOk()->assertJsonStructure(['data' => ['token']]);
+                // One active login per player (PlayerSessions): sign out before the next attempt.
+                $user->tokens()->delete();
             } else {
                 $app->assertForbidden()->assertJsonPath('error', 'web_only')->assertJsonPath('message', 'Mobile Game Access Restricted. Your account is authorized to access the Pusoy553 Web Platform only. Please use the Web App to log in.');
             }
         }
-        expect($user->tokens()->count())->toBe($isPlayer ? 4 : 0, "{$role} tokens");
+        expect($user->tokens()->count())->toBe(0, "{$role} tokens");
     }
 });
 

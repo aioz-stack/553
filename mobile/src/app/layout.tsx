@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import MaintenanceGate from '@/components/MaintenanceGate';
 import NativeShell from '@/components/NativeShell';
 import PushRegistration from '@/components/PushRegistration';
+import SessionDisconnected from '@/components/SessionDisconnected';
 import { AuthProvider } from '@/lib/auth';
 import { MOTION_BOOT_SCRIPT } from '@/lib/motionBoot';
 import { NATIVE_ROUTE_BOOT_SCRIPT } from '@/lib/nativeBoot';
@@ -38,6 +39,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <AuthProvider>
           <NativeShell />
           <PushRegistration />
+          {/* One active login per player: "Account Already Connected" over the whole app. */}
+          <SessionDisconnected />
           {/* Admin Panel maintenance (Full / Mobile Game): the maintenance screen replaces the app. */}
           <MaintenanceGate>{children}</MaintenanceGate>
         </AuthProvider>

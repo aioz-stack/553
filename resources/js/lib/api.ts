@@ -11,6 +11,16 @@ export const api = axios.create({
   headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
 });
 
+// One active login per player: when the server has signed this browser out (a duplicate login, or
+// the account signed in elsewhere), go to the login page, which shows why.
+api.interceptors.response.use(undefined, (error: AxiosError<ApiErrorShape>) => {
+  const code = error.response?.data?.error;
+  if ((code === 'account_already_connected' || code === 'session_replaced') && typeof window !== 'undefined') {
+    window.location.href = '/';
+  }
+  return Promise.reject(error);
+});
+
 export interface ApiErrorShape {
   message: string;
   error?: string;

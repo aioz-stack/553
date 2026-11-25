@@ -1908,3 +1908,38 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - "(auto)" on the bet pill, your panel, the arrangement popup and other players' seat status
 - Tests: `LobbyEntryTest` (all three tiers, manual vs auto, a late tap, a duplicate timeout, ledger and state,
   the can't-afford case) and `MultiplayerTable.test` (notice, "(auto)", the skipped message).
+
+## One active login per Player account
+
+- Enforced on the server by `App\Services\Users\PlayerSessions`, which is called by both sign-ins before access is
+  granted: the Mobile Game API (`POST /api/v1/auth/login`, app tokens) and the Web App (`POST /login`, browser
+  sessions). It covers every device, browser and tab. Staff and agents are not affected.
+- **Active session:** an app token or browser session (database sessions) used within
+  `pusoy.sessions.active_minutes` (env `PLAYER_SESSION_ACTIVE_MINUTES`, default 15).
+- **Signing in while another session is active (a duplicate):**
+  - Every session of the account is signed out, the new attempt included. All app tokens (and their
+    `user_devices` rows) are deleted and all browser sessions removed.
+  - The sign-in is refused: API 409 `account_already_connected`; web: a `session` error.
+  - Open apps are told at once with `account.disconnected` on the player's private channel.
+  - It is audited (`player.sessions_disconnected`).
+  - The player then signs in again. Nothing is active any more, so that works, and becomes the only session.
+  - A third login during an active session triggers the same thing again.
+- **Only stale sessions** (e.g. an old phone that never logged out): they are revoked quietly, and their next
+  request is told "signed in on another device" (`session_replaced`).
+- **Every revoked token / browser session is remembered for 24 h** (cache, by token id / session id):
+  - its API calls get 401 with `account_already_connected` (or `session_replaced`) and the title and message,
+    instead of a bare 401 (exception renderer in `bootstrap/app.php`)
+  - its web pages are sent once to the login page with the reason (`NoticeDisconnectedSession` middleware)
+- **Popup "Account Already Connected"**, with the exact message:
+  - **Mobile:** `components/SessionDisconnected.tsx` in the root layout covers the whole app (no game, wallet or
+    lobby actions behind it). It is raised by the API answer (`lib/api` → `pusoy:disconnected`) or by the live
+    event; the token is cleared, and "OK — Log in again" goes to the login screen.
+  - **Web:** the login page shows the same popup. The web API client sends a disconnected browser back to the
+    login page.
+- Tests:
+  - `PlayerSessionsTest`: a duplicate disconnects both, logging in again works, a third login, stale replacement,
+    web vs app, the disconnected browser notice, staff not limited
+  - `PlatformAccessTest` (signs out between logins)
+  - mobile `api.test` and `SessionDisconnected.test`
+- Local check: active in the mobile app, then signing in on the web was refused with the popup. The mobile app's
+  next request showed the popup with its token cleared, and logging in again worked.

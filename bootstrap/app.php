@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
+            \App\Http\Middleware\NoticeDisconnectedSession::class,
             HandleInertiaRequests::class,
             EnsureActiveAccount::class,
             \App\Http\Middleware\EnsurePlatformAccess::class,
@@ -48,4 +49,16 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(fn (Request $request) => $request->is('api/*') || $request->expectsJson());
+
+        // A player's app token / browser session revoked by the one-login rule: say why (the apps
+        // show "Account Already Connected" and go back to the login screen) instead of a bare 401.
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, Request $request) {
+            if (! ($request->is('api/*') || $request->expectsJson())) {
+                return null;
+            }
+            $reason = \App\Services\Users\PlayerSessions::reasonForToken($request->bearerToken())
+                ?? ($request->hasSession() ? \App\Services\Users\PlayerSessions::reasonForSession($request->session()->getId()) : null);
+
+            return $reason ? \App\Services\Users\PlayerSessions::jsonResponse($reason) : null;
+        });
     })->create();

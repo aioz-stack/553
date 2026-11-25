@@ -109,6 +109,14 @@ return [
         'min_amount' => 20,
     ],
 
+    /*
+    | One active login per Player account (PlayerSessions): a session used within this many minutes
+    | counts as active. Signing in while another one is active disconnects every session.
+    */
+    'sessions' => [
+        'active_minutes' => (int) env('PLAYER_SESSION_ACTIVE_MINUTES', 15),
+    ],
+
     'lobby' => [
         'seat_release_seconds' => (int) env('LOBBY_SEAT_RELEASE_SECONDS', 60),
         // Legacy only: lobbies created before the entry tiers used these percentages of their

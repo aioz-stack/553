@@ -52,6 +52,28 @@ describe('mobile API client', () => {
     expect(await getToken()).toBeNull();
   });
 
+  it('one active login: a disconnected session clears the token and raises the "Account Already Connected" popup', async () => {
+    await setToken('kicked');
+    setUnauthorizedHandler(vi.fn());
+    const seen = vi.fn();
+    window.addEventListener('pusoy:disconnected', seen);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      json(401, {
+        error: 'account_already_connected',
+        title: 'Account Already Connected',
+        message: 'Account Already Connected. This account has been detected logging in from multiple sessions. For security reasons, all sessions have been disconnected. Please log in again to continue.',
+      }),
+    );
+
+    await expect(api('/wallet')).rejects.toMatchObject({ status: 401, code: 'account_already_connected' });
+    expect(await getToken()).toBeNull();
+    expect(seen).toHaveBeenCalledTimes(1);
+    const detail = (seen.mock.calls[0][0] as CustomEvent).detail;
+    expect(detail.title).toBe('Account Already Connected');
+    expect(detail.message).toMatch(/^This account has been detected logging in from multiple sessions/);
+    window.removeEventListener('pusoy:disconnected', seen);
+  });
+
   it('reports network failures distinctly', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
 
