@@ -100,7 +100,7 @@ describe('Multiplayer Lobby', () => {
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/lobbies', { query: { tab: 'private', search: '100002', page: 1 } }));
   });
 
-  it('Join opens the confirmation: choose a bet, see the wallet requirement and Keys fee, then a private lobby needs the password', async () => {
+  it('Join opens the confirmation: no bet choice, the entry requirements and Keys fee, then a private lobby needs the password', async () => {
     let calls = 0;
     routes({ '/lobbies': LIST([row(2, { type: 'private', name: 'Secret' })]) });
     // First try: wrong password; second: the right one.
@@ -116,10 +116,12 @@ describe('Multiplayer Lobby', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Join Lobby' });
     const terms = within(dialog).getByLabelText('Entry requirements');
     expect(terms).toHaveTextContent('Minimum Entry500 Chips');
-    expect(terms).toHaveTextContent('2 Keys will be deducted once, when the game starts');
-    expect(within(dialog).getAllByRole('radio').map((b) => (b.textContent ?? '').replace(/^\D+/, ''))).toEqual(['20', '30', '40']);
-    fireEvent.click(within(dialog).getByRole('radio', { name: '40' }));
-    expect(terms).toHaveTextContent('Your Bet40 Chips');
+    expect(terms).toHaveTextContent('In-game bets20 / 30 / 40 Chips');
+    expect(terms).toHaveTextContent('You choose your bet in the game, each round');
+    expect(terms).toHaveTextContent('2 Keys are deducted once, when the game starts');
+    // No "Choose Your Bet" and no bet buttons.
+    expect(within(dialog).queryByText('Choose Your Bet')).toBeNull();
+    expect(within(dialog).queryByRole('radio')).toBeNull();
 
     // A password is required for a private lobby.
     fireEvent.click(within(dialog).getByRole('button', { name: '▶ Confirm Join' }));
@@ -130,7 +132,7 @@ describe('Multiplayer Lobby', () => {
     fireEvent.change(within(dialog).getByLabelText('Lobby password'), { target: { value: 'tiger553' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '▶ Confirm Join' }));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/lobby/room/?id=2'));
-    expect(apiMock).toHaveBeenCalledWith('/lobbies/2/join', { method: 'POST', body: { bet: 40, password: 'tiger553' } });
+    expect(apiMock).toHaveBeenCalledWith('/lobbies/2/join', { method: 'POST', body: { password: 'tiger553' } });
   });
 
   it('Quick Join enters the room the server picked; with none it says so', async () => {

@@ -1863,3 +1863,19 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - the switch applies to the web
 
   `RevenueHistoryTest` now uses a fixed admin username so the numeric search test is deterministic.
+
+## Join Lobby: no bet choice
+
+- The **Join Lobby** popup (mobile `lobby/page.tsx`, `JoinLobbyModal`) no longer has "Choose Your Bet" or its bet
+  buttons. It shows the lobby, a requirements box and, for a private lobby, the password, with Cancel / Confirm
+  Join.
+  - The requirements box (`EntryTerms`) lists: Minimum Entry, In-game bets (e.g. 20 / 30 / 40), your Chips, the
+    Key Entry Fee, your Keys, and a note that the bet is chosen in the game each round and the Keys are deducted
+    when the game starts.
+- Confirm Join sends no bet. The server checks the Minimum Entry and Keys as before and records the tier's
+  smallest bet, as for the creator.
+- `BetPicker` was removed: neither Create nor Join uses it any more.
+- Bets are placed in the game each round, from the tier's chips only (5/10/15, 20/30/40, 50/75/100). The server
+  enforces those amounts and 2× the bet. Unchanged.
+- The waiting room still has its "Your Bet" chips; unchanged.
+- Test: `lobby/page.test.tsx`: no bet buttons, requirements shown, join request without a bet.

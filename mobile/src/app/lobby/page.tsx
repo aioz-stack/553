@@ -7,7 +7,7 @@ import { CardFaceArt } from '@/components/CardArt';
 import FriendsPanel from '@/components/FriendsPanel';
 import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
-import { BetPicker, EntryTerms } from '@/components/lobby/EntryTerms';
+import { EntryTerms } from '@/components/lobby/EntryTerms';
 import ShopModal from '@/components/lobby/ShopModal';
 import { CandyButton, EyeButton, ChipMark, Lock, Modal, People, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
 import AvatarPicker from '@/components/AvatarPicker';
@@ -217,9 +217,10 @@ export default function MultiplayerLobby() {
     setJoinFor(lobby);
   };
 
-  const confirmJoin = async (lobby: LobbySummary, bet: number, password?: string) => {
+  const confirmJoin = async (lobby: LobbySummary, password?: string) => {
     try {
-      const r = await api<{ data: LobbyDetail }>(`/lobbies/${lobby.id}/join`, { method: 'POST', body: { bet, ...(password ? { password } : {}) } });
+      // No bet is sent: bets are chosen in the game, each round, from the lobby's entry tier.
+      const r = await api<{ data: LobbyDetail }>(`/lobbies/${lobby.id}/join`, { method: 'POST', body: password ? { password } : {} });
       play('chip');
       setJoinFor(null);
       enter(r.data);
@@ -593,7 +594,7 @@ export default function MultiplayerLobby() {
             </div>
           </Modal>
         )}
-        {joinFor && <JoinLobbyModal lobby={joinFor} chips={balance} keys={keyCount} onClose={() => setJoinFor(null)} onJoin={(bet, pw) => confirmJoin(joinFor, bet, pw)} />}
+        {joinFor && <JoinLobbyModal lobby={joinFor} chips={balance} keys={keyCount} onClose={() => setJoinFor(null)} onJoin={(pw) => confirmJoin(joinFor, pw)} />}
 
         {toast && (
           <div role="alert" className={`absolute left-1/2 top-[150px] z-[60] -translate-x-1/2 whitespace-nowrap rounded-full border-4 px-8 py-3 font-display text-[26px] font-black shadow-lg ${toast.ok ? 'border-[#4ee36b] bg-[#0f2a1c] text-[#b9ffcb]' : 'border-[#ff8a8a] bg-[#3a0d14] text-[#ffe4e4]'}`}>
@@ -629,20 +630,20 @@ function LeaveLobbyConfirm({ lobby, busy, onCancel, onLeave }: { lobby: LobbyDet
 }
 
 /**
- * Join confirmation: choose your bet (one of the lobby's three), see the Chips you must hold (the
- * Minimum Entry and 2× your bet), the Keys fee and when it is deducted, and — for a private lobby —
- * enter the password. Confirm Join stays disabled while you do not meet the requirements. The server
+ * Join confirmation: the lobby's Minimum Entry, its in-game bets (chosen in the game, each round),
+ * the Keys fee and when it is deducted, against your Chips and Keys — and, for a private lobby, the
+ * password. Confirm Join stays disabled while you do not meet the requirements. The server
  * checks everything again.
  */
-function JoinLobbyModal({ lobby, chips, keys, onClose, onJoin }: { lobby: LobbySummary; chips?: number; keys?: number; onClose: () => void; onJoin: (bet: number, password?: string) => Promise<void> }) {
+function JoinLobbyModal({ lobby, chips, keys, onClose, onJoin }: { lobby: LobbySummary; chips?: number; keys?: number; onClose: () => void; onJoin: (password?: string) => Promise<void> }) {
   const bets = (lobby.bet_chips ?? [lobby.min_bet]).map(Number);
-  const [bet, setBet] = useState<number>(bets[0]);
   const [pw, setPw] = useState('');
   const [shown, setShown] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isPrivate = lobby.type === 'private';
-  const problem = entryProblem({ min_entry: lobby.min_entry, bets, keys: lobby.key_fee ?? 0 }, bet, chips, keys);
+  // To join you need the Minimum Entry and the Keys fee (bets are chosen later, in the game).
+  const problem = entryProblem({ min_entry: lobby.min_entry, bets, keys: lobby.key_fee ?? 0 }, Math.min(...bets), chips, keys);
 
   const submit = async () => {
     if (busy) return;
@@ -657,7 +658,7 @@ function JoinLobbyModal({ lobby, chips, keys, onClose, onJoin }: { lobby: LobbyS
     setBusy(true);
     setError(null);
     try {
-      await onJoin(bet, isPrivate ? pw : undefined);
+      await onJoin(isPrivate ? pw : undefined);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -666,7 +667,7 @@ function JoinLobbyModal({ lobby, chips, keys, onClose, onJoin }: { lobby: LobbyS
   };
 
   return (
-    <Modal title="Join Lobby" onClose={onClose} width={860}>
+    <Modal title="Join Lobby" onClose={onClose} width={760}>
       <p className="mb-4 text-center font-display text-[28px] font-black text-[#ffe9b0]">
         {lobby.name} <span className="text-white/60">· ID {lobby.lobby_id} · Round Bank</span>
       </p>
@@ -676,11 +677,7 @@ function JoinLobbyModal({ lobby, chips, keys, onClose, onJoin }: { lobby: LobbyS
           submit();
         }}
       >
-        <div className="mb-4 flex flex-col items-center gap-2">
-          <span className="font-display text-[24px] font-black text-[#ffe9b0]">Choose Your Bet</span>
-          <BetPicker bets={bets} value={bet} onChange={(b) => { setBet(b); setError(null); }} disabled={busy} />
-        </div>
-        <EntryTerms minEntry={lobby.min_entry} bet={bet} keyFee={lobby.key_fee ?? 0} chips={chips} keys={keys} />
+        <EntryTerms minEntry={lobby.min_entry} bets={bets} keyFee={lobby.key_fee ?? 0} chips={chips} keys={keys} />
         {isPrivate && (
           <div className="relative mt-4">
             <input aria-label="Lobby password" type={shown ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Enter password" className={`${inputClass} pr-16`} />
