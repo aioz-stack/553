@@ -22,7 +22,7 @@ use Illuminate\Http\Request;
 
 /**
  * The Agent Panel (Incorporators and Master Agents): the same screens as the Admin
- * Panel — Overview, Load Logs, Commission Logs, Commission Withdrawal, Agents / Players —
+ * Panel — Overview, Load Logs, Revenue Logs, Revenue Commission Withdrawal, Agents / Players —
  * served by the same code, limited to the signed-in agent and its own downline. Agents can
  * load Chips to their own players, request Chips and request commission withdrawals; every
  * approval, ban, archive, withdrawal of Chips and rate change stays with the Administrators
@@ -118,6 +118,20 @@ class AgentPanelController extends PanelController
     protected function scopeWithdrawals(Builder $query): Builder
     {
         return $query->whereIn('agent_payout_requests.agent_id', $this->team()['agent_rows']);
+    }
+
+    /** Revenue Logs: Shop Buy-Ins of the players in this agent's downline only. */
+    protected function scopeRevenueLogs(Builder $query): Builder
+    {
+        return $query->whereIn('key_exchanges.user_id', $this->team()['players']);
+    }
+
+    /** Revenue Commission Withdrawal: this agent's own conversions and those of the agents below it. */
+    protected function scopeRevenueConversions(Builder $query): Builder
+    {
+        $team = $this->team();
+
+        return $query->whereIn('revenue_conversions.user_id', array_merge([$team['me']], $team['agents']));
     }
 
     protected function scopeAccounts(Builder $query): Builder

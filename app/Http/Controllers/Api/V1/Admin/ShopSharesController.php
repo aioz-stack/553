@@ -8,7 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Admin Panel → Commission Logs → Shop revenue-sharing rates (key purchases). Staff routes only;
+ * Admin Panel → Revenue Sharing Rates → Shop revenue-sharing rates (key purchases). Staff routes only;
  * saving is limited to the Administrator (Super Admin, or an Administrator with
  * manage_commissions) and checked again in ShopRevenueShares.
  */

@@ -57,8 +57,8 @@ const agent: NavGroup[] = [
     items: [
       { key: 'agent', label: 'OVERVIEW', href: '/agent', icon: IconGrid },
       { key: 'agent-load-logs', label: 'LOAD LOGS', href: '/agent/load-logs', icon: IconList },
-      { key: 'agent-commissions', label: 'COMMISSION LOGS', href: '/agent/commission-logs', icon: IconTrophy },
-      { key: 'agent-withdrawals', label: 'COMMISSION WITHDRAWAL', href: '/agent/commission-withdrawals', icon: IconWallet },
+      { key: 'agent-revenue-logs', label: 'REVENUE LOGS', href: '/agent/revenue-logs', icon: IconTrophy },
+      { key: 'agent-revenue-withdrawals', label: 'REVENUE COMMISSION WITHDRAWAL', href: '/agent/revenue-withdrawals', icon: IconWallet },
       { key: 'agent-players', label: 'MY PLAYERS', href: '/agent/accounts/active-players', icon: IconUsers },
       { key: 'agent-pending', label: 'PENDING USERS', href: '/agent/accounts/pending-users', icon: IconUser },
       { key: 'profile', label: 'PROFILE', href: '/profile', icon: IconUser },

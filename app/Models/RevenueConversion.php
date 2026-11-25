@@ -32,4 +32,10 @@ class RevenueConversion extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /** The ledger entry that credited the Chips (its reference is the conversion's reference number). */
+    public function transaction(): BelongsTo
+    {
+        return $this->belongsTo(WalletTransaction::class, 'wallet_transaction_id');
+    }
 }

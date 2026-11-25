@@ -56,8 +56,10 @@ Route::middleware('auth')->group(function () {
         // Agent Panel (same screens as the Admin Panel, limited to the agent's downline).
         Route::inertia('/', 'AdminPanel/Overview')->name('overview');
         Route::inertia('/load-logs', 'AdminPanel/LoadLogs')->name('load-logs');
-        Route::inertia('/commission-logs', 'AdminPanel/CommissionLogs')->name('commission-logs');
-        Route::inertia('/commission-withdrawals', 'AdminPanel/Withdrawals')->name('commission-withdrawals');
+        // Revenue Logs (Shop Buy-Ins) and Revenue Commission Withdrawal (self-conversions): read-only.
+        // Commission Logs / Commission Withdrawal were removed from the Agent Panel.
+        Route::inertia('/revenue-logs', 'AdminPanel/RevenueLogs')->name('revenue-logs');
+        Route::inertia('/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals')->name('revenue-withdrawals');
         foreach (['agents' => 'agents', 'active-players' => 'players', 'pending-users' => 'pending'] as $path => $kind) {
             Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
         }
@@ -79,8 +81,11 @@ Route::middleware('auth')->group(function () {
         // Admin Panel (premium dashboard; every number and action comes from the API).
         Route::inertia('/', 'AdminPanel/Overview')->name('overview');
         Route::inertia('/load-logs', 'AdminPanel/LoadLogs')->name('load-logs');
-        Route::inertia('/commission-logs', 'AdminPanel/CommissionLogs')->name('commission-logs');
-        Route::inertia('/commission-withdrawals', 'AdminPanel/Withdrawals')->name('commission-withdrawals');
+        // Revenue Logs / Revenue Commission Withdrawal (read-only histories) replace Commission Logs /
+        // Commission Withdrawal. The rate settings moved to Revenue Sharing Rates (Administrator only).
+        Route::inertia('/revenue-logs', 'AdminPanel/RevenueLogs')->name('revenue-logs');
+        Route::inertia('/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals')->name('revenue-withdrawals');
+        Route::inertia('/revenue-rates', 'AdminPanel/RevenueRates')->name('revenue-rates');
         foreach (['agents' => 'agents', 'active-players' => 'players', 'pending-users' => 'pending', 'ban-users' => 'banned', 'archive' => 'archived'] as $path => $kind) {
             Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
         }

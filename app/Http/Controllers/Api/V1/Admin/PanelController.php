@@ -31,14 +31,17 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
 /**
- * The Admin Panel (Super Admin and Administrators): dashboard, Load Logs, Commission
- * Logs, Commission Withdrawal, Agents / Players (Agents, Active Players, Pending Users,
+ * The Admin Panel (Super Admin and Administrators): dashboard, Load Logs, Revenue Logs,
+ * Revenue Commission Withdrawal, Agents / Players (Agents, Active Players, Pending Users,
  * Ban Users) and Archive. Every number comes from the database; every action goes
  * through a service that validates it, locks rows, moves Chips through the ledger
  * (never negative, idempotent) and writes the audit log.
  */
 class PanelController extends Controller
 {
+    // Revenue Logs (Shop Buy-Ins) and Revenue Commission Withdrawal (self-conversions): read-only.
+    use RevenueHistoryEndpoints;
+
     public function __construct(
         protected readonly ReferralService $referrals,
         protected readonly ChipLoadService $chips,

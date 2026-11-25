@@ -38,7 +38,7 @@ export function toBps(v: string): number | null {
 }
 
 /**
- * Admin Panel → Commission Logs: Shop revenue-sharing rates for key purchases (who gets which
+ * Admin Panel → Revenue Sharing Rates: Shop revenue-sharing rates for key purchases (who gets which
  * percent of the Chips a player pays). Only the Administrator sees and saves this; each scenario
  * must total 100%. New rates apply to future purchases only.
  */

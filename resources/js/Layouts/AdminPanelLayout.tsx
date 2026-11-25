@@ -84,8 +84,9 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
   const main: NavItem[] = panel.isLoader ? loaderMain : [
     { label: 'Overview', href: b, icon: <I.home className="h-5 w-5" /> },
     { label: 'Load Logs', href: `${b}/load-logs`, icon: <I.logs className="h-5 w-5" /> },
-    { label: 'Commission Logs', href: `${b}/commission-logs`, icon: <I.coins className="h-5 w-5" /> },
-    { label: 'Commission Withdrawal', href: `${b}/commission-withdrawals`, icon: <I.wallet className="h-5 w-5" /> },
+    { label: 'Revenue Logs', href: `${b}/revenue-logs`, icon: <I.coins className="h-5 w-5" /> },
+    { label: 'Revenue Commission Withdrawal', href: `${b}/revenue-withdrawals`, icon: <I.wallet className="h-5 w-5" /> },
+    ...(panel.isAgent ? [] : [{ label: 'Revenue Sharing Rates', href: '/admin/revenue-rates', icon: <I.percent className="h-5 w-5" /> }]),
     ...(panel.isAgent ? [] : [{ label: 'Maintenance', href: '/admin/maintenance', icon: <I.shield className="h-5 w-5" /> }]),
     ...(panel.isAgent ? [] : [{ label: 'Users / Employees', href: '/admin/employees', icon: <I.user className="h-5 w-5" /> }]),
   ];

@@ -1621,3 +1621,44 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - totals and validation
   - every non-Admin role is refused on every rate endpoint
   - an Administrator needs `manage_commissions`
+
+## Revenue Logs and Revenue Commission Withdrawal (replace Commission Logs / Commission Withdrawal)
+
+- In the Admin, Incorporator and Master Agent panels, **Commission Logs** and **Commission Withdrawal** were
+  removed: their menu items, web pages (`/admin|agent/commission-logs`, `/commission-withdrawals`, now 404) and
+  the Agent Panel's `commission-logs` / `withdrawals` API.
+  - All existing commission and withdrawal records stay in the database.
+  - The Administrators' commission API and the Loader Panel's Commission Transactions pages are unchanged.
+- **Revenue Logs** (`/admin|agent/revenue-logs`, API `GET …/panel/revenue-logs`) is a read-only history of
+  **completed Shop Buy-Ins only**: `key_exchanges` with direction `chips_to_keys` and status `completed`.
+  - Each row shows:
+    - Transaction ID (`SB` + id)
+    - player username and ID
+    - upline (Master Agent → Incorporator → Admin, from the hierarchy snapshot stored with the purchase)
+    - Buy-In in Chips, Keys purchased, payment method (Chips)
+    - date and time, status
+  - No commission percentages. Refused attempts, conversions, withdrawals and other wallet entries never appear.
+- **Revenue Commission Withdrawal** (`/admin|agent/revenue-withdrawals`, API `GET …/panel/revenue-conversions`) is
+  a read-only history of **completed Self Convert Revenue to Chips** (`revenue_conversions`).
+  - Each row shows: Conversion ID (`RV…`), account username and ID, role (Admin / Incorporator / Master Agent),
+    Revenue converted, date and time, status, and the ledger reference number (`TX…`).
+  - It has no request, approve, reject or payment actions, and no write routes.
+- **Filters:**
+  - search: player, ID, upline or transaction ID; or account, ID or reference
+  - From / To dates, in the viewer's timezone (`tz`)
+  - status (Revenue Logs) or role (conversions)
+  - sort: newest, oldest, highest or lowest amount
+  - pagination
+
+  Both pages show summary totals, an empty state, a loading state and an error message with retry.
+- **Scope** (shared trait `RevenueHistoryEndpoints`; the Agent Panel overrides the scope hooks):
+  - The Admin Panel sees the whole platform.
+  - An Incorporator or Master Agent sees Buy-Ins by the players in its downline, and conversions by itself and the
+    agents below it.
+  - Agents get 403 on the Admin endpoints, and players get 403 on both.
+- The Overview's Recent Transactions tabs are now **Load Logs · Revenue Logs · Revenue Commission Withdrawal**, the
+  latest 5 from the same endpoints.
+- The rate settings that lived on Commission Logs moved to a new Admin-only page, **Revenue Sharing Rates**
+  (`/admin/revenue-rates`): Shop revenue sharing and game commission rates. The Agent Panel has no such page.
+- Tests: `RevenueHistoryTest` (strict separation, filters, sorting, hierarchy scoping, access, read-only), plus
+  `WebPagesTest` and `AgentPanelTest` updated for the removed pages.

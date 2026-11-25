@@ -162,8 +162,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::get('overview', [AgentPanelController::class, 'overview']);
                 Route::get('load-logs', [AgentPanelController::class, 'loadLogs']);
                 Route::get('load-logs/{chipLoad}', [AgentPanelController::class, 'loadLog']);
-                Route::get('commission-logs', [AgentPanelController::class, 'commissionLogs']);
-                Route::get('withdrawals', [AgentPanelController::class, 'withdrawals']);
+                // Revenue Logs / Revenue Commission Withdrawal: read-only, this agent's downline.
+                Route::get('revenue-logs', [AgentPanelController::class, 'revenueLogs']);
+                Route::get('revenue-conversions', [AgentPanelController::class, 'revenueConversions']);
                 Route::get('accounts', [AgentPanelController::class, 'accounts']);
                 Route::get('accounts/{user}', [AgentPanelController::class, 'account']);
                 Route::post('accounts/{user}/load', [AgentPanelController::class, 'load'])->middleware('throttle:wallet-actions');
@@ -258,6 +259,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::post('load-logs/{chipLoad}/approve', [PanelController::class, 'approveLoad'])->middleware('throttle:wallet-actions');
                 Route::post('load-logs/{chipLoad}/reject', [PanelController::class, 'rejectLoad']);
                 Route::get('commission-logs', [PanelController::class, 'commissionLogs']);
+                // Revenue Logs / Revenue Commission Withdrawal: read-only, whole platform.
+                Route::get('revenue-logs', [PanelController::class, 'revenueLogs']);
+                Route::get('revenue-conversions', [PanelController::class, 'revenueConversions']);
                 Route::put('commission-rates', [PanelController::class, 'setRates']);
                 // Shop revenue-sharing rates (key purchases): Administrator only (checked in the service too).
                 Route::get('shop-shares', [\App\Http\Controllers\Api\V1\Admin\ShopSharesController::class, 'show']);

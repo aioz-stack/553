@@ -31,8 +31,8 @@ dataset('player pages', [
 dataset('agent pages', [
     ['/agent', 'AdminPanel/Overview'],
     ['/agent/load-logs', 'AdminPanel/LoadLogs'],
-    ['/agent/commission-logs', 'AdminPanel/CommissionLogs'],
-    ['/agent/commission-withdrawals', 'AdminPanel/Withdrawals'],
+    ['/agent/revenue-logs', 'AdminPanel/RevenueLogs'],
+    ['/agent/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals'],
     ['/agent/accounts/agents', 'AdminPanel/Accounts'],
     ['/agent/accounts/active-players', 'AdminPanel/Accounts'],
     ['/agent/accounts/pending-users', 'AdminPanel/Accounts'],
@@ -45,8 +45,9 @@ dataset('admin pages', [
     ['/admin/maintenance', 'AdminPanel/Maintenance'],
     ['/admin/employees', 'AdminPanel/Employees'],
     ['/admin/load-logs', 'AdminPanel/LoadLogs'],
-    ['/admin/commission-logs', 'AdminPanel/CommissionLogs'],
-    ['/admin/commission-withdrawals', 'AdminPanel/Withdrawals'],
+    ['/admin/revenue-logs', 'AdminPanel/RevenueLogs'],
+    ['/admin/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals'],
+    ['/admin/revenue-rates', 'AdminPanel/RevenueRates'],
     ['/admin/accounts/agents', 'AdminPanel/Accounts'],
     ['/admin/accounts/pending-users', 'AdminPanel/Accounts'],
     ['/admin/accounts/archive', 'AdminPanel/Accounts'],
@@ -79,7 +80,7 @@ test('agent pages render for agents and are hidden from players', function (stri
 
 test('the retired agent tools (Register Player, Referral Codes, the old agent pages) are gone', function () {
     $agent = User::factory()->agent()->create();
-    foreach (['/agent/players', '/agent/players/create', '/agent/referral-codes', '/agent/allocate', '/agent/balances', '/agent/transactions', '/agent/activity', '/agent/commissions', '/agent/reports'] as $url) {
+    foreach (['/agent/players', '/agent/players/create', '/agent/referral-codes', '/agent/allocate', '/agent/balances', '/agent/transactions', '/agent/activity', '/agent/commissions', '/agent/reports', '/agent/commission-logs', '/agent/commission-withdrawals'] as $url) {
         $this->actingAs($agent)->get($url)->assertNotFound();
     }
 });

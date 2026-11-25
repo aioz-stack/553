@@ -4,10 +4,12 @@ import { ChipStack, CopyLink, Dialog, Details, I, Note, Panel, Segments, StatTil
 import { TX_LOCKED_HINT, useMaintenance } from '../../lib/maintenance';
 import { usePanel, usePanelRefresh } from '../../lib/panel';
 import AdminPanelLayout from '../../Layouts/AdminPanelLayout';
-import RevenueConvert, { type RevenueConversionRow, type RevenueSummary } from '../../Components/AdminPanel/RevenueConvert';
+import RevenueConvert, { type RevenueSummary } from '../../Components/AdminPanel/RevenueConvert';
 import { useApi } from '../../lib/useApi';
-import type { LoadLog, CommissionLog, Withdrawal } from './types';
-import { Eye, Signed, TxLabel, commissionRows, loadRows, withdrawalRows } from '../../Components/AdminPanel/rows';
+import type { LoadLog } from './types';
+import { Eye, Signed, TxLabel, loadRows } from '../../Components/AdminPanel/rows';
+import type { BuyIn } from './RevenueLogs';
+import type { ConversionRow } from './RevenueWithdrawals';
 
 interface OverviewData {
   me: { username: string; is_super_admin: boolean };
@@ -24,7 +26,7 @@ interface OverviewData {
   active_players: number;
   pending_users: number;
   links: { code: string; player: string | null; agent: string | null; agent_level: string | null; player_registrations: number };
-  recent: { load_logs: LoadLog[]; commission_logs: CommissionLog[]; withdrawals: Withdrawal[] };
+  recent: { load_logs: LoadLog[] };
 }
 
 interface TeamTotals {
@@ -37,7 +39,7 @@ interface TeamTotals {
   scope: 'platform' | 'downline';
 }
 
-type Tab = 'load' | 'commission' | 'withdrawal' | 'revenue';
+type Tab = 'load' | 'buyins' | 'conversions';
 
 /**
  * Overview of the Admin Panel (whole platform) and of the Incorporator / Master Agent
@@ -74,62 +76,33 @@ export default function Overview() {
     { key: 'st', label: 'Status', className: 'text-center', render: (r) => <StatusPill status={r.status} /> },
     { key: 'act', label: 'Action', className: 'text-center', render: (r) => <Eye onClick={() => setDetail({ title: `Load ${r.reference}`, rows: loadRows(r) })} /> },
   ];
-  const commissionCols: Column<CommissionLog>[] = [
+  // Recent Revenue Logs (Shop Buy-Ins) and Revenue Commission Withdrawal (self-conversions) of this
+  // panel's scope: the same read-only endpoints as their pages, latest 5.
+  const buyIns = useApi<{ data: BuyIn[] }>(`${panel.api}/revenue-logs`, { per_page: 5 });
+  const conversions = useApi<{ data: ConversionRow[] }>(`${panel.api}/revenue-conversions`, { per_page: 5 });
+  usePanelRefresh(buyIns.reload, conversions.reload);
+  const buyInCols: Column<BuyIn>[] = [
     { key: 'n', label: '#', render: (_, i) => i + 1 },
     { key: 'date', label: 'Date & Time', render: (r) => <span className="whitespace-nowrap">{when(r.created_at)}</span> },
-    { key: 'tx', label: 'Transaction', render: () => <TxLabel direction="commission" text="Commission" /> },
-    { key: 'acct', label: 'Account', render: (r) => <span className="font-semibold">{r.recipient?.username}</span> },
-    { key: 'type', label: 'Type', render: (r) => <TypePill type={r.account_type} label={r.account_type_label} /> },
-    { key: 'amt', label: 'Amount (Chips)', className: 'text-right', render: (r) => <Signed value={r.amount} /> },
+    { key: 'tx', label: 'Transaction', render: () => <TxLabel direction="commission" text="Shop Buy-In" /> },
+    { key: 'id', label: 'Transaction ID', render: (r) => <span className="font-mono text-xs">{r.transaction_id}</span> },
+    { key: 'acct', label: 'Player', render: (r) => <span className="font-semibold">{r.player.username}</span> },
+    { key: 'amt', label: 'Buy-In (Chips)', className: 'text-right', render: (r) => <span className="font-black">{fmt(r.buy_in, 2)}</span> },
+    { key: 'keys', label: 'Keys', className: 'text-right', render: (r) => fmt(r.keys) },
     { key: 'st', label: 'Status', className: 'text-center', render: (r) => <StatusPill status={r.status} /> },
-    { key: 'act', label: 'Action', className: 'text-center', render: (r) => <Eye onClick={() => setDetail({ title: `Commission ${r.reference}`, rows: commissionRows(r) })} /> },
   ];
-  const withdrawalCols: Column<Withdrawal>[] = [
-    { key: 'n', label: '#', render: (_, i) => i + 1 },
-    { key: 'date', label: 'Date & Time', render: (r) => <span className="whitespace-nowrap">{when(r.created_at)}</span> },
-    { key: 'tx', label: 'Transaction', render: () => <TxLabel direction="withdraw" text="Commission Withdrawal" /> },
-    { key: 'acct', label: 'Account', render: (r) => <span className="font-semibold">{r.agent?.username}</span> },
-    { key: 'type', label: 'Type', render: (r) => <TypePill type={r.account_type} label={r.account_type_label} /> },
-    { key: 'amt', label: 'Amount (Chips)', className: 'text-right', render: (r) => <span className="font-black">{fmt(r.amount)}</span> },
-    { key: 'st', label: 'Status', className: 'text-center', render: (r) => <StatusPill status={r.status} /> },
-    { key: 'act', label: 'Action', className: 'text-center', render: (r) => <Eye onClick={() => setDetail({ title: `Withdrawal ${r.reference}`, rows: withdrawalRows(r) })} /> },
-  ];
-
-  const revenueCols: Column<RevenueConversionRow>[] = [
+  const conversionCols: Column<ConversionRow>[] = [
     { key: 'n', label: '#', render: (_, i) => i + 1 },
     { key: 'date', label: 'Date & Time', render: (r) => <span className="whitespace-nowrap">{when(r.created_at)}</span> },
     { key: 'tx', label: 'Transaction', render: () => <TxLabel direction="commission" text="Revenue → Chips" /> },
-    { key: 'rev', label: 'Revenue Converted', className: 'text-right', render: (r) => <span className="font-black">{fmt(r.revenue_converted, 2)}</span> },
-    { key: 'rate', label: 'Rate', render: (r) => <span className="whitespace-nowrap">{r.rate}</span> },
-    { key: 'amt', label: 'Chips Credited', className: 'text-right', render: (r) => <Signed value={r.chips_credited} /> },
+    { key: 'id', label: 'Conversion ID', render: (r) => <span className="font-mono text-xs">{r.transaction_id}</span> },
+    { key: 'acct', label: 'Account', render: (r) => <span className="font-semibold">{r.account.username}</span> },
+    { key: 'role', label: 'Role', render: (r) => r.account.role },
+    { key: 'amt', label: 'Revenue Converted', className: 'text-right', render: (r) => <span className="font-black">{fmt(r.revenue_converted, 2)}</span> },
     { key: 'st', label: 'Status', className: 'text-center', render: (r) => <StatusPill status={r.status} /> },
-    {
-      key: 'act',
-      label: 'Action',
-      className: 'text-center',
-      render: (r) => (
-        <Eye
-          onClick={() =>
-            setDetail({
-              title: `Revenue Conversion ${r.reference}`,
-              rows: [
-                ['Transaction ID', r.reference],
-                ['Date & Time', when(r.created_at)],
-                ['Revenue Converted', fmt(r.revenue_converted, 2)],
-                ['Conversion Rate', r.rate],
-                ['Chips Credited', `${fmt(r.chips_credited, 2)} Chips`],
-                ['Revenue Before → After', `${fmt(r.revenue_before, 2)} → ${fmt(r.revenue_after, 2)}`],
-                ['Chips Before → After', `${fmt(r.chips_before, 2)} → ${fmt(r.chips_after, 2)}`],
-                ['Status', <StatusPill key="s" status={r.status} />],
-              ],
-            })
-          }
-        />
-      ),
-    },
   ];
 
-  const viewAll = { load: `${panel.base}/load-logs`, commission: `${panel.base}/commission-logs`, withdrawal: `${panel.base}/commission-withdrawals`, revenue: null }[tab];
+  const viewAll = { load: `${panel.base}/load-logs`, buyins: `${panel.base}/revenue-logs`, conversions: `${panel.base}/revenue-withdrawals` }[tab];
   const requestChips = () => setIssue({ title: 'Request Chips', verb: 'Request', target: 'from the Administrator', path: '/agent/chip-requests', variant: 'gold' });
 
   return (
@@ -229,7 +202,8 @@ export default function Overview() {
         lockedHint={TX_LOCKED_HINT}
         onDone={(m) => {
           setToast({ ok: true, text: m });
-          setTab('revenue');
+          setTab('conversions');
+          conversions.reload();
           reload();
           team.reload();
           revenue.reload();
@@ -267,7 +241,7 @@ export default function Overview() {
         icon={<I.clock className="h-6 w-6" />}
         actions={
           <>
-            <Segments<Tab> label="Recent transactions" value={tab} onChange={setTab} options={[['load', 'Load Logs'], ['commission', 'Commission Logs'], ['withdrawal', 'Commission Withdrawal'], ['revenue', 'Revenue Conversions']]} />
+            <Segments<Tab> label="Recent transactions" value={tab} onChange={setTab} options={[['load', 'Load Logs'], ['buyins', 'Revenue Logs'], ['conversions', 'Revenue Commission Withdrawal']]} />
             {viewAll && (
               <Link href={viewAll} className="ml-2 inline-flex items-center gap-1 text-sm font-bold text-[#6d28d9] hover:underline dark:text-[#c4b5fd]">
                 View All <I.arrowRight className="h-4 w-4" />
@@ -277,9 +251,8 @@ export default function Overview() {
         }
       >
         {tab === 'load' && <Table label="Recent load logs" columns={loadCols} rows={d?.recent.load_logs} loading={!d} rowKey={(r) => r.id} empty="No Chips loads yet." />}
-        {tab === 'commission' && <Table label="Recent commission logs" columns={commissionCols} rows={d?.recent.commission_logs} loading={!d} rowKey={(r) => r.id} empty="No commissions yet." />}
-        {tab === 'revenue' && <Table label="Recent revenue conversions" columns={revenueCols} rows={revenue.data?.data.recent} loading={!revenue.data && !revenue.error} rowKey={(r) => r.id} empty="No Revenue conversions yet." />}
-        {tab === 'withdrawal' && <Table label="Recent commission withdrawals" columns={withdrawalCols} rows={d?.recent.withdrawals} loading={!d} rowKey={(r) => r.id} empty="No withdrawals yet." />}
+        {tab === 'buyins' && <Table label="Recent revenue logs" columns={buyInCols} rows={buyIns.error ? [] : buyIns.data?.data} loading={!buyIns.data && !buyIns.error} rowKey={(r) => r.id} empty={buyIns.error ? `Could not load: ${buyIns.error}` : 'No Shop Buy-Ins yet.'} />}
+        {tab === 'conversions' && <Table label="Recent revenue conversions" columns={conversionCols} rows={conversions.error ? [] : conversions.data?.data} loading={!conversions.data && !conversions.error} rowKey={(r) => r.id} empty={conversions.error ? `Could not load: ${conversions.error}` : 'No Revenue conversions yet.'} />}
       </Panel>
 
       {agent && d?.chip_requests && d.chip_requests.length > 0 && (

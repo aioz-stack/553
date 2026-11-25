@@ -82,7 +82,7 @@ return [
     |   direct upline Incorporator → Admin 40%, Incorporator 60%
     |   direct upline Master Agent → Admin 40%, Incorporator 10%, Master Agent 50%
     | These are only the defaults: the Administrator sets the live rates in the Admin Panel
-    | (Commission Logs → Shop Revenue Sharing; ShopRevenueShares, stored in system_settings).
+    | (Revenue Sharing Rates → Shop Revenue Sharing; ShopRevenueShares, stored in system_settings).
     */
     'shop' => [
         'chips_per_key' => 5,

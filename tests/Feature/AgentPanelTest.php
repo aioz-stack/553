@@ -125,7 +125,7 @@ test('agents cannot use any Administrator action', function () {
     $this->actingAs($t['pMaster'])->getJson('/api/v1/agent/panel/overview')->assertForbidden();
 });
 
-test('commission logs and withdrawals cover the agent and the agents below it', function () {
+test('Commission Logs / Commission Withdrawal were removed from the Agent Panel (pages and API); the data stays', function () {
     $t = agpTree();
     $row = fn (User $u, int $amount, int $session) => AgentCommission::create(['agent_id' => $u->agent->id, 'player_id' => $t['pMaster2']->id, 'game_session_id' => $session, 'currency' => 'CH', 'fee_basis' => 1, 'rate_bps' => 1, 'amount' => $amount, 'status' => CommissionStatus::Paid]);
     $row($t['agent'], 100, 1);
@@ -139,16 +139,14 @@ test('commission logs and withdrawals cover the agent and the agents below it', 
     app(PayoutService::class)->request($t['other']->agent, Currency::CH, 1_000, $t['other']);
 
     $this->actingAs($t['master']);
-    $logs = collect($this->getJson('/api/v1/agent/panel/commission-logs')->assertOk()->json('data'));
-    expect($logs->pluck('recipient.username')->all())->toBe(['tmaster']);
+    $this->getJson('/api/v1/agent/panel/commission-logs')->assertNotFound();
+    $this->getJson('/api/v1/agent/panel/withdrawals')->assertNotFound();
+    $this->get('/agent/commission-logs')->assertNotFound();
+    $this->get('/agent/commission-withdrawals')->assertNotFound();
 
-    $this->getJson('/api/v1/agent/panel/withdrawals')->assertOk()
-        ->assertJsonCount(1, 'data')->assertJsonPath('data.0.agent.username', 'tmaster')
-        ->assertJsonPath('meta.summary.available', '30.00')->assertJsonPath('meta.summary.pending', '20.00')->assertJsonPath('meta.summary.pending_count', 1);
-
-    // The Incorporator sees itself and both Master Agents below it.
-    expect(collect($this->actingAs($t['agent'])->getJson('/api/v1/agent/panel/commission-logs')->json('data'))->pluck('recipient.username')->sort()->values()->all())
-        ->toBe(['tagent', 'tmaster', 'tmaster2']);
+    // Existing records are preserved (the Administrators' API still lists them).
+    expect(AgentCommission::query()->count())->toBe(4)->and(\App\Models\AgentPayoutRequest::query()->count())->toBe(2);
+    $this->actingAs(superAdmin())->getJson('/api/v1/admin/panel/commission-logs')->assertOk()->assertJsonCount(4, 'data');
 });
 
 test('a Master Agent panel has no agents below it but the same overview', function () {
