@@ -555,17 +555,21 @@ class BankerMatchService
         $seats = GamePlayer::query()->where('game_table_id', $session->game_table_id)
             ->whereIn('user_id', [...$bettors, $session->banker_user_id])->orderBy('seat')->pluck('seat', 'user_id');
 
+        // Dealt like Single Player (and the deal animation): one card at a time, clockwise round the
+        // four seats, starting with the seat after the banker; each player keeps their own seat's 13.
         $deck = Deck::shuffled($session->server_seed);
-        $hands = Deck::deal($deck);
-        $i = 1;
+        $bankerSeat = (int) ($seats[$session->banker_user_id] ?? 1);
+        $hands = Deck::deal($deck, 4, 13, ($bankerSeat % 4) + 1);
         $dealt = [];
 
         foreach ($seats as $userId => $seat) {
-            GameCard::create(['game_session_id' => $session->id, 'user_id' => $userId, 'seat' => $seat, 'cards' => $hands[$i]]);
-            $dealt[$userId] = $hands[$i++];
+            GameCard::create(['game_session_id' => $session->id, 'user_id' => $userId, 'seat' => $seat, 'cards' => $hands[(int) $seat]]);
+            $dealt[$userId] = $hands[(int) $seat];
         }
 
-        $deadline = now()->addSeconds((int) $session->config['arrangement_seconds']);
+        // The players watch the shuffle and the clockwise deal first: that time is not taken from
+        // their arranging time.
+        $deadline = now()->addSeconds((int) $session->config['arrangement_seconds'] + (int) config('pusoy.banker.deal_animation_seconds', 6));
         $session->forceFill(['status' => GameStatus::Arranging, 'started_at' => now(), 'arrangement_deadline' => $deadline])->save();
 
         event(new TableEvent($session->game_table_id, GameEvents::BETTING_CLOSED, [

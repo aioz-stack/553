@@ -4,13 +4,16 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import LandscapeStage from '@/components/LandscapeStage';
 import { Avatar, ChipIcon } from '@/components/game';
+import DealAnimation from '@/components/table/DealAnimation';
 import LuckPopup, { dealtRows, type Rows } from '@/components/table/LuckPopup';
+import { fxAt, isUp, laneShown, RevealBanner, RevealFx, revealPlan, useRevealClock, type RevealPlan, type RevealSeat } from '@/components/table/RevealShow';
 import { Chip, LanternRoom, MiniCrest, PokerTable } from '@/components/table/TableArt';
 import { BankerRibbon, HandPanel, TableCrest, type Spot } from '@/components/table/TableLayout';
 import { api, errorText } from '@/lib/api';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
+import { reducedNow } from '@/lib/motion';
 import { LUCKY_LABELS, type SeatPlayer, type SessionState, type TableState } from '@/lib/types';
 
 /**
@@ -34,6 +37,17 @@ const CHIP_COLORS = ['#1f6fe0', '#14a046', '#e0262f'];
 const SPOT_ORDER: Spot[] = ['left', 'top', 'right'];
 
 const num = (v: string | number | null | undefined) => Number(v ?? 0);
+
+/** True the first time `key` is seen in this browser session (a deal / reveal show never replays). */
+function firstTime(key: string): boolean {
+  try {
+    if (sessionStorage.getItem(key)) return false;
+    sessionStorage.setItem(key, '1');
+  } catch {
+    // No storage (private mode): the in-page state still plays it once.
+  }
+  return true;
+}
 const fmt = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(n))}`;
 const tone = (n: number) => (n > 0 ? 'text-[#7dffa0]' : n < 0 ? 'text-[#ff9aa8]' : 'text-white');
@@ -193,6 +207,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
       const st = standingOf(p?.user_id);
       return st ? <span className={tone(num(st.net))}>{signed(num(st.net))}</span> : null;
     }
+    if (revealed && revealing) return <span className="text-white/80">Revealing…</span>;
     if (revealed) {
       const r = resultOf(p.user_id);
       return r ? <span className={tone(num(r.net))}>{signed(num(r.net))}</span> : null;
@@ -257,6 +272,60 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
   };
 
   const arranging = phase === 'ARRANGING' && !!session?.my_cards && !session.my_submission;
+
+  // ---- The same in-game sequence as Single Player (Multiplayer's own server rules) ----
+  // Seats seen from you, numbered like Single Player's: 1 you, 2 left, 3 top, 4 right (clockwise).
+  const viewSeat = (realSeat: number) => ((realSeat - mySeat + 4) % 4) + 1;
+  const seatOf = (userId?: number | null) => table.players.find((p) => p.user_id === userId)?.seat ?? players.find((p) => p.user_id === userId)?.seat ?? mySeat;
+  const bankerView = viewSeat(seatOf(bankerId));
+
+  // 1. Shuffle and the clockwise deal (from the seat after the banker, as the server dealt), once per
+  //    round, before the arrangement opens. The server added this time to the arranging deadline.
+  const [dealing, setDealing] = useState<number | null>(null);
+  useEffect(() => {
+    if (session && phase === 'ARRANGING' && session.my_cards && !session.my_submission && !reducedNow() && firstTime(`pusoy.mp.dealt.${session.id}`)) {
+      setDealing(session.id);
+    }
+  }, [session, phase]);
+
+  // 2. The reveal show when the round you just played is judged: cards turn lane by lane, each lane's
+  //    result, PUSOY! / ARAYYY KOOOO!, Skip — then the results stay on the panels.
+  const [reveal, setReveal] = useState<{ id: number; plan: RevealPlan } | null>(null);
+  const prevPhase = useRef<string | null>(null);
+  useEffect(() => {
+    const was = prevPhase.current;
+    prevPhase.current = phase;
+    if (!session || !revealed || !session.arrangements) return;
+    const watched = was === 'ARRANGING' || was === 'SUBMITTED' || was === 'REVEALING' || was === 'SCORING';
+    if (!watched || reducedNow() || !firstTime(`pusoy.mp.revealed.${session.id}`)) return;
+    const seats: RevealSeat[] = session.arrangements.map((a) => {
+      const r = resultOf(a.user_id);
+      return { seat: viewSeat(seatOf(a.user_id)), is_banker: a.user_id === bankerId, bet: num(r?.bet), front: a.front, middle: a.middle, back: a.back, is_foul: a.is_foul, lanes: r?.lanes ?? null };
+    });
+    setReveal({ id: session.id, plan: revealPlan(seats, bankerView) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, session?.id, revealed]);
+  const revealDone = () => {
+    if (!reveal) return;
+    setReveal(null);
+    const net = num(myResult?.net);
+    play(net > 0 ? 'win' : net < 0 ? 'lose' : 'start');
+  };
+  const now = useRevealClock(reveal?.plan ?? null, revealDone);
+  // A new round has begun: any show still running ends.
+  const revealing = !!reveal && reveal.id === session?.id;
+  useEffect(() => {
+    if (reveal && session && session.id !== reveal.id) setReveal(null);
+  }, [session, reveal]);
+  const fx = revealing ? fxAt(reveal.plan, now) : null;
+  /** Flip timing for one seat's rows during the show (undefined: everything face up). */
+  const showFor = (realSeat: number) =>
+    revealing
+      ? {
+          up: (lane: 'front' | 'middle' | 'back', i: number) => isUp(reveal.plan, now, viewSeat(realSeat), lane, i),
+          laneShown: (lane: 'front' | 'middle' | 'back') => laneShown(reveal.plan, now, lane),
+        }
+      : {};
   // The server placed your bet at the betting timeout (the entry tier's minimum).
   const autoBet = session?.my_bet_type === 'AUTO';
   // Tell the player once per round what the timeout did: an automatic minimum bet, or why none was placed.
@@ -347,7 +416,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
         }
         const a = revealed ? arrangementOf(p.user_id) : undefined;
         const r = resultOf(p.user_id);
-        const dealt = (phase === 'ARRANGING' || phase === 'SUBMITTED') && (p.user_id === bankerId || num(p.bet) > 0);
+        const dealt = (phase === 'ARRANGING' || phase === 'SUBMITTED') && dealing !== session?.id && (p.user_id === bankerId || num(p.bet) > 0);
         return (
           <HandPanel
             key={i}
@@ -362,8 +431,8 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
             }
             banker={p.user_id === bankerId}
             offline={!p.is_connected}
-            glow={revealed && num(r?.net) > 0}
-            cards={a ? { kind: 'rows', rows: { front: a.front, middle: a.middle, back: a.back }, labels: a.labels ?? null, outcomes: r?.lanes ?? null } : dealt ? { kind: 'backs' } : { kind: 'empty' }}
+            glow={revealed && !revealing && num(r?.net) > 0}
+            cards={a ? { kind: 'rows', rows: { front: a.front, middle: a.middle, back: a.back }, labels: a.labels ?? null, outcomes: r?.lanes ?? null, ...showFor(p.seat) } : dealt ? { kind: 'backs' } : { kind: 'empty' }}
             extra={a ? <HandBadges lucky={a.lucky_type} foul={a.is_foul} /> : undefined}
           />
         );
@@ -374,7 +443,8 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
         round={round}
         total={total}
         status={
-          <span role="status" aria-label="Game status" className="inline-block rounded-full bg-black/45 px-4 py-0.5 font-display text-[19px] font-black leading-snug text-white">
+          // Hidden during the reveal show (as in Single Player): the centre banner tells the story.
+          revealing ? null : <span role="status" aria-label="Game status" className="inline-block rounded-full bg-black/45 px-4 py-0.5 font-display text-[19px] font-black leading-snug text-white">
             {phase === 'STARTING'
               ? 'Get ready — seating players and shuffling…'
               : phase === 'BETTING'
@@ -394,7 +464,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
       {/* Your seat at the bottom centre: your hand after the reveal, or the bet chips / your status */}
       {(() => {
         const mine = revealed && userId ? arrangementOf(userId) : undefined;
-        const myStatus = revealed ? (
+        const myStatus = revealed && !revealing ? (
           <span aria-label="Round result" className={tone(num(myResult?.net))}>
             {myResult ? `${signed(num(myResult.net))} Chips` : '—'}
           </span>
@@ -407,8 +477,8 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
             avatar={<Avatar name={me?.name ?? 'You'} avatar={me?.avatar} userId={userId} size={140} square rim={false} />}
             status={myStatus}
             banker={iBank}
-            glow={revealed && num(myResult?.net) > 0}
-            cards={mine ? { kind: 'rows', rows: { front: mine.front, middle: mine.middle, back: mine.back }, labels: mine.labels ?? null, outcomes: myResult?.lanes ?? null } : undefined}
+            glow={revealed && !revealing && num(myResult?.net) > 0}
+            cards={mine ? { kind: 'rows', rows: { front: mine.front, middle: mine.middle, back: mine.back }, labels: mine.labels ?? null, outcomes: myResult?.lanes ?? null, ...showFor(mySeat) } : undefined}
             extra={mine ? <HandBadges lucky={mine.lucky_type} foul={mine.is_foul} /> : undefined}
           >
             {phase === 'BETTING' && session?.can_bet && betSecondsLeft > 0 ? (
@@ -454,7 +524,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
                         : session?.my_submission
                           ? 'Hand locked in — waiting for the others'
                           : session?.my_cards
-                            ? 'Arrange your 13 cards: Front 3 · Middle 5 · Back 5'
+                            ? dealing === session?.id ? 'Shuffling and dealing…' : 'Arrange your 13 cards: Front 3 · Middle 5 · Back 5'
                             : 'Waiting…'}
                 </span>
                 <span className="flex items-center gap-3">
@@ -471,7 +541,27 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
       })()}
 
       {/* Arrangement pop-up (your 13 cards, server-checked lane labels) */}
-      {arranging && session && (
+      {/* Shuffle and the clockwise deal (once per round), then the arrangement popup — as in Single Player. */}
+      {session && dealing === session.id && phase === 'ARRANGING' && session.my_cards && (
+        <DealAnimation
+          key={session.id}
+          roundId={session.id}
+          banker={bankerView}
+          cards={session.my_cards}
+          names={{ 1: 'You', 2: around[0]?.name ?? 'Seat', 3: around[1]?.name ?? 'Seat', 4: around[2]?.name ?? 'Seat' }}
+          onDone={() => setDealing(null)}
+        />
+      )}
+
+      {/* Reveal show: centre banner, Skip, and the PUSOY! / ARAYYY KOOOO! effects — as in Single Player. */}
+      {revealing && (
+        <>
+          <RevealBanner plan={reveal.plan} now={now} onSkip={revealDone} />
+          <RevealFx fx={fx} />
+        </>
+      )}
+
+      {arranging && session && dealing !== session.id && (
         <LuckPopup
           key={session.id}
           gameId={session.id}

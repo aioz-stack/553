@@ -160,7 +160,10 @@ return [
         'lucky_multiplier' => 2,
         'default_betting_seconds' => (int) env('BANKER_BETTING_SECONDS', 15),
         // Pause between rounds so players can see the result.
-        'intermission_seconds' => (int) env('BANKER_INTERMISSION_SECONDS', 8),
+        // Pause between rounds: long enough for the reveal show (cards turn lane by lane, PUSOY! effects).
+        'intermission_seconds' => (int) env('BANKER_INTERMISSION_SECONDS', 14),
+        // Seconds the shuffle + clockwise deal animation takes; added to the arranging time.
+        'deal_animation_seconds' => (int) env('BANKER_DEAL_ANIMATION_SECONDS', 6),
         // Default max bet when a room sets none: minimum bet × this.
         'max_bet_multiple' => 10,
         // A seated player offline at the start of this many rounds in a row is removed.

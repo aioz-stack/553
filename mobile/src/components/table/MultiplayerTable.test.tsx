@@ -181,3 +181,52 @@ describe('Multiplayer table — saved arrangement', () => {
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/games/50/draft', { method: 'PUT', body: { front: ['AS', '3C', '4C'], middle: draft.middle, back: ['5D', '6D', '7D', 'KS', '2C'] } }));
   });
 });
+
+describe('Multiplayer table — the Single Player in-game sequence', () => {
+  const animate = vi.fn(() => ({ cancel: vi.fn() }) as unknown as Animation);
+  const cards = ['2C','3C','4C','5D','6D','7D','8H','9H','TH','JS','QS','KS','AS'];
+  beforeEach(() => {
+    apiMock.mockReset();
+    apiMock.mockResolvedValue({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } });
+    sessionStorage.clear();
+    localStorage.setItem('pusoy.motion', 'on');
+    (HTMLElement.prototype as unknown as { animate: typeof animate }).animate = animate;
+  });
+
+  it('shuffles and deals clockwise from the seat after the banker before the arrangement opens, once per round', () => {
+    const s = session({ id: 61, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards });
+    const { unmount } = render(<MultiplayerTable {...props(table({ current_session_id: 61 }), s)} />);
+    // You sit at seat 2, p3 (seat 3, on your left) banks: p4 (top) gets the first card.
+    expect(screen.getByRole('status', { name: 'Shuffling and dealing' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'front lane' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('status', { name: 'Shuffling and dealing' })).getByRole('button', { name: /Skip/ }));
+    expect(screen.queryByRole('status', { name: 'Shuffling and dealing' })).toBeNull();
+    expect(screen.getByRole('group', { name: 'front lane' })).toBeInTheDocument();
+
+    // Coming back to the same round (reload / reconnect): straight to the arrangement.
+    unmount();
+    render(<MultiplayerTable {...props(table({ current_session_id: 61 }), s)} />);
+    expect(screen.queryByRole('status', { name: 'Shuffling and dealing' })).toBeNull();
+    expect(screen.getByRole('group', { name: 'front lane' })).toBeInTheDocument();
+  });
+
+  it('reveals the judged round like Single Player (banner, Skip), then shows the results', () => {
+    const arr = (n: number) => ({ user_id: 10 + n, name: `p${n}`, front: ['2C', '3C', '4C'].map((c) => c.replace('C', 'CDHS'[n - 1])), middle: ['5C', '6C', '7C', '8C', 'TC'].map((c) => c.replace('C', 'CDHS'[n - 1])), back: ['9C', 'JC', 'QC', 'KC', 'AC'].map((c) => c.replace('C', 'CDHS'[n - 1])), labels: { front: 'High Card', middle: 'Flush', back: 'Flush' }, is_foul: false, is_auto: false });
+    const res = (n: number, net: string) => ({ user_id: 10 + n, name: `p${n}`, seat: n, score: 0, placement: 1, is_foul: false, entry: '0', payout: '0', net, role: n === 3 ? ('banker' as const) : ('player' as const), bet: '10.00', lanes: { front: 1, middle: 1, back: -1 } });
+    const t = table({ current_session_id: 62 });
+    const submitted = session({ id: 62, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards, my_submission: { front: [], middle: [], back: [] } as unknown as SessionState['my_submission'] });
+    sessionStorage.setItem('pusoy.mp.dealt.62', '1');
+    const { rerender } = render(<MultiplayerTable {...props(t, submitted)} />);
+    const judged = session({ id: 62, status: 'COMPLETED', can_bet: false, my_bet: '10.00', my_cards: cards, arrangements: [1, 2, 3, 4].map(arr), results: [res(1, '10.00'), res(2, '10.00'), res(3, '-30.00'), res(4, '10.00')] });
+    rerender(<MultiplayerTable {...props(t, judged)} />);
+    expect(screen.getByRole('status', { name: 'Reveal' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Skip/ }));
+    expect(screen.queryByRole('status', { name: 'Reveal' })).toBeNull();
+
+    // Opening an already-judged round (no live transition) shows the results without replaying.
+    sessionStorage.clear();
+    rerender(<></>);
+    render(<MultiplayerTable {...props(t, judged)} />);
+    expect(screen.queryByRole('status', { name: 'Reveal' })).toBeNull();
+  });
+});

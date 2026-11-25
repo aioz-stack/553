@@ -1960,3 +1960,24 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   about 2.5 s, instead of the match-over sheet.
 - Tests: `TerminateTableTest` (mid-round holds returned, Keys untouched, nobody seated, state, audit, idempotent,
   waiting table, unknown table).
+
+## Multiplayer in-game sequence (same as Single Player)
+
+Multiplayer now plays each round in Single Player's order and with its presentation:
+Start → Shuffle → Clockwise Deal → Arrange → View → Submit → Reveal → Winner/Loser → Results → Next Round.
+Multiplayer keeps its own rules: the server deals, judges and settles, players are human, and betting, timeouts and auto-bets work as before. There is no bot logic.
+
+Server (`BankerMatchService::deal`):
+- Cards are dealt the way the animation shows them: one at a time, clockwise round the four seats, starting with the seat after the banker (`Deck::deal($deck, 4, 13, $bankerSeat % 4 + 1)`). Each player keeps their own seat's 13 cards.
+- The arranging deadline is `arrangement_seconds + pusoy.banker.deal_animation_seconds` (default 6, env `BANKER_DEAL_ANIMATION_SECONDS`), so the deal animation never uses up arranging time.
+- `pusoy.banker.intermission_seconds` now defaults to 14, long enough for the reveal show before the next round.
+
+Mobile (`components/table/MultiplayerTable.tsx`, reusing Single Player's `DealAnimation` and `RevealShow`):
+- Seats are seen from you, numbered as in Single Player: 1 you, 2 left, 3 top, 4 right (clockwise).
+- **Deal:** when a round reaches ARRANGING, the shuffle and clockwise deal play once (with Skip). Seats stay empty and the status reads "Shuffling and dealing…". The arrangement popup opens only after the deal ends.
+- **Reveal:** when the round you were playing is judged (a live ARRANGING/SUBMITTED → REVEALING/COMPLETED change), the cards turn lane by lane. The centre banner shows each lane's result, with the PUSOY! / ARAYYY KOOOO! effects and Skip. Net results and winner glow appear only after the show. The crest status is hidden while it runs.
+- Each show plays once per round. Reloading or reconnecting does not replay it (sessionStorage keys `pusoy.mp.dealt.{session}` and `pusoy.mp.revealed.{session}`). Opening an already-judged round shows the results directly. Low quality or reduced motion skips both shows.
+
+Tests:
+- `tests/Feature/MultiplayerDealTest.php`: the clockwise deal from the seat after the banker, 52 unique cards, and the deadline including the animation time.
+- `MultiplayerTable.test.tsx`: the deal comes before the arrangement and does not replay; the reveal banner and Skip appear; no replay for an already-judged round.
