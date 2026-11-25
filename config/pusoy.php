@@ -35,6 +35,9 @@ return [
         // Every Pusoy 13 table seats exactly four players.
         'seats' => 4,
         'default_arrangement_seconds' => (int) env('GAME_ARRANGEMENT_SECONDS', 90),
+        // Seconds after the arrangement deadline a SUBMIT is still accepted (the tap at 0s, network
+        // delay); then the arrangement on the table is submitted as it is.
+        'submit_grace_seconds' => (int) env('GAME_SUBMIT_GRACE_SECONDS', 3),
         // Seconds a seated player may stay un-ready on a full table before being removed.
         'ready_timeout_seconds' => (int) env('GAME_READY_TIMEOUT_SECONDS', 60),
         // A seated player with no heartbeat for this long is marked disconnected.

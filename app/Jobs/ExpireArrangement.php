@@ -27,9 +27,11 @@ class ExpireArrangement implements ShouldQueue
             return;
         }
 
-        if ($session->arrangement_deadline?->isFuture()) {
-            // Deadline moved or job ran early: try again at the deadline.
-            $this->release(max(1, (int) now()->diffInSeconds($session->arrangement_deadline, false)));
+        $expiresAt = $engine->expiresAt($session);
+
+        if ($expiresAt->isFuture()) {
+            // Deadline (+ grace) not reached, moved, or the job ran early: try again then.
+            $this->release(max(1, (int) ceil(now()->diffInSeconds($expiresAt, false))));
 
             return;
         }

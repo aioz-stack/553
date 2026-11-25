@@ -20,9 +20,13 @@ class GameController extends Controller
     /**
      * Full state for the viewer (also the reconnection / recovery endpoint).
      */
-    public function show(Request $request, GameSession $session, GameStatePresenter $presenter): JsonResponse
+    public function show(Request $request, GameSession $session, GameStatePresenter $presenter, \App\Services\Game\TableClock $clock): JsonResponse
     {
         $this->authorize('view', $session);
+        if ($session->table) {
+            $clock->tick($session->table);
+            $session->refresh();
+        }
 
         return response()->json(['data' => $presenter->session($session, $request->user())]);
     }

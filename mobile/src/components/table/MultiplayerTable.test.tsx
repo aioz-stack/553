@@ -262,3 +262,30 @@ describe('Multiplayer table — submission, misarrangement and Lucky Hand rules'
     expect(screen.getByText('6 PAIRS – LUCKY HAND · +2× BET')).toBeInTheDocument();
   });
 });
+
+describe('Multiplayer table — time up', () => {
+  const cards = ['2C','3C','4C','5D','6D','7D','8H','9H','TH','JS','QS','KS','AS'];
+  beforeEach(() => {
+    apiMock.mockReset();
+    sessionStorage.setItem('pusoy.mp.dealt.72', '1');
+  });
+
+  it('at 0s submits the rows on screen as they are, once, and catches up with the table', async () => {
+    apiMock.mockResolvedValue({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } });
+    const p = props(table({ current_session_id: 72 }), session({ id: 72, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards }));
+    const { rerender } = render(<MultiplayerTable {...p} arrangeSecondsLeft={1} />);
+    expect(apiMock).not.toHaveBeenCalledWith('/games/72/submit', expect.anything());
+    rerender(<MultiplayerTable {...p} arrangeSecondsLeft={0} />);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/games/72/submit', { method: 'POST', body: { front: cards.slice(0, 3), middle: cards.slice(3, 8), back: cards.slice(8) } }));
+    rerender(<MultiplayerTable {...p} arrangeSecondsLeft={0} />);
+    expect(apiMock.mock.calls.filter(([path]) => path === '/games/72/submit')).toHaveLength(1);
+    await waitFor(() => expect(p.refresh).toHaveBeenCalled());
+  });
+
+  it('a late SUBMIT the server refuses (time up) does not leave an error: the table catches up', async () => {
+    apiMock.mockImplementation((path?: string) => (path?.endsWith('/submit') ? Promise.reject(Object.assign(new Error('The arrangement timer has expired.'), { code: 'timer_expired' })) : Promise.resolve({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } })));
+    const p = props(table({ current_session_id: 72 }), session({ id: 72, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards }));
+    render(<MultiplayerTable {...p} arrangeSecondsLeft={0} />);
+    await waitFor(() => expect(p.refresh).toHaveBeenCalled());
+  });
+});

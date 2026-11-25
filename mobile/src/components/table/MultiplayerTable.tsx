@@ -129,8 +129,11 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
     pendingDraft.current = null;
     if (d) api(`/games/${d.id}/draft`, { method: 'PUT', body: d.rows }).catch(() => undefined);
   };
+  /** The rows on screen right now (what the timeout submits). */
+  const lastRows = useRef<{ id: number; rows: Rows } | null>(null);
   const saveDraft = (rows: Rows) => {
     if (!session) return;
+    lastRows.current = { id: session.id, rows };
     pendingDraft.current = { id: session.id, rows };
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(flushDraft, 400);
@@ -242,16 +245,24 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
     }
   };
 
-  const submit = async (rows: Rows) => {
-    if (!session || busy) return;
+  const submit = async (rows: Rows, timedOut = false) => {
+    if (!session || (busy && !timedOut)) return;
     setBusy(true);
     try {
       await api(`/games/${session.id}/submit`, { method: 'POST', body: rows });
       play('deal');
       await refresh();
     } catch (e) {
-      play('lose');
-      setToast({ ok: false, text: errorText(e) });
+      // Too late or already in: the server has submitted (or is submitting) your saved rows —
+      // just catch up with the table instead of leaving the popup open.
+      const code = (e as { code?: string }).code;
+      if (code === 'timer_expired' || code === 'already_submitted' || code === 'invalid_state') {
+        if (!timedOut) setToast({ ok: true, text: "Time's up — your cards were submitted as they are." });
+        await refresh();
+      } else {
+        play('lose');
+        setToast({ ok: false, text: errorText(e) });
+      }
     } finally {
       setBusy(false);
     }
@@ -276,10 +287,20 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
   };
 
   const arranging = phase === 'ARRANGING' && !!session?.my_cards && !session.my_submission;
+  // Time's up: submit the rows on screen exactly as they are (the server accepts them for a few
+  // seconds after 0, and otherwise submits your last saved rows itself). Once per round.
+  const autoSubmitted = useRef<number | null>(null);
   useEffect(() => {
-    if (arranging && arrangeSecondsLeft <= 1) flushDraft();
+    if (!arranging || !session) return;
+    if (arrangeSecondsLeft <= 1) flushDraft();
+    if (arrangeSecondsLeft <= 0 && autoSubmitted.current !== session.id && dealing !== session.id) {
+      autoSubmitted.current = session.id;
+      const rows = lastRows.current?.id === session.id ? lastRows.current.rows : (session.my_draft ?? dealtRows(session.my_cards!));
+      setToast({ ok: true, text: "Time's up — your cards were submitted as they are." });
+      void submit(rows, true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arranging, arrangeSecondsLeft]);
+  }, [arranging, arrangeSecondsLeft, session?.id]);
 
   // ---- The same in-game sequence as Single Player (Multiplayer's own server rules) ----
   // Seats seen from you, numbered like Single Player's: 1 you, 2 left, 3 top, 4 right (clockwise).

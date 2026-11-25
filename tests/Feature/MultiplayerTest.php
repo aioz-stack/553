@@ -187,7 +187,7 @@ test('timer expiry auto-arranges missing hands and completes the game', function
     [, $session, $players] = startGame();
     submitAuto($session, $players[0]);
 
-    $this->travel(91)->seconds();
+    $this->travel(91 + (int) config('pusoy.game.submit_grace_seconds'))->seconds(); // past the timer and its grace
     $this->engine->expire($session);
 
     $session->refresh();
@@ -199,7 +199,7 @@ test('at the timeout a hand nobody touched is submitted exactly as dealt (never 
     [, $session, $players] = startGame();
     submitAuto($session, $players[0]);
 
-    $this->travel(91)->seconds();
+    $this->travel(91 + (int) config('pusoy.game.submit_grace_seconds'))->seconds(); // past the timer and its grace
     $this->engine->expire($session);
 
     foreach (array_slice($players, 1) as $p) {
@@ -215,7 +215,7 @@ test('at the timeout a hand nobody touched is submitted exactly as dealt (never 
 
 test('submitting after the timer expired is refused', function () {
     [, $session, $players] = startGame();
-    $this->travel(91)->seconds();
+    $this->travel(91 + (int) config('pusoy.game.submit_grace_seconds'))->seconds(); // past the timer and its grace
 
     expect(fn () => submitAuto($session, $players[0]))->toThrow(BusinessRuleException::class, 'expired');
 });

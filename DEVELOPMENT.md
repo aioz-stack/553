@@ -2022,3 +2022,18 @@ Tests:
 - `tests/Feature/CardRulesTest.php` (new).
 - Updated: `LuckyHandTest`, `BankerModesTest`, `MultiplayerTest`, `ReconnectTest`, `PracticeTest`.
 - UI: `MultiplayerTable.test.tsx`, `practice/page.test.tsx`, `ArrangementBoard.test.tsx`.
+
+### Fix: a Multiplayer round stuck at 0s ("The arrangement timer has expired.")
+
+**Cause.** Moving a round past its deadlines depended only on queued jobs (`ExpireArrangement`, `ResolveGameSession`, `CloseBetting`, `StartNextRound`) and the `pusoy:sweep` scheduler. Without a running `queue:work` / `schedule:work` (typical locally), a round reached 0s and stayed there. The server also refused SUBMIT, because the time had passed.
+
+**Fix:**
+- **`App\Services\Game\TableClock::tick`** runs whenever a player's app looks at the table (`GET tables/{id}`, `POST tables/{id}/heartbeat`, `GET games/{id}`). It does the same idempotent, row-locked steps as the jobs and the sweep: close betting, expire arranging, resolve (reveal, score, settle), start the next round. A per-table cache lock keeps it to one at a time; errors are reported and never fail the request. Jobs and the sweep stay as they are, and whichever runs first wins.
+- **Submit grace** (`pusoy.game.submit_grace_seconds`, default 3, env `GAME_SUBMIT_GRACE_SECONDS`): a SUBMIT tapped at 0s, or delayed by the network, still counts. Expiry (`GameEngine::expiresAt`, used by `expire`, `ExpireArrangement` and the sweep) waits for it, so a last-second submit is never overtaken.
+- **The app at 0s** submits the rows on screen itself, exactly as they are, once. If the server answers that time is up, it shows "Time's up — your cards were submitted as they are." and catches up with the table instead of leaving the popup open.
+
+Tests:
+- `CardRulesTest`: no queue worker, the round finishes from the players' polling; grace accepted, after-grace refused.
+- `MultiplayerTable.test.tsx`: auto-submit at 0s once; a late refusal catches up.
+
+Reverb, the queue worker and the scheduler are still recommended locally for instant updates (see the Reverb / queue sections); they are no longer needed for a round to finish.

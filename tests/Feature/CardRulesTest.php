@@ -66,7 +66,7 @@ test('a misarranged hand can be submitted, is kept as it is and pays 2× the bet
     $b = \App\Game\AutoArranger::arrange(is_string($bankerCards) ? json_decode($bankerCards, true) : $bankerCards);
     app(GameEngine::class)->submit($banker, $session->fresh(), $b->front, $b->middle, $b->back);
 
-    $this->travelTo($session->arrangement_deadline->addSecond());
+    $this->travelTo(app(GameEngine::class)->expiresAt($session)->addSecond());
     app(GameEngine::class)->expire($session->fresh());
 
     $result = GameResult::query()->where('game_session_id', $session->id)->where('user_id', $me->id)->sole();
@@ -91,7 +91,7 @@ test('at the timeout the saved rows are submitted exactly as they are, even misa
     $rows = ['front' => ['AC', 'AD', 'AH'], 'middle' => ['2C', '3D', '4H', 'TC', 'TD'], 'back' => ['9H', '8S', '5D', 'KS', 'KD']];
     $this->actingAs($me, 'sanctum')->putJson("/api/v1/games/{$session->id}/draft", $rows)->assertOk();
 
-    $this->travelTo($session->arrangement_deadline->addSecond());
+    $this->travelTo(app(GameEngine::class)->expiresAt($session)->addSecond());
     app(GameEngine::class)->expire($session->fresh());
 
     $sub = GameSubmission::query()->where('game_session_id', $session->id)->where('user_id', $me->id)->sole();
@@ -114,7 +114,7 @@ test('a false Lucky Hand declaration is accepted with the rows on screen and cos
     expect($sub->front)->toBe($rows['front'])->and($sub->is_foul)->toBeFalse();
 
     $bet = (int) GameBet::query()->where('game_session_id', $session->id)->where('user_id', $me->id)->value('amount');
-    $this->travelTo($session->arrangement_deadline->addSecond());
+    $this->travelTo(app(GameEngine::class)->expiresAt($session)->addSecond());
     app(GameEngine::class)->expire($session->fresh());
     $result = GameResult::query()->where('game_session_id', $session->id)->where('user_id', $me->id)->sole();
     expect($result->lucky_failed)->toBeTrue()->and($result->net_amount)->toBe(-2 * $bet);
@@ -154,7 +154,7 @@ test('6 Pairs: declared, validated on the dealt cards, paid 2× bet once and rec
     // No second claim.
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/games/{$session->id}/lucky")->assertStatus(409);
 
-    $this->travelTo($session->arrangement_deadline->addSecond());
+    $this->travelTo(app(GameEngine::class)->expiresAt($session)->addSecond());
     app(GameEngine::class)->expire($session->fresh());
     app(BankerMatchService::class)->settle($session->fresh()); // a retry pays nothing twice
 
@@ -162,4 +162,42 @@ test('6 Pairs: declared, validated on the dealt cards, paid 2× bet once and rec
     expect($result->lucky_type)->toBe('six_pairs')->and($result->lucky_failed)->toBeFalse()->and($result->net_amount)->toBe(2 * $bet);
     $tx = WalletTransaction::query()->where('game_session_id', $session->id)->where('type', \App\Enums\TransactionType::LuckyBonus->value)->get();
     expect($tx)->toHaveCount(1)->and($tx[0]->reason)->toContain('6 Pairs');
+});
+
+test('no queue worker: once the time is up, the players\' own polling submits the rows as they are and finishes the round', function () {
+    \Illuminate\Support\Facades\Queue::fake(); // nothing queued ever runs (no worker, no scheduler)
+    [$banker, $players, $session] = crRound($this);
+    expect($session->status->value)->toBe('ARRANGING');
+    $me = $players[0];
+    $table = $session->table;
+
+    // Just past the deadline (within the grace): not yet expired.
+    $this->travelTo($session->arrangement_deadline->addSecond());
+    $this->actingAs($me, 'sanctum')->getJson("/api/v1/tables/{$table->id}")->assertOk();
+    expect($session->fresh()->status->value)->toBe('ARRANGING');
+
+    // After the grace: the next look at the table (or a heartbeat) submits and resolves.
+    $this->travelTo(app(GameEngine::class)->expiresAt($session->fresh())->addSecond());
+    $this->actingAs($me, 'sanctum')->postJson("/api/v1/tables/{$table->id}/heartbeat")->assertOk();
+    expect($session->fresh()->status->value)->toBe('COMPLETED')
+        ->and(GameSubmission::query()->where('game_session_id', $session->id)->count())->toBe(4)
+        ->and(GameResult::query()->where('game_session_id', $session->id)->count())->toBe(4);
+});
+
+test('a SUBMIT tapped as the timer shows 0 still counts (grace); after the grace it is refused and the saved rows go in', function () {
+    \Illuminate\Support\Facades\Queue::fake();
+    [, $players, $session] = crRound($this);
+    [$a, $b] = $players;
+    crRig($session, $a, CR_STRONG);
+    $rows = ['front' => ['2C', '3D', '4H'], 'middle' => ['TC', 'TD', '9H', '8S', '5D'], 'back' => ['AC', 'AD', 'AH', 'KS', 'KD']];
+
+    $this->travelTo($session->arrangement_deadline->addSecond());
+    $this->actingAs($a, 'sanctum')->postJson("/api/v1/games/{$session->id}/submit", $rows)->assertSuccessful();
+    expect(GameSubmission::query()->where('game_session_id', $session->id)->where('user_id', $a->id)->value('is_auto'))->toBeFalse();
+
+    $this->travelTo(app(GameEngine::class)->expiresAt($session->fresh())->addSecond());
+    $bCards = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $b->id)->first()->cards;
+    $this->actingAs($b, 'sanctum')->postJson("/api/v1/games/{$session->id}/submit", ['front' => array_slice($bCards, 0, 3), 'middle' => array_slice($bCards, 3, 5), 'back' => array_slice($bCards, 8, 5)])
+        ->assertStatus(409)->assertJsonPath('error', 'timer_expired');
+    $this->actingAs($b, 'sanctum')->getJson("/api/v1/games/{$session->id}")->assertOk()->assertJsonPath('data.status', 'COMPLETED');
 });

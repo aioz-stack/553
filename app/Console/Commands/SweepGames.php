@@ -31,7 +31,7 @@ class SweepGames extends Command
         $lobbies->sweep($match);
 
         GameSession::query()->where('status', GameStatus::Arranging->value)->get()->each(function (GameSession $session) use ($engine) {
-            if ($session->arrangement_deadline->isPast()) {
+            if ($engine->expiresAt($session)->isPast()) {
                 $engine->expire($session);
             } else {
                 $engine->broadcastTimer($session);

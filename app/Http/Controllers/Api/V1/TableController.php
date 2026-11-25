@@ -33,9 +33,10 @@ class TableController extends Controller
         return response()->json(['data' => $data]);
     }
 
-    public function show(Request $request, GameTable $table, GameStatePresenter $presenter): JsonResponse
+    public function show(Request $request, GameTable $table, GameStatePresenter $presenter, \App\Services\Game\TableClock $clock): JsonResponse
     {
         $this->authorizeSeat($request, $table);
+        $clock->tick($table);
 
         return response()->json(['data' => $presenter->table($table, $request->user())]);
     }
@@ -63,10 +64,11 @@ class TableController extends Controller
         return response()->json(['message' => 'You left the table. Your entry has been refunded.']);
     }
 
-    public function heartbeat(Request $request, GameTable $table, TableService $tables): JsonResponse
+    public function heartbeat(Request $request, GameTable $table, TableService $tables, \App\Services\Game\TableClock $clock): JsonResponse
     {
         $this->authorizeSeat($request, $table);
         $tables->heartbeat($request->user(), $table);
+        $clock->tick($table);
 
         return response()->json(['data' => ['ok' => true, 'server_time' => now()->toIso8601String()]]);
     }

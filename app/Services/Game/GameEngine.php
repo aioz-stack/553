@@ -149,7 +149,7 @@ class GameEngine
                 throw new BusinessRuleException('Submissions are closed for this game.', 409, 'invalid_state');
             }
 
-            if ($session->arrangement_deadline->isPast()) {
+            if ($this->expiresAt($session)->isPast()) {
                 throw new BusinessRuleException('The arrangement timer has expired.', 409, 'timer_expired');
             }
 
@@ -197,7 +197,7 @@ class GameEngine
                 throw new BusinessRuleException('You are not playing in this game.', 403, 'forbidden');
             }
 
-            if ($session->status !== GameStatus::Arranging || $session->arrangement_deadline?->isPast()
+            if ($session->status !== GameStatus::Arranging || $this->expiresAt($session)->isPast()
                 || GameSubmission::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->exists()) {
                 throw new BusinessRuleException('This arrangement is already locked.', 409, 'invalid_state');
             }
@@ -228,7 +228,7 @@ class GameEngine
         DB::transaction(function () use ($session, $force) {
             $session = GameSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
 
-            if ($session->status !== GameStatus::Arranging || (! $force && $session->arrangement_deadline->isFuture())) {
+            if ($session->status !== GameStatus::Arranging || (! $force && $this->expiresAt($session)->isFuture())) {
                 return;
             }
 
@@ -253,6 +253,15 @@ class GameEngine
 
             $this->markAllSubmitted($session);
         });
+    }
+
+    /**
+     * When arranging really ends: the deadline plus pusoy.game.submit_grace_seconds, so a SUBMIT
+     * tapped as the timer shows 0 (or the app's own automatic submit) still counts.
+     */
+    public function expiresAt(GameSession $session): \Illuminate\Support\Carbon
+    {
+        return ($session->arrangement_deadline ?? now())->copy()->addSeconds((int) config('pusoy.game.submit_grace_seconds', 3));
     }
 
     /**
