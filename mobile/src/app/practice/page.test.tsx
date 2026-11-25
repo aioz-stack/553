@@ -96,7 +96,7 @@ const AFTER_1 = {
   ],
   history: [{ round: 1, banker: 1, banker_name: 'You', bet: 100, multiple: null, gold: 600, lucky: null }],
 };
-const LUCKY = { ...SETTLED, lucky: { type: 'six_pairs', label: 'Six Pairs', multiplier: 2 }, result: { lanes: null, multiple: null, gold: 600 } };
+const LUCKY = { ...SETTLED, lucky: { type: 'six_pairs', label: '6 Pairs', multiplier: 2 }, result: { lanes: null, multiple: null, gold: 600 } };
 
 function routes(over: Record<string, unknown> = {}) {
   apiMock.mockImplementation((path: string) => {
@@ -470,7 +470,10 @@ describe('Declared Luck', () => {
     const popup = await dealToPopup();
     fireEvent.click(within(popup).getByRole('button', { name: /Declared/ }));
     const note = await screen.findByRole('alertdialog', { name: 'No luck' });
-    expect(note).toHaveTextContent('No Three Flushes, No Face Cards or Six Pairs');
+    // The rows on screen go with the declaration (kept as they are; the server checks the 13 cards).
+    const [, opts] = apiMock.mock.calls.find(([p]) => p === '/practice/9/lucky') as [string, { body: { front: string[]; middle: string[]; back: string[] } }];
+    expect([opts.body.front.length, opts.body.middle.length, opts.body.back.length]).toEqual([3, 5, 5]);
+    expect(note).toHaveTextContent('No 3-Flushes, 3-Straight, No Faces or 6 Pairs');
     expect(note).toHaveTextContent('Declaration failed · 2× bet to each bot');
     expect(note).toHaveTextContent('−600 Gold');
     fireEvent.click(within(note).getByRole('button', { name: 'OK' }));
@@ -487,7 +490,7 @@ describe('Declared Luck', () => {
     fireEvent.click(btn);
     const note = await screen.findByRole('alertdialog', { name: 'Declared Luck' });
     expect(apiMock.mock.calls.filter(([p]) => p === '/practice/9/lucky')).toHaveLength(1);
-    expect(note).toHaveTextContent('Six Pairs');
+    expect(note).toHaveTextContent('6 PAIRS – LUCKY HAND');
   });
 });
 

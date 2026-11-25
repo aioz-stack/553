@@ -126,7 +126,7 @@ export default function ArrangementBoard({ sessionId, cards, onSubmitted, disabl
         ))}
       </div>
 
-      {preview?.is_foul && <Alert tone="warning">Foul: Back must be at least as strong as Middle, and Middle at least as strong as Front.</Alert>}
+      {preview?.is_foul && <Alert tone="warning">Misarranged: Back should be at least as strong as Middle, and Middle at least as strong as Front. You can still submit — a misarranged hand costs 2× your bet.</Alert>}
 
       <div className="rounded-xl bg-gray-50 p-3 dark:bg-white/[0.03]">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -147,7 +147,7 @@ export default function ArrangementBoard({ sessionId, cards, onSubmitted, disabl
         </div>
       </div>
 
-      <Button className="w-full" onClick={submit} disabled={!complete || submitting || disabled || preview?.is_foul}>
+      <Button className="w-full" onClick={submit} disabled={!complete || submitting || disabled}>
         {submitting ? 'Submitting…' : 'Submit arrangement'}
       </Button>
     </div>

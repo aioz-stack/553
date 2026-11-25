@@ -102,6 +102,8 @@ export interface Arrangement {
   is_foul: boolean;
   is_auto: boolean;
   lucky_type?: string | null;
+  /** Declared Lucky Hand without a qualifying one (2× bet penalty). */
+  lucky_failed?: boolean;
 }
 
 export interface Result {
@@ -121,6 +123,9 @@ export interface Result {
   lanes?: { front: number; middle: number; back: number } | null;
   lucky_type?: string | null;
   lucky_bonus?: string;
+  lucky_failed?: boolean;
+  /** The 2× bet penalty this result includes, if any. */
+  penalty?: 'misarranged' | 'false_lucky' | null;
   fee?: string;
 }
 
@@ -184,7 +189,7 @@ export interface SessionState {
   my_cards: string[] | null;
   /** Your saved, not yet submitted arrangement (restored when you come back; submitted for you at the timer's end). */
   my_draft?: { front: string[]; middle: string[]; back: string[] } | null;
-  my_submission: { front: string[]; middle: string[]; back: string[]; lucky_type?: string | null } | null;
+  my_submission: { front: string[]; middle: string[]; back: string[]; lucky_type?: string | null; lucky_failed?: boolean; is_foul?: boolean } | null;
   arrangements: Arrangement[] | null;
   results: Result[] | null;
   cancel_reason: string | null;
@@ -250,4 +255,7 @@ export interface FriendsData {
   online_count: number;
 }
 
-export const LUCKY_LABELS: Record<string, string> = { three_flushes: 'Three Flushes', no_face_cards: 'No Face Cards', six_pairs: 'Six Pairs' };
+export const LUCKY_LABELS: Record<string, string> = { three_flushes: '3-Flushes', three_straights: '3-Straight', no_face_cards: 'No Faces', six_pairs: '6 Pairs' };
+
+/** How a detected / declared Lucky Hand is announced, e.g. "6 PAIRS – LUCKY HAND". */
+export const luckyAnnouncement = (label: string) => `${label.toUpperCase()} – LUCKY HAND`;

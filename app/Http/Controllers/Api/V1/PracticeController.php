@@ -116,9 +116,10 @@ class PracticeController extends Controller
     {
         $this->owned($request, $practiceGame);
 
-        $game = $practice->declareLucky($request->user(), $practiceGame);
+        $rows = $request->validate(['front' => ['sometimes', 'array'], 'middle' => ['sometimes', 'array'], 'back' => ['sometimes', 'array']]);
+        $game = $practice->declareLucky($request->user(), $practiceGame, $rows ?: null);
 
-        return response()->json(['message' => 'Declared Luck: '.($game->lucky_type ? \App\Game\LuckyHand::LABELS[$game->lucky_type] : '').'!', 'data' => $practice->present($game)], 201);
+        return response()->json(['message' => $game->lucky_type ? \App\Game\LuckyHand::announcement($game->lucky_type).'!' : 'No qualifying Lucky Hand — a false declaration costs 2× your bet.', 'data' => $practice->present($game)], 201);
     }
 
     // ------------------------------------------------------------------ Gold Wallet (Single Player only)

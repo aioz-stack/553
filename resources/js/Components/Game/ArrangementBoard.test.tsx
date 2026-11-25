@@ -65,7 +65,7 @@ describe('ArrangementBoard', () => {
     expect(screen.getByText(/Your hand \(10\)/)).toBeInTheDocument();
   });
 
-  it('shows the server foul warning and blocks submission', async () => {
+  it('shows the server misarrangement warning; submitting stays allowed', async () => {
     post.mockImplementation((url: string) =>
       Promise.resolve({ data: { data: url.endsWith('/preview') ? { labels: { front: 'Three of a Kind', middle: null, back: null }, complete: true, is_foul: true } : {} } }),
     );
@@ -74,7 +74,7 @@ describe('ArrangementBoard', () => {
       render(<ArrangementBoard sessionId={7} cards={CARDS} onSubmitted={() => undefined} />);
     });
 
-    expect(await screen.findByText(/Foul: Back must be at least as strong/)).toBeInTheDocument();
+    expect(await screen.findByText(/Misarranged: .*You can still submit/)).toBeInTheDocument();
     expect(screen.getByText('Three of a Kind')).toBeInTheDocument();
   });
 });

@@ -200,7 +200,7 @@ export default function Table({ tableId }: { tableId: number }) {
                 <li>Each player gets 13 cards from a freshly shuffled 52-card deck.</li>
                 <li>Arrange them into Front (3), Middle (5) and Back (5) before the timer runs out.</li>
                 <li>Each hand is compared with the same hand of every opponent: +1 win, −1 loss, 0 tie.</li>
-                <li>A fouled arrangement loses all three hands against every valid opponent.</li>
+                <li>A misarranged hand can be submitted; it loses all three hands against every valid opponent (2× the bet against the banker).</li>
                 <li>If time runs out, the server arranges your cards automatically.</li>
               </ul>
             </Card>

@@ -617,9 +617,9 @@ class BankerMatchService
      * Declare LUCKY. The server re-checks the dealt cards; a valid declaration
      * locks the hand (it counts as the player's submission) before any reveal.
      */
-    public function declareLucky(User $user, GameSession $session, GameEngine $engine): GameSubmission
+    public function declareLucky(User $user, GameSession $session, GameEngine $engine, ?array $rows = null): GameSubmission
     {
-        return DB::transaction(function () use ($user, $session, $engine) {
+        return DB::transaction(function () use ($user, $session, $engine, $rows) {
             $session = GameSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
 
             if (! $session->isBankerRound() || ! ($session->config['lucky_hands_enabled'] ?? true)) {
@@ -637,10 +637,12 @@ class BankerMatchService
                 throw new BusinessRuleException('Your hand is already locked in.', 409, 'already_submitted');
             }
 
-            $lucky = LuckyHand::detect($card->cards)
-                ?? throw new BusinessRuleException('Your cards do not form a Lucky Hand.', 422, 'not_lucky');
-
-            $arrangement = $lucky['arrangement'];
+            // Validated on the actual 13 dealt cards. A declaration that does not qualify is still
+            // accepted and locks the hand: it costs 2 × bet in settlement (the declaration decides the
+            // round, so the arrangement is not judged too). Its rows are kept exactly as the player
+            // had them (sent now, else their saved rows, else as dealt) for the reveal.
+            $lucky = LuckyHand::detect($card->cards);
+            $arrangement = $lucky['arrangement'] ?? $this->currentRows($card, $rows);
             $submission = GameSubmission::create([
                 'game_session_id' => $session->id,
                 'user_id' => $user->id,
@@ -649,7 +651,8 @@ class BankerMatchService
                 'back' => $arrangement->back,
                 'is_foul' => false,
                 'is_auto' => false,
-                'lucky_type' => $lucky['type'],
+                'lucky_type' => $lucky['type'] ?? null,
+                'lucky_failed' => $lucky === null,
                 'submitted_at' => now(),
             ]);
 
@@ -663,6 +666,22 @@ class BankerMatchService
 
             return $submission;
         });
+    }
+
+    /** The player's rows as they are: the ones just sent, else the saved draft, else as dealt. */
+    private function currentRows(GameCard $card, ?array $rows): \App\Game\Arrangement
+    {
+        foreach ([$rows, is_array($card->draft) ? $card->draft : null] as $candidate) {
+            if ($candidate) {
+                try {
+                    return \App\Game\ArrangementValidator::build($card->cards, $candidate['front'] ?? null, $candidate['middle'] ?? null, $candidate['back'] ?? null);
+                } catch (\App\Game\Exceptions\InvalidArrangementException) {
+                    // not this one
+                }
+            }
+        }
+
+        return GameEngine::asDealt($card->cards);
     }
 
     // ------------------------------------------------------------------
@@ -697,6 +716,7 @@ class BankerMatchService
             $arrangements,
             $submissions->map(fn (GameSubmission $s) => $s->is_foul)->all(),
             $submissions->map(fn (GameSubmission $s) => $s->lucky_type)->all(),
+            $submissions->map(fn (GameSubmission $s) => (bool) $s->lucky_failed)->all(),
         );
 
         foreach ($calc['players'] as $userId => $row) {
@@ -733,6 +753,7 @@ class BankerMatchService
                 'lane_results' => $row['lanes'],
                 'lucky_type' => $row['lucky_type'],
                 'lucky_bonus' => $row['lucky_bonus'],
+                'lucky_failed' => (bool) ($row['lucky_failed'] ?? false),
                 'platform_fee' => $row['fee'],
             ]);
         }

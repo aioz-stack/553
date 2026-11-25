@@ -154,7 +154,7 @@ test('duplicate submissions are rejected', function () {
     expect(fn () => submitAuto($session, $players[0]))->toThrow(BusinessRuleException::class, 'already submitted');
 });
 
-test('submissions with foreign cards or fouls are rejected', function () {
+test('submissions with foreign cards are rejected; a misarranged hand is accepted as it is and marked', function () {
     [, $session, $players] = startGame();
     $cards = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $players[0]->id)->value('cards');
     $foreign = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $players[1]->id)->value('cards');
@@ -166,10 +166,14 @@ test('submissions with foreign cards or fouls are rejected', function () {
     $known = ['2C', '3D', '4H', 'TC', 'TD', '9H', '8S', '5D', 'AC', 'AD', 'AH', 'KS', 'KD'];
     GameCard::query()->where('game_session_id', $session->id)->where('user_id', $players[0]->id)->update(['cards' => json_encode($known)]);
 
-    expect(fn () => $this->engine->submit($players[0], $session, ['2C', '3D', '4H'], ['AC', 'AD', 'AH', 'KS', 'KD'], ['TC', 'TD', '9H', '8S', '5D']))
-        ->toThrow(BusinessRuleException::class, 'Fouled arrangement');
+    $sub = $this->engine->submit($players[0], $session, ['2C', '3D', '4H'], ['AC', 'AD', 'AH', 'KS', 'KD'], ['TC', 'TD', '9H', '8S', '5D']);
+    expect($sub->is_foul)->toBeTrue()
+        // kept exactly as submitted, never corrected
+        ->and($sub->middle)->toBe(['AC', 'AD', 'AH', 'KS', 'KD'])->and($sub->back)->toBe(['TC', 'TD', '9H', '8S', '5D']);
 
-    expect($this->engine->submit($players[0], $session, ['2C', '3D', '4H'], ['TC', 'TD', '9H', '8S', '5D'], ['AC', 'AD', 'AH', 'KS', 'KD'])->is_foul)->toBeFalse();
+    // Locked: no second submission.
+    expect(fn () => $this->engine->submit($players[0], $session, ['2C', '3D', '4H'], ['TC', 'TD', '9H', '8S', '5D'], ['AC', 'AD', 'AH', 'KS', 'KD']))
+        ->toThrow(BusinessRuleException::class, 'already submitted');
 });
 
 test('non-participants cannot submit', function () {
@@ -191,16 +195,22 @@ test('timer expiry auto-arranges missing hands and completes the game', function
         ->and($session->submissions()->where('is_auto', true)->count())->toBe(3);
 });
 
-test('timeout policy foul treats missing hands as fouls', function () {
-    $room = GameRoom::factory()->create(['timeout_policy' => 'foul']);
-    [, $session, $players] = startGame($room);
+test('at the timeout a hand nobody touched is submitted exactly as dealt (never auto-arranged); misarranged = marked', function () {
+    [, $session, $players] = startGame();
     submitAuto($session, $players[0]);
 
     $this->travel(91)->seconds();
     $this->engine->expire($session);
 
-    $result = $session->fresh()->results->firstWhere('user_id', $players[0]->id);
-    expect($result->score)->toBe(9)->and($result->placement)->toBe(1);
+    foreach (array_slice($players, 1) as $p) {
+        $cards = GameCard::query()->where('game_session_id', $session->id)->where('user_id', $p->id)->value('cards');
+        $cards = is_string($cards) ? json_decode($cards, true) : $cards;
+        $sub = \App\Models\GameSubmission::query()->where('game_session_id', $session->id)->where('user_id', $p->id)->sole();
+        $asDealt = GameEngine::asDealt($cards);
+        expect([$sub->front, $sub->middle, $sub->back])->toBe([array_slice($cards, 0, 3), array_slice($cards, 3, 5), array_slice($cards, 8, 5)])
+            ->and($sub->is_auto)->toBeTrue()
+            ->and($sub->is_foul)->toBe($asDealt->isFoul());
+    }
 });
 
 test('submitting after the timer expired is refused', function () {

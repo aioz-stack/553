@@ -159,11 +159,9 @@ class GameEngine
                 throw new BusinessRuleException($e->getMessage(), 422, 'invalid_arrangement');
             }
 
+            // A misarranged hand is accepted as it is (never corrected) and marked: it pays the
+            // misarrangement penalty (2 × bet) in settlement.
             $isFoul = $arrangement->isFoul();
-
-            if ($isFoul && ! ($session->config['allow_foul_submission'] ?? false)) {
-                throw new BusinessRuleException('Fouled arrangement: Back must be at least as strong as Middle, and Middle at least as strong as Front.', 422, 'foul');
-            }
 
             $submission = $this->storeSubmission($session, $user->id, $arrangement, $isFoul, false);
 
@@ -210,10 +208,6 @@ class GameEngine
                 return false;
             }
 
-            if ($arrangement->isFoul() && ! ($session->config['allow_foul_submission'] ?? false)) {
-                return false;
-            }
-
             $card->forceFill([
                 'draft' => ['front' => $arrangement->front, 'middle' => $arrangement->middle, 'back' => $arrangement->back],
                 'draft_saved_at' => now(),
@@ -239,22 +233,21 @@ class GameEngine
             }
 
             $submitted = GameSubmission::query()->where('game_session_id', $session->id)->pluck('user_id')->all();
-            $policy = TimeoutPolicy::from($session->config['timeout_policy'] ?? 'auto_arrange');
 
             foreach (GameCard::query()->where('game_session_id', $session->id)->whereNotIn('user_id', $submitted)->get() as $card) {
                 $draft = $this->validDraft($session, $card);
 
-                if ($draft) {
-                    $this->storeSubmission($session, $card->user_id, $draft, $draft->isFoul(), true);
-                } else {
-                    $this->storeSubmission($session, $card->user_id, AutoArranger::arrange($card->cards), $policy === TimeoutPolicy::Foul, true);
-                }
+                // Time's up: the player's arrangement exactly as it is on the table — their last
+                // saved rows, or the cards as dealt (1-3 Front, 4-8 Middle, 9-13 Back) if they never
+                // moved one. Nothing is sorted, optimised or corrected; misarranged = penalised.
+                $current = $draft ?? self::asDealt($card->cards);
+                $this->storeSubmission($session, $card->user_id, $current, $current->isFoul(), true);
 
                 event(new TableEvent($session->game_table_id, GameEvents::PLAYER_SUBMITTED, [
                     'session_id' => $session->id,
                     'user_id' => $card->user_id,
                     'auto' => true,
-                    'source' => $draft ? 'saved_arrangement' : 'auto_arranged',
+                    'source' => $draft ? 'saved_arrangement' : 'as_dealt',
                 ]));
             }
 
@@ -394,6 +387,14 @@ class GameEngine
         ]));
     }
 
+    /** The 13 cards in the rows exactly as dealt: 1-3 Front, 4-8 Middle, 9-13 Back (the arrangement screen's start). */
+    public static function asDealt(array $cards): Arrangement
+    {
+        $cards = array_values($cards);
+
+        return new Arrangement(array_slice($cards, 0, 3), array_slice($cards, 3, 5), array_slice($cards, 8, 5));
+    }
+
     /** The player's saved draft, re-validated against their dealt cards (null when there is none). */
     private function validDraft(GameSession $session, GameCard $card): ?Arrangement
     {
@@ -407,7 +408,8 @@ class GameEngine
             return null;
         }
 
-        return $arrangement->isFoul() && ! ($session->config['allow_foul_submission'] ?? false) ? null : $arrangement;
+        // Exactly as the player left it, misarranged or not.
+        return $arrangement;
     }
 
     private function storeSubmission(GameSession $session, int $userId, Arrangement $arrangement, bool $isFoul, bool $isAuto): GameSubmission
@@ -491,6 +493,7 @@ class GameEngine
                     'is_foul' => $s->is_foul,
                     'is_auto' => $s->is_auto,
                     'lucky_type' => $s->lucky_type,
+                    'lucky_failed' => (bool) $s->lucky_failed,
                 ];
             })->values()->all();
     }
@@ -521,6 +524,9 @@ class GameEngine
                 'lanes' => $r->lane_results,
                 'lucky_type' => $r->lucky_type,
                 'lucky_bonus' => $r->lucky_bonus,
+                'lucky_failed' => (bool) $r->lucky_failed,
+                // Misarranged (2 × bet) / false Lucky Hand (2 × bet): shown in the results.
+                'penalty' => $r->lucky_failed ? 'false_lucky' : ($r->is_foul ? 'misarranged' : null),
                 'fee' => $r->platform_fee,
             ])->values()->all();
     }

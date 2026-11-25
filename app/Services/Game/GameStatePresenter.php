@@ -102,7 +102,7 @@ class GameStatePresenter
         $isBanker = $session->isBankerRound();
         $bets = $isBanker ? GameBet::query()->where('game_session_id', $session->id)->pluck('amount', 'user_id') : collect();
         $autoBets = $isBanker ? GameBet::query()->where('game_session_id', $session->id)->where('is_auto', true)->pluck('user_id')->all() : [];
-        $luckyIds = $isBanker ? GameSubmission::query()->where('game_session_id', $session->id)->whereNotNull('lucky_type')->pluck('user_id')->all() : [];
+        $luckyIds = $isBanker ? GameSubmission::query()->where('game_session_id', $session->id)->where(fn ($q) => $q->whereNotNull('lucky_type')->orWhere('lucky_failed', true))->pluck('user_id')->all() : [];
 
         // Before the deal (betting) the round's players are the banker plus the
         // eligible participants; afterwards, whoever was dealt cards.
@@ -207,6 +207,8 @@ class GameStatePresenter
                 'back' => $mySubmission->back,
                 'is_auto' => $mySubmission->is_auto,
                 'lucky_type' => $mySubmission->lucky_type,
+                'lucky_failed' => (bool) $mySubmission->lucky_failed,
+                'is_foul' => (bool) $mySubmission->is_foul,
             ] : null,
             'arrangements' => $revealed ? $this->engine->revealedArrangements($session) : null,
             'results' => $session->status === GameStatus::Completed ? array_map(fn (array $r) => array_merge($r, [

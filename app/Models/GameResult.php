@@ -21,6 +21,9 @@ class GameResult extends Model
             'bet_amount' => 'integer',
             'lane_results' => 'array',
             'lucky_bonus' => 'integer',
+            'lucky_failed' => 'boolean',
+            'lucky_failed' => 'boolean',
+            'lucky_failed' => 'boolean',
             'platform_fee' => 'integer',
             'round_number' => 'integer',
         ];

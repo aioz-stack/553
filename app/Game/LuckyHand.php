@@ -3,27 +3,32 @@
 namespace App\Game;
 
 /**
- * Declared Luck: Lucky Hand detection on a player's dealt 13 cards (banker modes).
+ * Lucky Hand (Declared Luck) on a player's dealt 13 cards — Single Player and Multiplayer.
  *
- * Any ONE of these qualifies (they are not required together):
- *  - three_flushes:  the cards split into a 3-card Front, 5-card Middle and
- *                    5-card Back that are each a single suit.
- *  - no_face_cards:  none of the 13 cards is a Jack, Queen or King (only 2–10 and Aces).
- *  - six_pairs:      six pairs among the 13 cards. Pairs are counted per rank as
- *                    floor(count / 2), so trips give one pair and quads give two.
+ * Only these three qualify (any ONE of them):
+ *  - three_flushes   "3-Flushes":  the 13 cards split into a 3-card Front, 5-card Middle and
+ *                                  5-card Back that are each one suit.
+ *  - three_straights "3-Straight": the 13 cards split into a 3-card straight Front and 5-card
+ *                                  straight Middle and Back (HandEvaluator's straight rules: the
+ *                                  Ace plays high or low — A-2-3 / Q-K-A, A-2-3-4-5 / T-J-Q-K-A).
+ *  - no_face_cards   "No Faces":   no Jack, Queen or King among the 13 cards (Aces are not faces).
+ *  - six_pairs       "6 Pairs":    six distinct pairs — six different ranks each held at least twice
+ *                                  (12 cards); the 13th card never invalidates it (it may even make
+ *                                  one pair trips). Four of a kind is one pair of that rank, not two.
  *
- * Detection is server-side only and runs on the dealt cards, so a declaration
- * can never be faked by the client. When several apply, the first in
- * TYPES order is reported (the payout is the same: lucky_multiplier × bet).
+ * Detection is server-side only and always runs on the dealt cards, never on a label the
+ * client sends, so a declaration can't be faked. When several apply, the first in TYPES order
+ * is reported (the reward is the same: lucky_multiplier × bet).
  */
 final class LuckyHand
 {
-    public const TYPES = ['three_flushes', 'no_face_cards', 'six_pairs'];
+    public const TYPES = ['three_flushes', 'three_straights', 'no_face_cards', 'six_pairs'];
 
     public const LABELS = [
-        'three_flushes' => 'Three Flushes',
-        'no_face_cards' => 'No Face Cards',
-        'six_pairs' => 'Six Pairs',
+        'three_flushes' => '3-Flushes',
+        'three_straights' => '3-Straight',
+        'no_face_cards' => 'No Faces',
+        'six_pairs' => '6 Pairs',
     ];
 
     /**
@@ -38,6 +43,10 @@ final class LuckyHand
 
         if ($lanes = self::threeFlushes($cards)) {
             return self::found('three_flushes', self::order($lanes));
+        }
+
+        if ($lanes = self::threeStraights($cards)) {
+            return self::found('three_straights', self::order($lanes));
         }
 
         if (self::hasNoFaceCards($cards)) {
@@ -68,13 +77,21 @@ final class LuckyHand
     }
 
     /**
+     * Six distinct pairs: at least six different ranks held twice or more.
+     *
      * @param  list<string>  $cards
      */
     public static function isSixPairs(array $cards): bool
     {
         $counts = array_count_values(array_map(fn (string $c) => $c[0], $cards));
 
-        return array_sum(array_map(fn (int $n) => intdiv($n, 2), $counts)) >= 6;
+        return count(array_filter($counts, fn (int $n) => $n >= 2)) >= 6;
+    }
+
+    /** The announcement shown when the hand is detected / declared, e.g. "6 PAIRS – LUCKY HAND". */
+    public static function announcement(string $type): string
+    {
+        return mb_strtoupper(self::LABELS[$type] ?? $type).' – LUCKY HAND';
     }
 
     /**
@@ -121,6 +138,82 @@ final class LuckyHand
         }
 
         return null;
+    }
+
+    /**
+     * A split into a 3-card straight and two 5-card straights, or null.
+     *
+     * @param  list<string>  $cards
+     * @return array{0: list<string>, 1: list<string>, 2: list<string>}|null front, five, five
+     */
+    public static function threeStraights(array $cards): ?array
+    {
+        $cards = array_values($cards);
+        $n = count($cards);
+
+        foreach (self::combinations(range(0, $n - 1), 5) as $first) {
+            $five = array_map(fn (int $i) => $cards[$i], $first);
+            if (! self::isStraight($five)) {
+                continue;
+            }
+            $rest = array_values(array_diff_key($cards, array_flip($first)));
+
+            foreach (self::combinations(range(0, 7), 5) as $second) {
+                $other = array_map(fn (int $i) => $rest[$i], $second);
+                if (! self::isStraight($other)) {
+                    continue;
+                }
+                $front = array_values(array_diff_key($rest, array_flip($second)));
+                if (self::isStraight($front)) {
+                    return [$front, $five, $other];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Consecutive distinct ranks (3 or 5 cards), the Ace high or low: A-2-3 and Q-K-A, A-2-3-4-5
+     * and T-J-Q-K-A — the same rule HandEvaluator uses for five-card straights.
+     *
+     * @param  list<string>  $cards
+     */
+    public static function isStraight(array $cards): bool
+    {
+        $ranks = array_map(fn (string $c) => Card::fromString($c)->rank, $cards);
+
+        if (count(array_unique($ranks)) !== count($ranks)) {
+            return false;
+        }
+
+        sort($ranks);
+        if (end($ranks) - $ranks[0] === count($ranks) - 1) {
+            return true;
+        }
+
+        // Ace low: 14 counts as 1.
+        $low = array_map(fn (int $r) => $r === 14 ? 1 : $r, $ranks);
+        sort($low);
+
+        return end($low) - $low[0] === count($low) - 1;
+    }
+
+    /**
+     * @param  list<int>  $items
+     * @return \Generator<list<int>>
+     */
+    private static function combinations(array $items, int $k, int $start = 0, array $picked = []): \Generator
+    {
+        if (count($picked) === $k) {
+            yield $picked;
+
+            return;
+        }
+
+        for ($i = $start; $i <= count($items) - ($k - count($picked)); $i++) {
+            yield from self::combinations($items, $k, $i + 1, [...$picked, $items[$i]]);
+        }
     }
 
     /**

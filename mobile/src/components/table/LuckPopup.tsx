@@ -130,7 +130,8 @@ export default function LuckPopup({
   /** Opponents whose card fans sit left and right of your rows. */
   seats: { left: { name: string }; right: { name: string } };
   declaring: boolean;
-  onDeclare: () => void;
+  /** Declared Luck, with the rows as they are now (checked on your 13 cards; a false declaration costs 2× bet). */
+  onDeclare: (rows: Rows) => void;
   /** SUBMIT: send these rows to the server (settles the round). */
   onSubmit: (rows: Rows) => void;
   submitting?: boolean;
@@ -295,8 +296,8 @@ export default function LuckPopup({
         <div className="absolute left-[330px] top-[676px] z-10 flex items-center gap-6">
           <button
             type="button"
-            onClick={onDeclare}
-            disabled={declaring}
+            onClick={() => onDeclare(rows)}
+            disabled={declaring || submitting}
             className="lx-tile lx-gold relative h-[108px] w-[320px] rounded-full p-[6px] shadow-[0_8px_0_#7a3e00] disabled:opacity-70"
           >
             <span className="lx-gloss relative flex h-full w-full items-center gap-2 rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] pl-3 pr-5">

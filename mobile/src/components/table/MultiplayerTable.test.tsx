@@ -230,3 +230,35 @@ describe('Multiplayer table — the Single Player in-game sequence', () => {
     expect(screen.queryByRole('status', { name: 'Reveal' })).toBeNull();
   });
 });
+
+describe('Multiplayer table — submission, misarrangement and Lucky Hand rules', () => {
+  const cards = ['2C','3C','4C','5D','6D','7D','8H','9H','TH','JS','QS','KS','AS'];
+  beforeEach(() => {
+    apiMock.mockReset();
+    sessionStorage.setItem('pusoy.mp.dealt.70', '1');
+  });
+
+  it('Declared Luck sends the rows on screen; a false declaration is told plainly (2× bet)', async () => {
+    apiMock.mockImplementation((path?: string) =>
+      Promise.resolve(
+        path?.endsWith('/lucky')
+          ? { message: 'No qualifying Lucky Hand — a false declaration costs 2× your bet.', data: { my_submission: { lucky_failed: true } } }
+          : { data: { labels: { front: null, middle: null, back: null }, is_foul: true } },
+      ),
+    );
+    render(<MultiplayerTable {...props(table({ current_session_id: 70 }), session({ id: 70, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards }))} />);
+    fireEvent.click(screen.getByRole('button', { name: /Declared/ }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/games/70/lucky', { method: 'POST', body: { front: cards.slice(0, 3), middle: cards.slice(3, 8), back: cards.slice(8) } }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('a false declaration costs 2× your bet');
+  });
+
+  it('results mark a misarranged hand and a false declaration with their 2× bet penalty', () => {
+    const arr = (n: number, over = {}) => ({ user_id: 10 + n, name: `p${n}`, front: ['2C', '3C', '4C'], middle: ['5D', '6D', '7D', '8H', '9H'], back: ['TH', 'JS', 'QS', 'KS', 'AS'], labels: { front: 'High Card', middle: 'Straight', back: 'Straight' }, is_foul: false, is_auto: false, ...over });
+    const s = session({ id: 71, status: 'COMPLETED', can_bet: false, arrangements: [arr(1, { is_foul: true }), arr(2, { lucky_failed: true }), arr(3, { lucky_type: 'six_pairs' }), arr(4, { lucky_type: 'three_straights' })], results: [] });
+    render(<MultiplayerTable {...props(table({ current_session_id: 71 }), s)} />);
+    expect(screen.getByText('MISARRANGED −2× BET')).toBeInTheDocument();
+    expect(screen.getByText('FALSE LUCKY −2× BET')).toBeInTheDocument();
+    expect(screen.getByText('3-STRAIGHT – LUCKY HAND · +2× BET')).toBeInTheDocument();
+    expect(screen.getByText('6 PAIRS – LUCKY HAND · +2× BET')).toBeInTheDocument();
+  });
+});

@@ -1,5 +1,7 @@
 'use client';
 
+import { luckyAnnouncement } from '@/lib/types';
+
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -157,13 +159,14 @@ function RoundButton({ label, onClick, children, x }: { label: string; onClick: 
   );
 }
 
-/** Lucky Hand / Misplaced tags under a revealed hand. */
-function HandBadges({ lucky, foul }: { lucky?: string | null; foul?: boolean }) {
-  if (!lucky && !foul) return null;
+/** Lucky Hand / false declaration / misarranged tags under a revealed hand (each is 2× the bet). */
+function HandBadges({ lucky, foul, failed }: { lucky?: string | null; foul?: boolean; failed?: boolean }) {
+  if (!lucky && !foul && !failed) return null;
   return (
     <span className="flex gap-2">
-      {lucky && <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-3 font-display text-[15px] font-black text-[#ffe14d]">LUCKY · {lucky}</span>}
-      {foul && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISPLACED</span>}
+      {lucky && <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-3 font-display text-[15px] font-black text-[#ffe14d]">{luckyAnnouncement(lucky)} · +2× BET</span>}
+      {failed && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">FALSE LUCKY −2× BET</span>}
+      {foul && !failed && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISARRANGED −2× BET</span>}
     </span>
   );
 }
@@ -413,13 +416,13 @@ export default function Practice() {
   };
 
   // ---- Declared Luck ----
-  const declareLuck = async () => {
+  const declareLuck = async (rows?: Rows) => {
     if (!round || declaring || round.status !== 'arranging') return;
     setDeclaring(true);
     try {
       // The server checks your 13 cards and settles the round either way: a qualifying hand wins 2× bet,
       // a declaration without one loses 2× bet.
-      const r = await api<{ data: RoundState }>(`/practice/${round.id}/lucky`, { method: 'POST' });
+      const r = await api<{ data: RoundState }>(`/practice/${round.id}/lucky`, { method: 'POST', body: rows });
       setLuck(null);
       const failed = !!r.data.result?.lucky_failed;
       setNotice(failed ? 'noluck' : 'lucky');
@@ -811,7 +814,7 @@ export default function Practice() {
             {!luck && (
               <button
                 type="button"
-                onClick={declareLuck}
+                onClick={() => declareLuck()}
                 disabled={declaring}
                 className="lx-tile absolute left-[1222px] top-[400px] z-[8] flex h-[96px] w-[200px] items-center gap-1 rounded-full border-[4px] border-[#ffc531] bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] pl-2 pr-3 shadow-[0_6px_0_#2a0660]"
               >
@@ -861,7 +864,7 @@ export default function Practice() {
                 }
               : undefined
           }
-          extra={revealed && me ? <HandBadges lucky={me.lucky?.label} foul={me.is_foul} /> : undefined}
+          extra={revealed && me ? <HandBadges lucky={me.lucky?.label} foul={me.is_foul} failed={!!round?.result?.lucky_failed} /> : undefined}
         >
           {!revealed && betControls}
           {(phase === 'betting' || phase === 'loading') && tier && !tier.eligible && <span className="font-display text-[26px] font-black text-white/80">Not enough gold for {tier.name}</span>}
@@ -970,14 +973,14 @@ export default function Practice() {
                 <CandyText text={notice === 'lucky' ? 'DECLARED LUCK!' : 'NO LUCK!'} width={580} height={110} size={notice === 'lucky' ? 72 : 92} stroke={notice === 'lucky' ? '#2a0660' : '#5a0606'} fill={notice === 'lucky' ? ['#fffbe0', '#ffe14d', '#ffa514'] : ['#ffffff', '#ffd0d0', '#ff8a8a']} />
                 {notice === 'lucky' && round?.lucky ? (
                   <>
-                    <p className="font-display text-[40px] font-black text-white">{round.lucky.label}</p>
+                    <p className="font-display text-[40px] font-black text-white">{luckyAnnouncement(round.lucky.label)}</p>
                     <p className="mt-1 font-display text-[26px] font-bold text-white/85">Double winnings · {round.lucky.multiplier}× bet{round.banker === 1 ? ' from each bot' : ''}</p>
                     <p className={`mt-2 font-display text-[44px] font-black ${tone(result?.gold ?? 0)}`}>{signed(result?.gold ?? 0)} Gold</p>
                     {!round.wagering && <p className="text-[18px] text-white/60">Practice Gold — not credited</p>}
                   </>
                 ) : result?.lucky_failed ? (
                   <>
-                    <p className="font-display text-[26px] font-bold text-white/90">No Three Flushes, No Face Cards or Six Pairs in your 13 cards.</p>
+                    <p className="font-display text-[26px] font-bold text-white/90">No 3-Flushes, 3-Straight, No Faces or 6 Pairs in your 13 cards — 2× bet penalty.</p>
                     <p className="mt-1 font-display text-[28px] font-black text-white">Declaration failed · 2× bet{round?.banker === 1 ? ' to each bot' : ''}</p>
                     <p className={`mt-2 font-display text-[44px] font-black ${tone(result.gold)}`}>{signed(result.gold)} Gold</p>
                     {!round?.wagering && <p className="text-[18px] text-white/60">Practice Gold — not credited</p>}
@@ -1050,7 +1053,7 @@ export default function Practice() {
                     <p>Four players — you, LuckyBot, CardBot and AceBot — for 12 rounds. The banker rotates: round 1 you, then LuckyBot, CardBot, AceBot, and around again.</p>
                     <p>The banker places no bet — it covers everyone else's bets. When you are not the banker, tap a chip to place your bet (each bot places its own); when you are, just tap Deal. Everyone gets 13 cards; arrange yours into <b className="text-[#ffe14d]">Front</b> (3), <b className="text-[#ffe14d]">Middle</b> (5) and <b className="text-[#ffe14d]">Back</b> (5). Back must be at least as strong as Middle, and Middle at least as strong as Front. Tap <b className="text-[#ffe14d]">READY</b> to lock your cards, <b className="text-[#ffe14d]">Reset</b> to rearrange, then <b className="text-[#ffe14d]">Submit</b>. A misplaced hand can still be submitted but pays a 2× bet penalty — to the banker, or as banker to every player.</p>
                     <p>Every player is compared with the banker lane by lane (Front vs Front, Middle vs Middle, Back vs Back). Win all 3 = 2× bet, win 2 = 1× bet; lose 2 = −1×, lose all 3 = −2×. <b className="text-[#ffe14d]">An identical lane goes to the banker.</b></p>
-                    <p>Declared Luck: any ONE of Three Flushes (Front, Middle and Back each one suit), No Face Cards (no J, Q or K in your 13 cards) or Six Pairs. It beats the lane comparison and pays 2× bet; declaring without one loses 2× bet. The bots declare their own Lucky Hands.</p>
+                    <p>Declared Luck: any ONE of 3-Flushes (Front, Middle and Back each one suit), 3-Straight (Front, Middle and Back each a straight), No Faces (no J, Q or K in your 13 cards) or 6 Pairs (six different pairs; the 13th card can be anything). A misarranged hand (Back weaker than Middle, or Middle weaker than Front) is accepted and costs 2× bet. It beats the lane comparison and pays 2× bet; declaring without one loses 2× bet. The bots declare their own Lucky Hands.</p>
                     <p className="text-white/70">Nothing is arranged for you: your 13 cards go straight into Front, Middle and Back in the order they were dealt. Tap a card, then another card to swap them (or drag one onto another) until the rows are how you want them. Sort changes your hand's order on the table (dealt / rank / suit).</p>
                   </div>
                 )}

@@ -283,9 +283,9 @@ class PracticeService
      * not qualify loses 2 × bet (as the banker: 2 × each player's bet). The round
      * is locked and settled once, so a declaration can never pay or charge twice.
      */
-    public function declareLucky(User $user, PracticeGame $game): PracticeGame
+    public function declareLucky(User $user, PracticeGame $game, ?array $rows = null): PracticeGame
     {
-        return DB::transaction(function () use ($user, $game) {
+        return DB::transaction(function () use ($user, $game, $rows) {
             $game = $this->lockOpenRound($user, $game, luckyCheck: true);
 
             $hand = $game->hands[self::PLAYER_SEAT];
@@ -295,7 +295,7 @@ class PracticeService
             // shown in a sensible (non-fouled) arrangement in the reveal; they decide nothing.
             $game = $lucky
                 ? $this->settle($user, $game, $lucky['arrangement'], $lucky['type'])
-                : $this->settle($user, $game, AutoArranger::arrange($hand), null, failed: true);
+                : $this->settle($user, $game, $this->rowsAsTheyAre($hand, $rows), null, failed: true);
 
             AuditLogger::log($user, $lucky ? 'practice.lucky_declared' : 'practice.lucky_failed', $game, null, [
                 'lucky_type' => $lucky['type'] ?? null,
@@ -307,6 +307,20 @@ class PracticeService
 
             return $game;
         });
+    }
+
+    /** The rows the player had (validated against their cards), else the cards as dealt — never re-arranged. */
+    private function rowsAsTheyAre(array $hand, ?array $rows): Arrangement
+    {
+        if ($rows) {
+            try {
+                return ArrangementValidator::build($hand, $rows['front'] ?? null, $rows['middle'] ?? null, $rows['back'] ?? null);
+            } catch (InvalidArrangementException) {
+                // fall through
+            }
+        }
+
+        return GameEngine::asDealt($hand);
     }
 
     /**

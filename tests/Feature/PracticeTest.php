@@ -240,13 +240,13 @@ test('a match is 12 rounds; the banker rotates You → LuckyBot → CardBot → 
     $this->actingAs($me, 'sanctum')->getJson('/api/v1/practice/matches/current')->assertJsonPath('data', null);
 });
 
-test('Declared Luck: server-detected, settles once at 2× against every bot; a failed declaration loses 2×; bots declare their own', function () {
+test('Declared Luck: server-detected (No Faces / 3-Straight / 3-Flushes), settles once at 2× against every bot; a false declaration loses 2×; bots declare their own', function () {
     $me = practicePlayer();
     $match = spStartMatch($this, $me);
-    // Six pairs with face cards and no three-flush split: only Six Pairs qualifies.
-    $sixPairs = ['2C', '2D', '3C', '3D', '4C', '4D', '5C', '5D', '6C', '6D', 'JC', 'JD', 'KC'];
+    // 3-Straight (A-2-3 | 4-8 | 9-K) with face cards and mixed suits: only 3-Straight qualifies.
+    $sixPairs = ['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'JH', 'QS', 'KC'];
 
-    // Round 1 (you bank): six pairs → +2 × bet from each of the three bots (none lucky).
+    // Round 1 (you bank): 3-Straight → +2 × bet from each of the three bots (none lucky).
     $id = spDealRound($this, $me, $match, 100)->json('data.id');
     do {
         $g = spRigRound($id, [1 => $sixPairs]);
@@ -254,17 +254,20 @@ test('Declared Luck: server-detected, settles once at 2× against every bot; a f
         $botLuck = array_filter([2, 3, 4], fn ($s) => LuckyHand::detect($g->hands[$s]) !== null);
     } while ($botLuck !== []);
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id}/lucky")->assertCreated()
-        ->assertJsonPath('data.lucky.type', 'six_pairs')->assertJsonPath('data.result.gold', 600);
+        ->assertJsonPath('data.lucky.type', 'three_straights')->assertJsonPath('data.result.gold', 600);
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id}/lucky")->assertStatus(409);
     expect(AuditLog::query()->where('action', 'practice.lucky_declared')->count())->toBe(1);
 
     // Round 2 (LuckyBot banks): no qualifying hand → the declaration fails: you lose 2 × your bet at once.
     $id2 = spDealRound($this, $me, $match, 50)->json('data.id');
     spRigRound($id2, [1 => PAIRS]);
-    $failed = $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id2}/lucky")->assertCreated()
+    // The rows on screen go with it and are kept exactly as they were (never re-arranged).
+    $rows = ['front' => ['4S', '2H', '3D'], 'middle' => ['AS', 'AH', 'KS', 'KH', 'QD'], 'back' => ['QC', '9S', '9H', '7D', '7C']];
+    $failed = $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id2}/lucky", $rows)->assertCreated()
         ->assertJsonPath('data.status', 'completed')->assertJsonPath('data.lucky', null)
         ->assertJsonPath('data.result.lucky_failed', true)->assertJsonPath('data.result.multiple', -2)->assertJsonPath('data.result.gold', -100);
-    expect(collect($failed->json('data.players'))->sum('gold'))->toBe(0);
+    expect(collect($failed->json('data.players'))->sum('gold'))->toBe(0)
+        ->and(\App\Models\PracticeGame::find($id2)->arrangements[1])->toBe($rows);
     // Settled once: no second declaration, submission or deduction.
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/{$id2}/lucky")->assertStatus(409);
     spSubmitAuto($this, $me, $id2)->assertStatus(409);

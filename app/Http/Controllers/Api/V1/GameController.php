@@ -112,10 +112,14 @@ class GameController extends Controller
     {
         $this->authorize('play', $session);
 
-        $match->declareLucky($request->user(), $session, $engine);
+        // Optional: the rows on the player's screen right now (kept for the reveal if the hand does not qualify).
+        $rows = $request->validate(['front' => ['sometimes', 'array'], 'middle' => ['sometimes', 'array'], 'back' => ['sometimes', 'array']]);
+        $submission = $match->declareLucky($request->user(), $session, $engine, $rows ?: null);
 
         return response()->json([
-            'message' => 'Lucky Hand declared!',
+            'message' => $submission->lucky_failed
+                ? 'No qualifying Lucky Hand — a false declaration costs 2× your bet.'
+                : \App\Game\LuckyHand::announcement($submission->lucky_type).'!',
             'data' => $presenter->session($session->refresh(), $request->user()),
         ], 201);
     }

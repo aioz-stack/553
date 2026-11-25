@@ -1981,3 +1981,44 @@ Mobile (`components/table/MultiplayerTable.tsx`, reusing Single Player's `DealAn
 Tests:
 - `tests/Feature/MultiplayerDealTest.php`: the clockwise deal from the seat after the banker, 52 unique cards, and the deadline including the animation time.
 - `MultiplayerTable.test.tsx`: the deal comes before the arrangement and does not replay; the reveal banner and Skip appear; no replay for an already-judged round.
+
+## Card submission, misarrangement penalty and Lucky Hand rules (Single Player and Multiplayer)
+
+All of this is server-side: the engine, settlement and ledger. The screens only display it.
+
+**Lucky Hand** (`App\Game\LuckyHand`): only four hands qualify, always checked on the player's actual 13 dealt cards:
+- **No Faces**: no J, Q or K (Aces are not faces).
+- **3-Straight**: the cards split into a 3-card straight Front and 5-card straight Middle and Back. The Ace plays high or low (A-2-3, Q-K-A, A-2-3-4-5, T-J-Q-K-A).
+- **3-Flushes**: each lane is one suit.
+- **6 Pairs** (added 2026-11-26): six distinct pairs, meaning six different ranks each held at least twice (12 cards). The 13th card never invalidates it, even when it turns one pair into trips. Four of a kind counts as one pair of that rank, not two.
+
+The type keys `three_flushes` / `three_straights` / `no_face_cards` / `six_pairs` are stored on submissions and results. A declared hand is announced as "<LABEL> – LUCKY HAND" (`LuckyHand::announcement`, e.g. "6 PAIRS – LUCKY HAND") in the declaration message, the Single Player popup and the result badges; the ledger reason names it ("Lucky Hand (6 Pairs) round N").
+
+**Declaring:**
+- A valid declaration pays **2× the bet** (`lucky_multiplier`; as the banker, 2× each player's bet).
+- A declaration that does not qualify is **accepted**, locks the hand and costs **2× the bet**. Multiplayer records it in `game_submissions.lucky_failed` and `game_results.lucky_failed` (migration `2026_11_30_100000_lucky_failed_and_exact_timeout`); Single Player in its round results.
+- The rows on screen are sent with the declaration (`POST games/{id}/lucky` / `practice/{id}/lucky`) and kept exactly as they were for the reveal.
+- A declaration decides the round: the arrangement is not also judged, so a player never owes more than the 2× reserved (decision of 2026-11-26).
+
+**Misarranged hands** (Back weaker than Middle, or Middle weaker than Front):
+- They can always be submitted (`GameEngine::submit`, drafts included).
+- They are kept as they are, marked `is_foul`, and lose every lane, which is **2× the bet** against a properly arranged banker. A misarranged banker pays 2× every player's bet.
+- If both are misarranged the two penalties cancel (0), in both modes (`BankerRound`).
+- The room options *Allow fouled submission* and *When the timer expires* no longer change anything and are removed from the room form.
+
+**Timeout (Multiplayer):**
+- `GameEngine::expire` submits each player's arrangement exactly as it is on the table: their last saved rows (saved as they move cards, and again in the timer's last second), or the cards as dealt (1-3 Front, 4-8 Middle, 9-13 Back) if they never moved one (`GameEngine::asDealt`).
+- Nothing is sorted, optimised or corrected; misarranged means penalised.
+- Single Player has no arrangement timer, by decision.
+
+**Settlement:** penalties and rewards come out of the existing reserves (2× bet per side) in the single, idempotent settlement (`GameSettlement` per round, idempotency keys per payout), so retries, reconnects and repeated events never pay or charge twice.
+
+**Results:**
+- Results carry `penalty` (`misarranged` / `false_lucky`) and `lucky_failed`.
+- Multiplayer hands show **MISARRANGED −2× BET**, **FALSE LUCKY −2× BET** or **LUCKY · type +2× BET**. Single Player shows the same badges plus its NO LUCK popup.
+- The web arrangement board no longer blocks a misarranged Submit; it warns that it costs 2× the bet.
+
+Tests:
+- `tests/Feature/CardRulesTest.php` (new).
+- Updated: `LuckyHandTest`, `BankerModesTest`, `MultiplayerTest`, `ReconnectTest`, `PracticeTest`.
+- UI: `MultiplayerTable.test.tsx`, `practice/page.test.tsx`, `ArrangementBoard.test.tsx`.

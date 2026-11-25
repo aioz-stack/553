@@ -99,7 +99,7 @@ test('timer expiry submits the player\'s last saved arrangement — not a reset 
     expect(GameSubmission::query()->where('game_session_id', $s->id)->where('user_id', $me->id)->count())->toBe(1);
 });
 
-test('without a saved arrangement the timeout policy applies; only the dealt player can save one', function () {
+test('without a saved arrangement the cards are submitted as dealt; only the dealt player can save one', function () {
     Event::fake([TableEvent::class]);
     [$table, $players] = rcStart($this);
     $s = rcDeal($table);
@@ -110,8 +110,10 @@ test('without a saved arrangement the timeout policy applies; only the dealt pla
     $this->travel(120)->seconds();
     app(GameEngine::class)->expire($s->fresh());
 
-    expect(GameSubmission::query()->where('game_session_id', $s->id)->where('user_id', $me->id)->sole()->is_auto)->toBeTrue();
-    Event::assertDispatched(TableEvent::class, fn (TableEvent $e) => $e->name === 'player.submitted' && $e->payload['user_id'] === $me->id && $e->payload['source'] === 'auto_arranged');
+    $sub = GameSubmission::query()->where('game_session_id', $s->id)->where('user_id', $me->id)->sole();
+    $cards = \App\Models\GameCard::query()->where('game_session_id', $s->id)->where('user_id', $me->id)->first()->cards;
+    expect($sub->is_auto)->toBeTrue()->and($sub->front)->toBe(array_slice($cards, 0, 3))->and($sub->back)->toBe(array_slice($cards, 8, 5));
+    Event::assertDispatched(TableEvent::class, fn (TableEvent $e) => $e->name === 'player.submitted' && $e->payload['user_id'] === $me->id && $e->payload['source'] === 'as_dealt');
 });
 
 test('a player who drops out mid-round does not hold up the table; their saved hand is played and they resume next round', function () {

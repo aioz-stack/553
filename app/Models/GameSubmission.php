@@ -17,6 +17,9 @@ class GameSubmission extends Model
             'back' => 'array',
             'is_foul' => 'boolean',
             'is_auto' => 'boolean',
+            'lucky_failed' => 'boolean',
+            'lucky_failed' => 'boolean',
+            'lucky_failed' => 'boolean',
             'submitted_at' => 'datetime',
         ];
     }

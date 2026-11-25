@@ -14,7 +14,7 @@ import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
 import { reducedNow } from '@/lib/motion';
-import { LUCKY_LABELS, type SeatPlayer, type SessionState, type TableState } from '@/lib/types';
+import { LUCKY_LABELS, luckyAnnouncement, type SeatPlayer, type SessionState, type TableState } from '@/lib/types';
 
 /**
  * Multiplayer in-game table (landscape, 1600×900 stage) for lobby matches — the same table as
@@ -72,13 +72,14 @@ function RoundButton({ label, onClick, children, x }: { label: string; onClick: 
   );
 }
 
-/** Lucky Hand / Misplaced tags under a revealed hand. */
-function HandBadges({ lucky, foul }: { lucky?: string | null; foul?: boolean }) {
-  if (!lucky && !foul) return null;
+/** Lucky Hand / false declaration / misarranged tags under a revealed hand (each is 2× the bet). */
+function HandBadges({ lucky, foul, failed }: { lucky?: string | null; foul?: boolean; failed?: boolean }) {
+  if (!lucky && !foul && !failed) return null;
   return (
     <span className="flex gap-2">
-      {lucky && <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-3 font-display text-[15px] font-black text-[#ffe14d]">LUCKY · {LUCKY_LABELS[lucky] ?? lucky}</span>}
-      {foul && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISPLACED</span>}
+      {lucky && <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-3 font-display text-[15px] font-black text-[#ffe14d]">{luckyAnnouncement(LUCKY_LABELS[lucky] ?? lucky)} · +2× BET</span>}
+      {failed && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">FALSE LUCKY −2× BET</span>}
+      {foul && !failed && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISARRANGED −2× BET</span>}
     </span>
   );
 }
@@ -256,13 +257,16 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
     }
   };
 
-  const declare = async () => {
+  // Declared Luck with the rows on screen. The server checks your 13 cards: a Lucky Hand pays 2× bet,
+  // a false declaration costs 2× bet. Either way the hand is locked in.
+  const declare = async (rows: Rows) => {
     if (!session || declaring) return;
     setDeclaring(true);
     try {
-      await api(`/games/${session.id}/lucky`, { method: 'POST' });
-      play('lucky');
-      setToast({ ok: true, text: 'Declared Luck!' });
+      const r = await api<{ message: string; data: SessionState }>(`/games/${session.id}/lucky`, { method: 'POST', body: rows });
+      const failed = !!r.data?.my_submission?.lucky_failed;
+      play(failed ? 'lose' : 'lucky');
+      setToast({ ok: !failed, text: r.message });
       await refresh();
     } catch (e) {
       setToast({ ok: false, text: errorText(e) });
@@ -272,6 +276,10 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
   };
 
   const arranging = phase === 'ARRANGING' && !!session?.my_cards && !session.my_submission;
+  useEffect(() => {
+    if (arranging && arrangeSecondsLeft <= 1) flushDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arranging, arrangeSecondsLeft]);
 
   // ---- The same in-game sequence as Single Player (Multiplayer's own server rules) ----
   // Seats seen from you, numbered like Single Player's: 1 you, 2 left, 3 top, 4 right (clockwise).
@@ -433,7 +441,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
             offline={!p.is_connected}
             glow={revealed && !revealing && num(r?.net) > 0}
             cards={a ? { kind: 'rows', rows: { front: a.front, middle: a.middle, back: a.back }, labels: a.labels ?? null, outcomes: r?.lanes ?? null, ...showFor(p.seat) } : dealt ? { kind: 'backs' } : { kind: 'empty' }}
-            extra={a ? <HandBadges lucky={a.lucky_type} foul={a.is_foul} /> : undefined}
+            extra={a ? <HandBadges lucky={a.lucky_type} foul={a.is_foul} failed={a.lucky_failed} /> : undefined}
           />
         );
       })}
@@ -479,7 +487,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
             banker={iBank}
             glow={revealed && !revealing && num(myResult?.net) > 0}
             cards={mine ? { kind: 'rows', rows: { front: mine.front, middle: mine.middle, back: mine.back }, labels: mine.labels ?? null, outcomes: myResult?.lanes ?? null, ...showFor(mySeat) } : undefined}
-            extra={mine ? <HandBadges lucky={mine.lucky_type} foul={mine.is_foul} /> : undefined}
+            extra={mine ? <HandBadges lucky={mine.lucky_type} foul={mine.is_foul} failed={mine.lucky_failed} /> : undefined}
           >
             {phase === 'BETTING' && session?.can_bet && betSecondsLeft > 0 ? (
               <div className="flex flex-col gap-2" role="group" aria-label="Bet chips">

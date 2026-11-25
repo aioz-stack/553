@@ -217,25 +217,28 @@ test('closing betting auto-bets the minimum for connected players and sits out t
         ->and(GameCard::query()->where('game_session_id', $session->id)->where('user_id', $offline->id)->exists())->toBeFalse();
 });
 
-test('lucky hand: validated against the dealt cards and paid 2x as a lucky bonus', function () {
+test('lucky hand: validated against the dealt cards; valid pays 2× bet, a false declaration costs 2× bet', function () {
     $room = bankerRoom(GameMode::Banker);
     [$table, [$banker, $p1, $p2]] = startMatch($room, 3);
     $session = currentRound($table);
     $this->match->placeBet($p1, $session, 2_000);
     $this->match->placeBet($p2, $session, 1_000);
 
-    // Fake a lucky deal for p1 (six pairs), keeping the 52-card deck unique within the round.
-    $lucky = ['2C', '2D', '5H', '5S', '7C', '7D', '9H', '9S', 'JC', 'JD', 'KH', 'KS', 'AC'];
+    // Fake a lucky deal for p1 (3-Straight), keeping the 52-card deck unique within the round.
+    $lucky = ['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'JH', 'QS', 'KC'];
     $cards = GameCard::query()->where('game_session_id', $session->id)->get()->keyBy('user_id');
     $others = array_values(array_diff(Deck::ordered(), $lucky));
     $cards[$p1->id]->update(['cards' => $lucky]);
     $cards[$banker->id]->update(['cards' => array_slice($others, 0, 13)]);
     $cards[$p2->id]->update(['cards' => array_slice($others, 13, 13)]);
 
-    expect(fn () => $this->match->declareLucky($p2, $session->fresh(), $this->engine))->toThrow(BusinessRuleException::class, 'do not form');
+    // p2 holds no Lucky Hand but declares anyway: accepted, locked, and penalised in settlement.
+    $false = $this->match->declareLucky($p2, $session->fresh(), $this->engine);
+    expect($false->lucky_failed)->toBeTrue()->and($false->lucky_type)->toBeNull()->and($false->is_foul)->toBeFalse();
+    expect(fn () => $this->match->declareLucky($p2, $session->fresh(), $this->engine))->toThrow(BusinessRuleException::class, 'already locked in');
 
     $state = app(GameStatePresenter::class)->session($session->fresh(), $p1);
-    expect($state['my_lucky']['type'])->toBe('six_pairs');
+    expect($state['my_lucky']['type'])->toBe('three_straights');
 
     $this->match->declareLucky($p1, $session->fresh(), $this->engine);
 
@@ -251,7 +254,12 @@ test('lucky hand: validated against the dealt cards and paid 2x as a lucky bonus
     playRound($table);
     $result = GameResult::query()->where('game_session_id', $session->id)->where('user_id', $p1->id)->first();
 
-    expect($result->lucky_type)->toBe('six_pairs')
+    $p2Result = GameResult::query()->where('game_session_id', $session->id)->where('user_id', $p2->id)->first();
+    expect($p2Result->lucky_failed)->toBeTrue()->and($p2Result->net_amount)->toBe(-2_000);
+    $public = collect(app(GameEngine::class)->publicResults($session->fresh()))->keyBy('user_id');
+    expect($public[$p2->id]['penalty'])->toBe('false_lucky')->and($public[$p1->id]['penalty'])->toBeNull();
+
+    expect($result->lucky_type)->toBe('three_straights')
         ->and($result->net_amount)->toBe(4_000)
         ->and($result->lucky_bonus)->toBe(4_000)
         ->and((int) WalletTransaction::query()->where('type', TransactionType::LuckyBonus->value)->where('game_session_id', $session->id)->sum('amount'))->toBe(4_000 + 4_000);

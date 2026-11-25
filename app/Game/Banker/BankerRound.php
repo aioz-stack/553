@@ -18,8 +18,9 @@ use App\Game\Scorer;
  * Banker advantage (optional, $bankerWinsTies): an identical lane is won by
  * the banker instead of tying, so every lane has a winner.
  *
- * Fouls: a fouled hand loses every lane against a valid hand; two fouled
- * hands tie every lane.
+ * Misarranged (fouled) hands: one loses every lane against a valid hand (= 2 × bet, the
+ * misarrangement penalty); two misarranged hands tie every lane (the two penalties cancel),
+ * even with banker advantage.
  *
  * Lucky Hands replace the lane comparison: a lucky player vs a non-lucky
  * banker wins `luckyMultiplier` × bet; a lucky banker vs a non-lucky player
@@ -97,7 +98,8 @@ final class BankerRound
 
                 foreach (Scorer::POSITIONS as $position) {
                     $lanes[$position] = match (true) {
-                        $myFoul && $bankerFoul => $this->bankerWinsTies ? -1 : 0,
+                        // Both misarranged: each pays the other 2 × bet — they cancel out.
+                        $myFoul && $bankerFoul => 0,
                         $myFoul => -1,
                         $bankerFoul => 1,
                         default => $this->laneOutcome($mine->value($position)->compare($banker->value($position))),

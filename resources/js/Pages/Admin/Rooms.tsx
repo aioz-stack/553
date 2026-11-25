@@ -164,7 +164,7 @@ export default function Rooms() {
               </Field>
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <input type="checkbox" checked={form.lucky_hands_enabled} onChange={(e) => setForm({ ...form, lucky_hands_enabled: e.target.checked })} />
-                Lucky Hands (six pairs, three flushes, three straights pay 2×)
+                Lucky Hands (No Faces, 3-Straight, 3-Flushes, 6 Pairs: valid pays 2× bet, a false declaration costs 2× bet)
               </label>
             </>
           )}
@@ -188,12 +188,6 @@ export default function Rooms() {
             </Select>
           </Field>
           <Field label="Arrangement timer (seconds)" error={errors.arrangement_seconds}><Input value={form.arrangement_seconds} onChange={set('arrangement_seconds')} inputMode="numeric" /></Field>
-          <Field label="When the timer expires" error={errors.timeout_policy}>
-            <Select value={form.timeout_policy} onChange={set('timeout_policy')}>
-              <option value="auto_arrange">Auto-arrange missing hands</option>
-              <option value="foul">Treat missing hands as fouls</option>
-            </Select>
-          </Field>
           <Field label="Visibility">
             <Select value={form.visibility} onChange={set('visibility')}>
               <option value="public">Public</option>
@@ -207,10 +201,9 @@ export default function Rooms() {
               <option value="maintenance">Maintenance</option>
             </Select>
           </Field>
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input type="checkbox" checked={form.allow_foul_submission} onChange={(e) => setForm({ ...form, allow_foul_submission: e.target.checked })} />
-            Allow players to submit fouled arrangements
-          </label>
+          <p className="text-sm text-gray-500 md:col-span-2 dark:text-gray-400">
+            When the timer runs out each player's arrangement is submitted exactly as it is. Misarranged hands can always be submitted and cost 2× the bet.
+          </p>
           <div className="md:col-span-2">
             <Button type="submit">{editing ? 'Save changes' : 'Create room'}</Button>
           </div>
