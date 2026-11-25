@@ -1879,3 +1879,32 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   enforces those amounts and 2× the bet. Unchanged.
 - The waiting room still has its "Your Bet" chips; unchanged.
 - Test: `lobby/page.test.tsx`: no bet buttons, requirements shown, join request without a bet.
+
+## Betting timeout: automatic minimum bet (AUTO / MANUAL)
+
+- When the betting timer runs out (`CloseBetting` job at the deadline, plus the `pusoy:sweep` fallback; the
+  server decides, never the browser), every participant who has not bet gets the **minimum bet of the table's
+  entry tier**: 100 Chips → 5, 500 → 20, 1,000 → 50. Before this it used the waiting-room bet. The player is
+  dealt in and plays the round normally.
+- **Same checks as a manual bet:**
+  - 2× the bet in Chips (wallet locked)
+  - the banker can cover it
+  - only the tier's chips
+- **Exactly once:** the round row is locked, a player can only have one bet per round, and the ledger
+  idempotency keys are per player and round. Firing the timeout again, or a late manual tap, changes nothing:
+  manual bets after the deadline are refused with `betting_closed`.
+- **Recorded as AUTO:**
+  - `game_bets.is_auto`
+  - ledger metadata `bet_type: AUTO|MANUAL`, with the round, table, amount and time, and a reason starting
+    "Auto-bet (time expired)"
+  - the `player.bet` event, and the game state: `my_bet_type`, each player's `bet_type`
+- **Cannot afford the minimum:** no bet is placed, and the player sits that round out (as before). The reason is
+  kept with the round (`config.auto_bet_skipped`), sent to the player (`bet.auto_skipped`) and shown in the game
+  state (`my_auto_bet_skipped`).
+- Players who are offline at the deadline are still not auto-bet (unchanged; the missed-rounds rule applies).
+- **Mobile table:**
+  - a one-time notice per round: "Time expired — minimum bet of N chips automatically placed." (or "Time
+    expired — no automatic bet: …")
+  - "(auto)" on the bet pill, your panel, the arrangement popup and other players' seat status
+- Tests: `LobbyEntryTest` (all three tiers, manual vs auto, a late tap, a duplicate timeout, ledger and state,
+  the can't-afford case) and `MultiplayerTable.test` (notice, "(auto)", the skipped message).

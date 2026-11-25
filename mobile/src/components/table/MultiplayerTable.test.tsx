@@ -114,6 +114,22 @@ describe('Multiplayer in-game table', () => {
     expect(within(group).getByRole('status')).toHaveTextContent('You need 10 Chips (2× the smallest bet) to bet');
   });
 
+  it('betting timeout: says the minimum bet was placed automatically and marks it (auto)', async () => {
+    const auto = session({ can_bet: false, my_bet: '5.00', my_bet_type: 'AUTO', players: PLAYERS.map((p) => (p.user_id === 11 ? { ...p, bet: '15.00', bet_type: 'MANUAL' } : p.user_id === 12 ? { ...p, bet: '5.00', bet_type: 'AUTO' } : p)) });
+    render(<MultiplayerTable {...props(table(), auto)} betSecondsLeft={0} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Time expired — minimum bet of 5 chips automatically placed.');
+    expect(screen.getByLabelText('Current bet')).toHaveTextContent('Bet: 5 Chips (auto)');
+    expect(screen.getByText(/minimum bet of 5 Chips placed automatically/)).toBeInTheDocument();
+    // Other players' manual bets are not marked.
+    expect(screen.getByText('Bet 15')).toBeInTheDocument();
+  });
+
+  it('betting timeout without enough Chips: no bet, and the player is told why', async () => {
+    render(<MultiplayerTable {...props(table(), session({ can_bet: false, my_bet: null, my_auto_bet_skipped: 'You need 10.00 CH available to cover a 5.00 bet (2× reserve).' }))} betSecondsLeft={0} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Time expired — no automatic bet: You need 10.00 CH available to cover a 5.00 bet (2× reserve).');
+    expect(screen.getByLabelText('Current bet')).toHaveTextContent('Bet: —');
+  });
+
   it("shows the server's refusal of a bet", async () => {
     apiMock.mockImplementation((path?: string) => (path?.endsWith('/bet') ? Promise.reject(new Error("Choose one of this table's chips: 5.00, 10.00, 15.00 Chips.")) : Promise.resolve({})));
     render(<MultiplayerTable {...props(table(), session())} />);

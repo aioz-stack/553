@@ -411,7 +411,7 @@ class BankerMatchService
             }
 
             $escrow = $this->wallets->escrow($currency);
-            $meta = ['table_id' => $session->game_table_id, 'round' => $session->round_number, 'bet' => $amount];
+            $meta = ['table_id' => $session->game_table_id, 'round' => $session->round_number, 'bet' => $amount, 'bet_type' => $auto ? 'AUTO' : 'MANUAL'];
 
             $playerTx = $this->ledger->transfer(new TransferRequest(
                 type: TransactionType::GameEntry,
@@ -419,7 +419,7 @@ class BankerMatchService
                 source: $locked[$playerWallet->id],
                 destination: $escrow,
                 amount: $reserve,
-                reason: "Bet {$this->fmt($amount, $currency)} round {$session->round_number} (2× reserve)",
+                reason: ($auto ? 'Auto-bet (time expired) ' : 'Bet ')."{$this->fmt($amount, $currency)} round {$session->round_number} (2× reserve)",
                 actor: $user,
                 idempotencyKey: "bet:{$session->id}:{$user->id}",
                 relatedPlayerId: $user->id,
@@ -470,6 +470,7 @@ class BankerMatchService
                 'user_id' => $user->id,
                 'amount' => Points::decimal($amount),
                 'is_auto' => $auto,
+                'bet_type' => $auto ? 'AUTO' : 'MANUAL',
             ]));
             $this->walletUpdated([$user->id, $banker->id], $currency);
 
@@ -500,26 +501,33 @@ class BankerMatchService
 
             $bet = GameBet::query()->where('game_session_id', $session->id)->pluck('user_id')->all();
             $connected = GamePlayer::query()->where('game_table_id', $session->game_table_id)->where('is_connected', true)->pluck('user_id')->all();
+            $skipped = [];
 
             foreach (array_diff($session->config['participants'] ?? [], $bet) as $userId) {
                 if (! in_array($userId, $connected, true)) {
                     continue;
                 }
 
-                // Lobbies: the bet the player selected (when it is one of the round's chips).
+                // Timeout: the minimum bet of the table's entry tier (100 → 5 · 500 → 20 · 1,000 → 50),
+                // checked like any bet (2× in the wallet, the banker's cover). Once per player and round:
+                // the session row is locked and placeBet refuses a second bet.
                 $auto = (int) $session->config['min_bet'];
-                $selected = (int) GamePlayer::query()->where('game_table_id', $session->game_table_id)->where('user_id', $userId)->value('selected_bet');
-                if ($selected > 0 && in_array($selected, array_map('intval', $session->config['bet_chips'] ?? []), true)) {
-                    $auto = $selected;
-                }
                 try {
                     $this->placeBet(User::query()->findOrFail($userId), $session, $auto, auto: true);
-                } catch (BusinessRuleException) {
-                    // cannot afford / banker cannot cover: sits this round out
+                } catch (BusinessRuleException $e) {
+                    // Cannot afford it / the banker cannot cover it: the player sits this round out, and is told why.
+                    $skipped[$userId] = $e->getMessage();
                 }
             }
 
             $session->refresh();
+            if ($skipped !== []) {
+                // Kept with the round, so each player's screen can say why no automatic bet was placed.
+                $session->forceFill(['config' => $session->config + ['auto_bet_skipped' => $skipped]])->save();
+                foreach ($skipped as $userId => $why) {
+                    event(new \App\Events\Game\UserEvent((int) $userId, 'bet.auto_skipped', ['session_id' => $session->id, 'message' => $why]));
+                }
+            }
 
             if (! GameBet::query()->where('game_session_id', $session->id)->exists()) {
                 $session->forceFill(['status' => GameStatus::Cancelled, 'cancelled_at' => now(), 'cancel_reason' => 'no_bets', 'seed_revealed' => true])->save();

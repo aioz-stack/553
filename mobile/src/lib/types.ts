@@ -85,6 +85,8 @@ export interface SeatPlayer {
   has_submitted?: boolean;
   is_banker?: boolean;
   bet?: string | null;
+  /** AUTO: placed by the server at the betting timeout (the tier's minimum); MANUAL: chosen. */
+  bet_type?: 'AUTO' | 'MANUAL' | null;
   declared_lucky?: boolean;
   banker_rounds?: number;
 }
@@ -172,6 +174,9 @@ export interface SessionState {
   round_number?: number;
   banker_user_id?: number | null;
   my_bet?: string | null;
+  my_bet_type?: 'AUTO' | 'MANUAL' | null;
+  /** Why no automatic bet was placed for you at the timeout (e.g. not 2× the minimum in Chips). */
+  my_auto_bet_skipped?: string | null;
   my_lucky?: { type: string; label: string } | null;
   can_bet?: boolean;
   pot: string;

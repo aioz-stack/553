@@ -199,7 +199,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
     }
     if (phase === 'BETTING') {
       if (p.user_id === bankerId) return <span className="text-[#9fe0ff]">Covering bets</span>;
-      return p.bet ? <span className="text-[#7dffa0]">Bet {fmt(num(p.bet))}</span> : <span className="text-white/80">Betting…</span>;
+      return p.bet ? <span className="text-[#7dffa0]">Bet {fmt(num(p.bet))}{p.bet_type === 'AUTO' ? ' (auto)' : ''}</span> : <span className="text-white/80">Betting…</span>;
     }
     if (phase === 'ARRANGING' || phase === 'SUBMITTED') {
       return p.has_submitted ? <span className="text-[#7dffa0]">✓ Ready</span> : <span className="text-white/80">Arranging…</span>;
@@ -257,6 +257,20 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
   };
 
   const arranging = phase === 'ARRANGING' && !!session?.my_cards && !session.my_submission;
+  // The server placed your bet at the betting timeout (the entry tier's minimum).
+  const autoBet = session?.my_bet_type === 'AUTO';
+  // Tell the player once per round what the timeout did: an automatic minimum bet, or why none was placed.
+  const autoNoticed = useRef<number | null>(null);
+  useEffect(() => {
+    if (!session || autoNoticed.current === session.id) return;
+    if (session.my_bet_type === 'AUTO' && session.my_bet) {
+      autoNoticed.current = session.id;
+      setToast({ ok: true, text: `Time expired — minimum bet of ${fmt(num(session.my_bet))} chips automatically placed.` });
+    } else if (session.my_auto_bet_skipped) {
+      autoNoticed.current = session.id;
+      setToast({ ok: false, text: `Time expired — no automatic bet: ${session.my_auto_bet_skipped}` });
+    }
+  }, [session]);
   const leaveAllowed = !session || ['COMPLETED', 'CANCELLED'].includes(phase) || matchOver;
   const bankerName = banker ? (banker.is_you ? 'You' : banker.name) : '…';
 
@@ -304,7 +318,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
         <div className="flex h-full items-center gap-2 rounded-[19px] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-3">
           <ChipIcon size={50} />
           <span className="flex-1 truncate text-center font-display text-[28px] font-black text-white drop-shadow-[0_2px_0_#3a0204]" aria-label="Current bet">
-            {iBank ? (covering > 0 ? `Covering ${fmt(covering)}` : 'Banker · no bet') : session?.my_bet ? `Bet: ${fmt(num(session.my_bet))} Chips` : 'Bet: —'}
+            {iBank ? (covering > 0 ? `Covering ${fmt(covering)}` : 'Banker · no bet') : session?.my_bet ? `Bet: ${fmt(num(session.my_bet))} Chips${autoBet ? ' (auto)' : ''}` : 'Bet: —'}
           </span>
         </div>
       </div>
@@ -431,7 +445,9 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
                       ? iBank
                         ? `You are the banker — covering ${fmt(covering)} Chips`
                         : session?.my_bet
-                          ? `Bet ${fmt(num(session.my_bet))} Chips — waiting for the deal`
+                          ? autoBet
+                            ? `Time expired — minimum bet of ${fmt(num(session.my_bet))} Chips placed automatically`
+                            : `Bet ${fmt(num(session.my_bet))} Chips — waiting for the deal`
                           : betSecondsLeft <= 0 ? 'Betting closed — dealing…' : 'Sitting out this round'
                       : revealed
                         ? `Match total ${signed(num(standingOf(userId)?.net))} Chips · round ${round} of ${total}`
@@ -465,7 +481,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
           tierName={`${table.room.name} · R${round}/${total} · ${bankerName === 'You' ? 'You bank' : `${bankerName} banks`} · ${arrangeSecondsLeft}s`}
           bet={num(session.my_bet)}
           betLabel={iBank ? `Covering ${fmt(covering)}` : undefined}
-          betText={(b) => `Bet: ${fmt(b)} Chips`}
+          betText={(b) => `Bet: ${fmt(b)} Chips${autoBet ? ' (auto)' : ''}`}
           previewPath={`/games/${session.id}/preview`}
           hud={
             <div className="lx-gold absolute left-[1080px] top-[668px] z-10 w-[330px] rounded-[26px] p-[4px]" aria-label="Chips wallet">

@@ -204,3 +204,62 @@ test('in the actual game each tier accepts only its own bets; other amounts, 2×
             ->and(\App\Models\GameBet::query()->where('game_session_id', $session->id)->where('user_id', $players[0]->id)->value('amount'))->toBe($allowed[1] * 100);
     }
 });
+
+test('betting timeout: the server auto-bets the tier minimum (5 / 20 / 50) exactly once, recorded as AUTO', function () {
+    foreach ([100 => 500, 500 => 2_000, 1000 => 5_000] as $entry => $min) {
+        [$owner, $room, $others] = lbFull($this, ['min_entry' => $entry, 'name' => "Auto {$entry}"]);
+        // Every player selected the biggest bet in the waiting room: the timeout still uses the minimum.
+        foreach ([$owner, ...$others] as $p) {
+            $this->actingAs($p, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/bet", ['bet' => number_format(max($entry === 100 ? [5, 10, 15] : ($entry === 500 ? [20, 30, 40] : [50, 75, 100])), 2, '.', '')])->assertOk();
+        }
+        $table = lbStart($this, [$owner, ...$others], $room);
+        $session = \App\Models\GameSession::query()->find($table->fresh()->current_session_id);
+        $players = collect([$owner, ...$others])->reject(fn ($u) => $u->id === $session->banker_user_id)->values();
+
+        // One player bets by hand in time; the others let the timer run out.
+        $manual = $players[0];
+        $this->actingAs($manual, 'sanctum')->postJson("/api/v1/games/{$session->id}/bet", ['amount' => number_format($min / 100 * 2, 2, '.', '')])->assertCreated();
+        $this->travel(((int) $session->config['betting_seconds']) + 2)->seconds();
+        // A late manual bet is refused; the timeout job may fire more than once.
+        $this->actingAs($players[1], 'sanctum')->postJson("/api/v1/games/{$session->id}/bet", ['amount' => number_format($min / 100, 2, '.', '')])->assertStatus(409);
+        app(BankerMatchService::class)->closeBetting($session->fresh());
+        app(BankerMatchService::class)->closeBetting($session->fresh(), true);
+
+        $bets = \App\Models\GameBet::query()->where('game_session_id', $session->id)->get()->keyBy('user_id');
+        expect($bets)->toHaveCount(3)
+            ->and($bets[$manual->id]->is_auto)->toBeFalse()->and($bets[$manual->id]->amount)->toBe($min * 2);
+        foreach ($players->slice(1) as $p) {
+            expect($bets[$p->id]->is_auto)->toBeTrue()->and($bets[$p->id]->amount)->toBe($min);
+        }
+        // Ledger: AUTO / MANUAL with player, round and time.
+        $tx = WalletTransaction::query()->where('game_session_id', $session->id)->where('related_player_id', $players[1]->id)->where('idempotency_key', "bet:{$session->id}:{$players[1]->id}")->sole();
+        expect($tx->metadata['bet_type'])->toBe('AUTO')->and($tx->metadata['round'])->toBe(1)->and($tx->reason)->toStartWith('Auto-bet (time expired)');
+        expect(WalletTransaction::query()->where('idempotency_key', "bet:{$session->id}:{$manual->id}")->sole()->metadata['bet_type'])->toBe('MANUAL');
+
+        // The game state says so: AUTO for you and for others' seats.
+        $state = $this->actingAs($players[1], 'sanctum')->getJson("/api/v1/games/{$session->id}")->assertOk()->json('data');
+        expect($state['my_bet'])->toBe(number_format($min / 100, 2, '.', ''))->and($state['my_bet_type'])->toBe('AUTO')
+            ->and(collect($state['players'])->firstWhere('user_id', $manual->id)['bet_type'])->toBe('MANUAL');
+        app(BankerMatchService::class)->end($table->fresh(), 'test_done');
+    }
+});
+
+test('betting timeout: a player without 2× the minimum bet is not auto-bet, sits the round out and is told why', function () {
+    [$owner, $room, $others] = lbFull($this, ['min_entry' => 100]);
+    $table = lbStart($this, [$owner, ...$others], $room);
+    $session = \App\Models\GameSession::query()->find($table->fresh()->current_session_id);
+    $poor = collect($others)->first(fn ($u) => $u->id !== $session->banker_user_id);
+    // 9.99 Chips: below 2 × 5.
+    $w = app(\App\Services\Wallet\WalletService::class)->for($poor, Currency::CH);
+    app(\App\Services\Wallet\LedgerService::class)->transfer(new \App\Services\Wallet\TransferRequest(TransactionType::ManualAdjustment, Currency::CH, $w, null, $w->fresh()->balance - 999, 'drain'));
+
+    $this->travel(((int) $session->config['betting_seconds']) + 2)->seconds();
+    app(BankerMatchService::class)->closeBetting($session->fresh());
+
+    expect(\App\Models\GameBet::query()->where('game_session_id', $session->id)->where('user_id', $poor->id)->exists())->toBeFalse()
+        ->and(\App\Models\GameBet::query()->where('game_session_id', $session->id)->count())->toBe(2)
+        ->and((int) $w->fresh()->balance)->toBe(999);
+    $this->actingAs($poor, 'sanctum')->getJson("/api/v1/games/{$session->id}")->assertOk()
+        ->assertJsonPath('data.my_bet', null)
+        ->assertJsonPath('data.my_auto_bet_skipped', fn ($m) => is_string($m) && str_contains($m, '10.00'));
+});

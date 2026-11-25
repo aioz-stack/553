@@ -101,6 +101,7 @@ class GameStatePresenter
 
         $isBanker = $session->isBankerRound();
         $bets = $isBanker ? GameBet::query()->where('game_session_id', $session->id)->pluck('amount', 'user_id') : collect();
+        $autoBets = $isBanker ? GameBet::query()->where('game_session_id', $session->id)->where('is_auto', true)->pluck('user_id')->all() : [];
         $luckyIds = $isBanker ? GameSubmission::query()->where('game_session_id', $session->id)->whereNotNull('lucky_type')->pluck('user_id')->all() : [];
 
         // Before the deal (betting) the round's players are the banker plus the
@@ -114,7 +115,7 @@ class GameStatePresenter
                 ->map(fn (GamePlayer $p) => ['user' => $p->user, 'seat' => $p->seat]);
         }
 
-        $players = $roster->map(function (array $row) use ($viewer, $submittedIds, $session, $bets, $luckyIds) {
+        $players = $roster->map(function (array $row) use ($viewer, $submittedIds, $session, $bets, $luckyIds, $autoBets) {
             $user = $row['user'];
             $seat = GamePlayer::query()->where('game_table_id', $session->game_table_id)->where('user_id', $user->id)->first();
 
@@ -128,6 +129,8 @@ class GameStatePresenter
                 'is_connected' => $seat?->is_connected ?? false,
                 'is_banker' => $session->banker_user_id === $user->id,
                 'bet' => isset($bets[$user->id]) ? Points::decimal((int) $bets[$user->id]) : null,
+                // AUTO when the server placed the minimum bet at the betting timeout, MANUAL when chosen.
+                'bet_type' => isset($bets[$user->id]) ? (in_array($user->id, $autoBets, true) ? 'AUTO' : 'MANUAL') : null,
                 // A declaration is announced live; its cards stay hidden until the reveal.
                 'declared_lucky' => in_array($user->id, $luckyIds, true),
             ];
@@ -156,6 +159,9 @@ class GameStatePresenter
             'round_number' => $session->round_number,
             'banker_user_id' => $session->banker_user_id,
             'my_bet' => isset($bets[$viewer->id]) ? Points::decimal((int) $bets[$viewer->id]) : null,
+            'my_bet_type' => isset($bets[$viewer->id]) ? (in_array($viewer->id, $autoBets, true) ? 'AUTO' : 'MANUAL') : null,
+            // Why no automatic bet was placed for you at the timeout (e.g. not 2× the minimum bet in Chips).
+            'my_auto_bet_skipped' => $config['auto_bet_skipped'][$viewer->id] ?? $config['auto_bet_skipped'][(string) $viewer->id] ?? null,
             'my_lucky' => $myLucky,
             'can_bet' => $isBanker && $session->status === GameStatus::Betting && $viewer->id !== $session->banker_user_id
                 && in_array($viewer->id, $config['participants'] ?? [], true) && ! isset($bets[$viewer->id]),
