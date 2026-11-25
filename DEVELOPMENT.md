@@ -1827,3 +1827,39 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
     waiting room's Leave, with live updates to the other players. Then it goes Home.
 - Tests: `lobby/page.test.tsx` covers Chips display only, no Ranking / Rewards, Shop below Friends opening the
   Shop, Leave going Home, and the confirmation with Stay / Leave calling the server.
+
+## Web Settings: Signed-in Devices removed
+
+- The web app's Settings page (`resources/js/Pages/Account/Settings.tsx`, shared by every web role) no longer has
+  the "Signed-in mobile devices" card. Its device list, Sign out button, data loading and Device type were
+  removed; the page keeps Appearance (dark mode, time zone) and its layout.
+- The section had no route or menu item of its own, so nothing else is reachable.
+- The device API (`/api/v1/auth/devices…`) stays: the mobile app's own Settings → Devices screen and push
+  notifications still use it.
+
+## Players can sign in to the Web App
+
+- `PlatformAccess::allowsWeb()` now allows every role. Players sign in at `/` (POST `/login`) with their username
+  and password and land on the **player dashboard** (`/dashboard`).
+  - The dashboard shows Chips, Gold, games played and total score; the menu has Game Lobby, Game Rooms, Game
+    History, Leaderboard, Wallet, Transactions, Notifications, Profile and Settings.
+  - Logout invalidates the session and returns to the login page.
+- **Unchanged checks:**
+  - wrong credentials ("The provided credentials do not match our records.")
+  - pending / suspended / banned / archived accounts
+  - the Admin "player sign-in" switch, which now also applies to the web sign-in
+  - the session is regenerated on login, and `last_login_at` is recorded
+  - throttling on `/login`
+- Players can never reach the Admin, Incorporator / Master Agent or Loader panels. The pages and their APIs answer
+  403 through the `staff` / `agent` / `loader` gates, and the services check again.
+- The Mobile Game is unchanged: players only. Staff and agents remain web only.
+- The registration message now says players can sign in on the web or in the app.
+- Revenue Logs search: `SB…` searches a transaction ID; a plain number searches a player ID (it used to match both).
+- Tests: `PlatformAccessTest`:
+  - the login matrix
+  - player web login, dashboard and logout
+  - wrong / pending credentials
+  - panels refused for players
+  - the switch applies to the web
+
+  `RevenueHistoryTest` now uses a fixed admin username so the numeric search test is deterministic.

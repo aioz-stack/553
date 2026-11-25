@@ -12,7 +12,11 @@ use Laravel\Sanctum\PersonalAccessToken;
  * | Role                                          | Web App (session) | Mobile Game (app token) |
  * | Super Admin, Administrator, Loader (staff)    | allowed           | blocked                 |
  * | Incorporator, Master Agent                    | allowed           | blocked                 |
- * | Player                                        | blocked           | allowed                 |
+ * | Player                                        | allowed           | allowed                 |
+ *
+ * Players sign in to the Web App too, and land on the player dashboard. They still never reach the
+ * Admin, Incorporator / Master Agent or Loader panels: those pages and APIs are guarded by the
+ * staff / agent / loader gates (and the services check again).
  *
  * The platform is how the account is signed in, not anything the request claims: the Web App
  * uses the browser session (POST /login), the Mobile Game a Sanctum app token
@@ -35,10 +39,10 @@ final class PlatformAccess
         return (bool) config('pusoy.features.platform_lock', true);
     }
 
-    /** May this account use the Web App (browser session)? */
+    /** May this account use the Web App (browser session)? Every role, players included. */
     public static function allowsWeb(User $user): bool
     {
-        return ! self::enabled() || ! $user->isPlayer();
+        return true;
     }
 
     /** May this account use the Mobile Game (app token)? */

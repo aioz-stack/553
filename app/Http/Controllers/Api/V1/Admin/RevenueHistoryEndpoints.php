@@ -44,12 +44,15 @@ trait RevenueHistoryEndpoints
         $this->dateRange($query, 'key_exchanges.created_at', $data);
 
         if ($term = trim((string) ($data['q'] ?? ''))) {
-            $id = $this->numericId($term, 'SB');
-            $query->where(function (Builder $w) use ($term, $id) {
+            // "SB00000012" finds that transaction; a plain number is a player ID.
+            $txId = stripos($term, 'SB') === 0 ? $this->numericId($term, 'SB') : null;
+            $playerId = $txId === null ? $this->numericId($term, '') : null;
+            $query->where(function (Builder $w) use ($term, $txId, $playerId) {
                 $w->where('key_exchanges.player_username', 'like', "%{$term}%")
                     ->orWhereHas('user', fn (Builder $u) => $u->where('username', 'like', "%{$term}%"))
                     ->orWhere('key_exchanges.hierarchy', 'like', '%"username":"%'.str_replace(['%', '_'], ['\\%', '\\_'], $term).'%')
-                    ->when($id !== null, fn (Builder $x) => $x->orWhere('key_exchanges.id', $id)->orWhere('key_exchanges.user_id', $id));
+                    ->when($txId !== null, fn (Builder $x) => $x->orWhere('key_exchanges.id', $txId))
+                    ->when($playerId !== null, fn (Builder $x) => $x->orWhere('key_exchanges.user_id', $playerId));
             });
         }
 

@@ -21,6 +21,8 @@ beforeEach(fn () => $this->seed(RolesAndPermissionsSeeder::class));
 function rhTree($test): array
 {
     $admin = superAdmin();
+    // A fixed name: a random one could start with the digits a numeric ID search looks for.
+    $admin->forceFill(['username' => 'rhadmin'])->save();
     $refs = app(ReferralService::class);
     $join = fn (string $code, string $type, string $u) => $refs->approve($admin, $refs->register(['name' => $u, 'username' => $u, 'email' => "{$u}@t.test", 'password' => 'secret123'], $code, $type));
     $incA = $join($refs->codeFor($admin), 'agent', 'rhinca');

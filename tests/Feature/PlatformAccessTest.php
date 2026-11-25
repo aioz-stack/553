@@ -1,10 +1,12 @@
 <?php
 
 use App\Enums\Role;
+use App\Enums\UserStatus;
 use App\Models\User;
 use App\Services\Users\ReferralService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
@@ -30,21 +32,15 @@ function paAccounts(): array
     return compact('super', 'admin', 'loader', 'agent', 'master', 'player');
 }
 
-test('login matrix: Web App for Admins, staff and every agent level; Mobile Game for Players only', function () {
+test('login matrix: Web App for every role (players included); Mobile Game for Players only', function () {
     $a = paAccounts();
 
     foreach ($a as $role => $user) {
         $isPlayer = $role === 'player';
 
-        // Web App (browser session).
-        $web = $this->post('/login', ['username' => $user->username, 'password' => 'secret123']);
-        if ($isPlayer) {
-            $web->assertSessionHasErrors('platform');
-            $this->assertGuest();
-        } else {
-            $web->assertRedirect('/dashboard');
-            $this->assertAuthenticatedAs($user);
-        }
+        // Web App (browser session): every role signs in and goes to /dashboard (players stay there).
+        $this->post('/login', ['username' => $user->username, 'password' => 'secret123'])->assertRedirect('/dashboard')->assertSessionHasNoErrors();
+        $this->assertAuthenticatedAs($user);
         $this->post('/logout');
         app('auth')->forgetGuards();
 
@@ -61,10 +57,26 @@ test('login matrix: Web App for Admins, staff and every agent level; Mobile Game
     }
 });
 
-test('the web refusal tells the player to use the mobile app', function () {
+test('a player signs in on the web, lands on the player dashboard, and can log out', function () {
     paAccounts();
-    $this->post('/login', ['username' => 'paplayer', 'password' => 'secret123'])
-        ->assertSessionHasErrors(['platform' => 'Player accounts can only access Pusoy553 through the official Mobile Game application.']);
+    $this->post('/login', ['username' => 'paplayer', 'password' => 'secret123'])->assertRedirect('/dashboard');
+    $this->get('/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page->component('Dashboard')->where('auth.user.role', 'player'));
+    expect(User::where('username', 'paplayer')->value('last_login_at'))->not->toBeNull();
+
+    $this->post('/logout')->assertRedirect('/');
+    $this->assertGuest();
+    $this->get('/dashboard')->assertRedirect('/');
+});
+
+test('wrong credentials, and pending players, are refused with a clear message', function () {
+    $a = paAccounts();
+    $this->post('/login', ['username' => 'paplayer', 'password' => 'wrong-pass'])->assertSessionHasErrors(['username' => 'The provided credentials do not match our records.']);
+    $this->post('/login', ['username' => 'nobody', 'password' => 'secret123'])->assertSessionHasErrors('username');
+    $this->assertGuest();
+
+    $a['player']->forceFill(['status' => UserStatus::Pending])->save();
+    $this->post('/login', ['username' => 'paplayer', 'password' => 'secret123'])->assertSessionHasErrors('username');
+    $this->assertGuest();
 });
 
 test('an app token of a non-player cannot be used (and is revoked); a player token works', function () {
@@ -83,12 +95,18 @@ test('an app token of a non-player cannot be used (and is revoked); a player tok
     $this->withToken($token)->getJson('/api/v1/wallet')->assertOk();
 });
 
-test('a player browser session cannot be used on the web or its API; staff sessions work', function () {
+test('a player web session works for player pages and its API, never for the Admin, agent or Loader panels', function () {
     $a = paAccounts();
 
-    $this->actingAs($a['player'])->get('/dashboard')->assertRedirect('/');
-    $this->assertGuest();
-    $this->actingAs($a['player'])->getJson('/api/v1/wallet')->assertForbidden()->assertJsonPath('error', 'mobile_only');
+    $this->actingAs($a['player'])->get('/dashboard')->assertOk();
+    $this->actingAs($a['player'])->get('/wallet')->assertOk();
+    $this->actingAs($a['player'])->getJson('/api/v1/wallet')->assertOk();
+    foreach (['/admin', '/admin/revenue-logs', '/admin/accounts/agents', '/agent', '/agent/revenue-logs', '/loader'] as $url) {
+        $this->actingAs($a['player'])->get($url)->assertForbidden();
+    }
+    foreach (['/api/v1/admin/panel/overview', '/api/v1/agent/panel/overview', '/api/v1/loader/panel/overview', '/api/v1/team/overview', '/api/v1/revenue'] as $url) {
+        $this->actingAs($a['player'])->getJson($url)->assertForbidden();
+    }
 
     $this->actingAs($a['super'])->get('/admin')->assertOk();
     $this->actingAs($a['master'])->get('/agent')->assertOk();
@@ -98,6 +116,12 @@ test('a player browser session cannot be used on the web or its API; staff sessi
 
 test('existing features keep working on the right platform: maintenance and the player switch still apply', function () {
     paAccounts();
+    // Player sign-in switched off: the web sign-in refuses players too.
+    config(['pusoy.features.player_login' => false]);
+    $this->post('/login', ['username' => 'paplayer', 'password' => 'secret123'])->assertSessionHasErrors(['username' => User::SIGN_IN_DISABLED_MESSAGE]);
+    $this->assertGuest();
+    config(['pusoy.features.player_login' => true]);
+
     $this->actingAs(User::query()->where('username', 'pasuper')->first())->putJson('/api/v1/admin/maintenance', ['mode' => 'mobile_game'])->assertOk();
     app('auth')->forgetGuards();
     $this->postJson('/api/v1/auth/login', ['username' => 'paplayer', 'password' => 'secret123', 'platform' => 'android'])->assertStatus(503);

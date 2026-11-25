@@ -39,7 +39,7 @@ class Register extends Controller
         );
 
         return redirect()->route('login')->with('success', $user->isPlayer() && \App\Support\PlatformAccess::enabled()
-            ? 'Registration received. Once an administrator approves your account, sign in with the Pusoy553 mobile app.'
+            ? 'Registration received. Once an administrator approves your account, sign in here or in the Pusoy553 mobile app.'
             : 'Registration received. You can sign in once an administrator approves your account.');
     }
 
