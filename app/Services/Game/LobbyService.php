@@ -11,6 +11,7 @@ use App\Events\Game\GameEvents;
 use App\Events\Game\LobbyEvent;
 use App\Events\Game\TableEvent;
 use App\Exceptions\BusinessRuleException;
+use App\Exceptions\InsufficientBalanceException;
 use App\Models\GameInvitation;
 use App\Models\GamePlayer;
 use App\Models\GameRoom;
@@ -29,10 +30,13 @@ use Illuminate\Support\Str;
  * on top of the existing rooms / tables / 12-round banker matches.
  *
  * - A lobby is a game_room with a public Lobby ID (`lobby_code`), an optional
- *   password (stored hashed; set = private lobby), a Minimum Entry (the Chips
- *   balance you must hold to enter — nothing is deducted on entry) and a
- *   Preparation Time (the arrangement timer). Game type: Banker Mode (the creator
- *   banks every round) or Round Bank (the creator banks first, then it rotates).
+ *   password (stored hashed; set = private lobby), an entry tier (Minimum Entry 100 / 500 /
+ *   1,000 Chips, each with its own three bets and Keys fee — LobbyEntryService) and a
+ *   Preparation Time (the arrangement timer). Round Bank is the only game type (the creator
+ *   banks first, then the banker rotates clockwise; Banker Mode can no longer be created).
+ * - Every player selects one of the tier's bets and must hold Chips ≥ the Minimum Entry and
+ *   ≥ 2× that bet, plus the Keys fee — checked on join, on Start and when the game starts. The
+ *   Keys are deducted only when the game starts (refunded if no round is ever completed).
  * - Exactly four players: the owner presses Start once all four are seated and
  *   the others are ready (`owner_starts`; tables never start on their own).
  * - Money is the existing banker-match money: each round's bets are held in
@@ -44,14 +48,8 @@ use Illuminate\Support\Str;
  */
 class LobbyService
 {
-    /** Minimum Entry choices, in Chips. */
-    public const MIN_ENTRIES = [100, 250, 500, 1000, 2000];
-
     /** Preparation Time choices (seconds to arrange the 13 cards). */
     public const PREPARATION_SECONDS = [30, 45, 60, 75];
-
-    /** Minimum bet = Minimum Entry ÷ this. */
-    public const ENTRY_TO_BET = 10;
 
     public const PER_PAGE = 5;
 
@@ -80,14 +78,21 @@ class LobbyService
     public function __construct(
         private readonly TableService $tables,
         private readonly WalletService $wallets,
+        private readonly LobbyEntryService $entry,
     ) {}
+
+    /** Minimum Entry choices (the entry tiers), in Chips. */
+    public static function minEntries(): array
+    {
+        return LobbyEntryService::minEntries();
+    }
 
     // ------------------------------------------------------------------
     // Create
     // ------------------------------------------------------------------
 
     /**
-     * @param  array{name: string, password?: ?string, game_mode: string, min_entry: int, preparation_seconds: int}  $data
+     * @param  array{name: string, password?: ?string, game_mode?: string, min_entry: int, preparation_seconds: int}  $data
      */
     public function create(User $user, array $data): GameRoom
     {
@@ -101,20 +106,20 @@ class LobbyService
                 throw new BusinessRuleException('Leave your current table before creating a lobby.', 409, 'already_seated');
             }
 
+            // The tier decides the bets and the Keys fee; Round Bank is the only game type.
+            $tier = LobbyEntryService::tier((int) $data['min_entry']);
             $minEntry = Points::toMinor((string) $data['min_entry']);
-            if ($this->wallets->for($user, Currency::CH)->balance < $minEntry) {
-                throw new BusinessRuleException('You need at least '.number_format($data['min_entry']).' Chips to create this lobby.', 422, 'insufficient_balance');
-            }
+            $bets = array_map(fn (int $b) => Points::toMinor((string) $b), $tier['bets']);
 
             $password = isset($data['password']) && $data['password'] !== '' ? $data['password'] : null;
-            $mode = GameMode::from($data['game_mode']);
+            $mode = GameMode::RoundBank;
 
             $room = GameRoom::create([
                 'name' => trim($data['name']),
                 'slug' => Str::slug($data['name']).'-'.Str::lower(Str::random(6)),
                 'description' => $mode->label().' lobby by '.$user->username,
                 'currency' => Currency::CH,
-                'entry_amount' => intdiv($minEntry, self::ENTRY_TO_BET),
+                'entry_amount' => min($bets),
                 'payout_mode' => 'winner_takes_all',
                 'game_mode' => $mode,
                 'rounds_total' => (int) config('pusoy.banker.rounds', 12),
@@ -131,13 +136,20 @@ class LobbyService
                 'lobby_code' => $this->newLobbyCode(),
                 'lobby_password' => $password ? Hash::make($password) : null,
                 'min_entry' => $minEntry,
+                'bet_options' => $bets,
+                'entry_keys' => $tier['keys'],
                 'owner_starts' => true,
                 'owner_id' => $user->id,
                 'created_by' => $user->id,
             ]);
 
-            // The creator takes seat 1 and is the lobby owner (and the first banker in both modes).
-            $this->tables->join($user, $room, $room->invite_code);
+            // The creator picks no bet (bets are chosen in the game each round); their wallet is checked
+            // against the tier's smallest bet like anyone joining (Keys are paid at the start).
+            $bet = min($bets);
+            $this->entry->assertCanPlay($user, $room, $bet, lock: true);
+
+            // The creator takes seat 1 and is the lobby owner (and the first banker).
+            $this->tables->join($user, $room, $room->invite_code)->forceFill(['selected_bet' => $bet])->save();
 
             return $room;
         });
@@ -218,6 +230,8 @@ class LobbyService
                 'my_lobby_id' => $mine,
                 'other_table_id' => $seat && ! $mine ? $seat->game_table_id : null,
                 'balance' => Points::decimal($this->wallets->for($user, Currency::CH)->balance),
+                'keys' => Points::decimal($this->wallets->for($user, Currency::KY)->balance),
+                'tiers' => $this->tierList(),
             ],
         ];
     }
@@ -254,6 +268,9 @@ class LobbyService
             'min_entry' => (int) intdiv((int) $room->min_entry, Points::SCALE),
             'min_bet' => Points::decimal($room->minBet()),
             'bet_chips' => array_map(fn (int $c) => Points::decimal($c), $room->betChips() ?? [$room->minBet()]),
+            // Keys each player pays when the game starts, and the Chips multiple of the bet to hold.
+            'key_fee' => (int) $room->entry_keys,
+            'bet_multiple' => LobbyEntryService::betMultiple(),
             'preparation_seconds' => $room->arrangement_seconds,
             'players' => $players,
             'max_players' => 4,
@@ -308,6 +325,7 @@ class LobbyService
                 'is_owner' => $p->user_id === $room->owner_id,
                 'is_banker' => $p->user_id === $bankerId,
                 'is_you' => $p->user_id === $user->id,
+                'bet' => Points::decimal(LobbyEntryService::betOf($room, $p)),
             ] : ['seat' => $seat, 'user_id' => null, 'state' => 'available'];
         }
 
@@ -331,7 +349,13 @@ class LobbyService
             'ready_count' => $players->where('is_ready', true)->count(),
             'countdown_ends_at' => $table?->countdown_ends_at?->toIso8601ZuluString('millisecond'),
             'server_time' => now()->toIso8601ZuluString('millisecond'),
-            'banker_rule' => $room->game_mode === GameMode::Banker ? 'The lobby owner banks every round.' : 'The lobby owner banks first; the banker then rotates clockwise each round.',
+            'banker_rule' => $room->game_mode === GameMode::Banker
+                ? 'The lobby owner banks every round.'
+                : 'Round Bank · 12 rounds: the owner banks first, then the banker rotates clockwise. A banker needs '.Points::format($room->bankerReserve()).' Chips (6× the '.Points::format($room->maxBet()).' maximum bet); players below that are skipped.',
+            'my_bet' => $seated ? Points::decimal(LobbyEntryService::betOf($room, $seated)) : null,
+            'my_required_chips' => $seated ? Points::decimal(LobbyEntryService::requiredChips($room, LobbyEntryService::betOf($room, $seated))) : null,
+            'my_chips' => Points::decimal($this->wallets->for($user, Currency::CH)->balance),
+            'my_keys' => Points::decimal($this->wallets->for($user, Currency::KY)->balance),
             'can_press_start' => $seated !== null && $allConfirmed && ! $inGame,
             'start_hint' => match (true) {
                 $table === null => 'This lobby is closed.',
@@ -349,7 +373,7 @@ class LobbyService
     // Join / Quick Join
     // ------------------------------------------------------------------
 
-    public function join(User $user, GameRoom $room, ?string $password = null): GamePlayer
+    public function join(User $user, GameRoom $room, ?string $password = null, ?int $bet = null): GamePlayer
     {
         $this->assertLobby($room);
         $this->assertPlayer($user);
@@ -358,6 +382,10 @@ class LobbyService
         if ($seat && $seat->table->game_room_id === $room->id) {
             return $seat; // already here: joining again changes nothing
         }
+
+        // The selected bet (the lobby's smallest when none is given) and the wallet / Keys checks.
+        $bet ??= min($room->betChips() ?? [$room->minBet()]);
+        $this->entry->assertCanPlay($user, $room, $bet);
 
         // A pending, unexpired invitation from a player in the lobby (Friends → Invite) lets you in
         // without the private lobby's password — that is what tapping the invitation notification does.
@@ -372,6 +400,7 @@ class LobbyService
 
         // TableService locks the player and the room, re-checks the seat count and the balance.
         $seat = $this->tables->join($user, $room, $room->invite_code);
+        $seat->forceFill(['selected_bet' => $bet])->save();
         GameInvitation::query()->where('game_room_id', $room->id)->where('invitee_id', $user->id)->where('status', 'pending')->update(['status' => 'accepted']);
 
         return $seat;
@@ -411,8 +440,16 @@ class LobbyService
             ->values();
 
         foreach ($candidates as $room) {
+            // Quick Join takes the lobby's smallest bet; skip lobbies whose Chips / Keys you lack.
+            $bet = min($room->betChips() ?? [$room->minBet()]);
+            if ($this->entry->problem($user, $room, $bet)) {
+                continue;
+            }
             try {
-                return $this->tables->join($user, $room, $room->invite_code);
+                $seat = $this->tables->join($user, $room, $room->invite_code);
+                $seat->forceFill(['selected_bet' => $bet])->save();
+
+                return $seat;
             } catch (BusinessRuleException $e) {
                 if (in_array($e->errorCode(), ['table_unavailable', 'room_closed'], true)) {
                     continue; // filled up or closed a moment ago: try the next one
@@ -421,7 +458,7 @@ class LobbyService
             }
         }
 
-        throw new BusinessRuleException('No open lobby matches your Chips right now — create one!', 404, 'no_lobby');
+        throw new BusinessRuleException('No open lobby matches your Chips and Keys right now — create one!', 404, 'no_lobby');
     }
 
     // ------------------------------------------------------------------
@@ -486,6 +523,10 @@ class LobbyService
             if ($ready && ($players->count() !== 4 || ! $players->every('seat_confirmed'))) {
                 throw new BusinessRuleException('All four players must confirm their seats first.', 409, 'seats_not_confirmed');
             }
+            // Your Chips (Minimum Entry and 2× your bet) and Keys are checked again before you start.
+            if ($ready) {
+                $this->entry->assertCanPlay($user, $room, LobbyEntryService::betOf($room, $me));
+            }
 
             $me->forceFill(['is_ready' => $ready, 'last_seen_at' => now(), 'is_connected' => true])->save();
             event(new TableEvent($table->id, GameEvents::PLAYER_READY, ['user_id' => $user->id, 'is_ready' => $ready]));
@@ -537,8 +578,23 @@ class LobbyService
                     $this->cancelCountdown($table, 'player_disconnected');
                 } elseif ($now->gte($table->countdown_ends_at)) {
                     $table->forceFill(['countdown_ends_at' => null])->save();
-                    if (! $match->maybeStart($table, byOwner: true)) {
-                        $this->cancelCountdown($table, 'cannot_start');
+                    // Last check before the game starts (wallets locked): Chips and Keys of all four.
+                    $failing = $this->entry->failing($table->room, $players, lock: true);
+                    if ($failing !== []) {
+                        $this->cancelCountdown($table, 'requirements_not_met', ['players' => array_map(fn ($f) => ['user_id' => $f['user_id'], 'username' => $f['username'], 'message' => $f['message']], $failing)]);
+
+                        return false;
+                    }
+                    try {
+                        // Starts the match and deducts every player's Keys in this same transaction.
+                        $started = $match->maybeStart($table, byOwner: true);
+                    } catch (BusinessRuleException|InsufficientBalanceException) {
+                        $started = null;
+                    }
+                    if (! $started) {
+                        $this->cancelCountdown($table->refresh(), 'cannot_start');
+
+                        return false;
                     }
 
                     return true;
@@ -574,11 +630,48 @@ class LobbyService
     }
 
     /** Stop the countdown and withdraw everyone's Start (they press it again when ready). */
-    public function cancelCountdown(GameTable $table, string $reason): void
+    public function cancelCountdown(GameTable $table, string $reason, array $details = []): void
     {
         $table->forceFill(['countdown_ends_at' => null])->save();
         GamePlayer::query()->where('game_table_id', $table->id)->update(['is_ready' => false]);
-        event(new TableEvent($table->id, GameEvents::COUNTDOWN_CANCELLED, ['reason' => $reason]));
+        event(new TableEvent($table->id, GameEvents::COUNTDOWN_CANCELLED, ['reason' => $reason] + $details));
+    }
+
+    /**
+     * Change your bet before the countdown (one of the lobby's bets; your Chips must cover 2× it).
+     * Changing it withdraws your Start.
+     */
+    public function setBet(User $user, GameRoom $room, int $bet): GamePlayer
+    {
+        $this->assertLobby($room);
+
+        return DB::transaction(function () use ($user, $room, $bet) {
+            $table = $this->lockedOpenTable($room);
+            $this->assertBeforeCountdown($table);
+            $player = GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $user->id)->lockForUpdate()->first()
+                ?? throw new BusinessRuleException('Join this lobby first.', 404, 'not_seated');
+
+            $this->entry->assertCanPlay($user, $room, $bet);
+            $player->forceFill(['selected_bet' => $bet, 'is_ready' => false, 'last_seen_at' => now(), 'is_connected' => true])->save();
+            event(new TableEvent($table->id, GameEvents::PLAYER_UPDATED, ['user_id' => $user->id]));
+
+            return $player;
+        });
+    }
+
+    /**
+     * The entry tiers for the Create Lobby screen.
+     *
+     * @return list<array{min_entry: int, bets: list<int>, keys: int}>
+     */
+    public function tierList(): array
+    {
+        $out = [];
+        foreach (LobbyEntryService::tiers() as $entry => $tier) {
+            $out[] = ['min_entry' => $entry, 'bets' => $tier['bets'], 'keys' => $tier['keys']];
+        }
+
+        return $out;
     }
 
     /** A seated player looking at the lobby is present (this is the waiting room's heartbeat). */

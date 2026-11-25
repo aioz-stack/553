@@ -34,5 +34,9 @@ enum TransactionType: string
     case ShareConversion = 'SHARE_CONVERSION';
     /** Self Convert Revenue to Chips: the whole Revenue wallet moved into the account's own Chips. */
     case RevenueConversion = 'REVENUE_CONVERSION';
+    /** Multiplayer lobby: the tier's Keys entry fee, paid by each player when the game starts. */
+    case LobbyEntryFee = 'LOBBY_ENTRY_FEE';
+    /** Multiplayer lobby: Keys entry fee returned (match ended before any round was completed). */
+    case LobbyEntryRefund = 'LOBBY_ENTRY_REFUND';
     case Reversal = 'REVERSAL';
 }

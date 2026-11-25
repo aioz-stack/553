@@ -48,7 +48,7 @@ const END_REASON: Record<string, string> = {
   completed: 'All 12 rounds played',
   not_enough_players: 'Not enough players left',
   not_enough_eligible_players: 'Not enough players with Chips to play',
-  no_eligible_banker: 'Nobody had enough Chips to be the banker',
+  no_eligible_banker: 'Nobody held enough Chips to be the banker (6× the maximum bet) in time',
 };
 
 function RoundButton({ label, onClick, children, x }: { label: string; onClick: () => void; children: ReactNode; x: number }) {
@@ -227,7 +227,13 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
   const iBank = !!userId && bankerId === userId;
   const round = session?.round_number ?? Math.max(1, table.rounds_played ?? 1);
   const total = table.rounds_total ?? session?.config.rounds_total ?? 12;
+  // The only bets of this game: its entry tier's chips (100 → 5/10/15 · 500 → 20/30/40 · 1,000 →
+  // 50/75/100), from the round's server config. No other amount can be entered; the server rejects it.
   const chipsList = (session?.config.bet_chips ?? table.room.bet_chips ?? []).map(num);
+  // A bet needs 2× its amount in your Chips (it is held while the round is played).
+  const myChips = chips !== undefined ? num(chips) : undefined;
+  const canCover = (c: number) => myChips === undefined || myChips >= c * 2;
+  const affordable = chipsList.filter(canCover);
   const minEntry = num(session?.config.min_entry ?? table.room.min_entry);
   const results = session?.results ?? null;
   const resultOf = (id?: number) => results?.find((r) => r.user_id === id);
@@ -359,6 +365,13 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
           </span>
         </div>
       </div>
+      {/* No eligible banker: the match is paused until a player holds 6× the maximum bet. */}
+      {table.paused && table.status === 'IN_GAME' && (
+        <div role="alert" className="absolute left-1/2 top-[190px] z-30 w-[820px] -translate-x-1/2 rounded-[26px] border-4 border-[#ffd34d] bg-[#2a1402]/95 px-8 py-4 text-center shadow-[0_10px_30px_rgb(0_0_0/0.5)]">
+          <p className="font-display text-[32px] font-black text-[#ffe14d]">Game paused — no eligible banker</p>
+          <p className="mt-1 text-[21px] font-bold text-white/85">{table.paused.message}</p>
+        </div>
+      )}
       <div className="absolute right-[22px] top-[100px] z-20 flex flex-col items-end gap-1 font-display font-black">
         <span className="rounded-full bg-black/55 px-4 py-1 text-[22px] text-white" aria-label="Round">
           Round {Math.min(round, total)} / {total} · <span className="text-[#ffe14d]">{bankerName === 'You' ? 'You bank' : `${bankerName} banks`}</span>
@@ -446,11 +459,25 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
         {phase === 'BETTING' && session?.can_bet && betSecondsLeft > 0 ? (
           <div className="flex items-center gap-5" role="group" aria-label="Bet chips">
             {chipsList.map((c, i) => (
-              <button key={c} type="button" aria-label={`Bet ${fmt(c)} Chips`} disabled={busy} onClick={() => bet(c)} className="tb-chip rounded-full transition disabled:opacity-60">
+              <button
+                key={c}
+                type="button"
+                aria-label={`Bet ${fmt(c)} Chips`}
+                title={canCover(c) ? undefined : `Needs ${fmt(c * 2)} Chips (2× the bet)`}
+                disabled={busy || !canCover(c)}
+                onClick={() => bet(c)}
+                className="tb-chip rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
+              >
                 <Chip value={fmt(c)} color={CHIP_COLORS[i % 3]} size={108} />
               </button>
             ))}
-            <span className="ml-1 max-w-[300px] font-display text-[21px] font-black leading-tight text-white/85">{busy ? 'Placing bet…' : `Tap a chip to bet · ${betSecondsLeft}s`}</span>
+            <span className="ml-1 max-w-[300px] font-display text-[21px] font-black leading-tight text-white/85" role="status">
+              {busy
+                ? 'Placing bet…'
+                : affordable.length === 0
+                  ? `You need ${fmt(Math.min(...chipsList) * 2)} Chips (2× the smallest bet) to bet`
+                  : `Tap a chip to bet (hold 2× your bet) · ${betSecondsLeft}s`}
+            </span>
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-between gap-4">

@@ -58,6 +58,8 @@ class GameRoom extends Model
             'betting_seconds' => 'integer',
             'lucky_hands_enabled' => 'boolean',
             'min_entry' => 'integer',
+            'bet_options' => 'array',
+            'entry_keys' => 'integer',
             'owner_starts' => 'boolean',
         ];
     }
@@ -74,6 +76,12 @@ class GameRoom extends Model
             return null;
         }
 
+        // Tiered lobbies: the tier's fixed bets, stored on the lobby.
+        if (is_array($this->bet_options) && $this->bet_options !== []) {
+            return array_values(array_map('intval', $this->bet_options));
+        }
+
+        // Older lobbies: percentages of the Minimum Entry.
         return array_values(array_map(
             fn ($pct) => intdiv((int) $this->min_entry * (int) $pct, 100),
             (array) config('pusoy.lobby.bet_chip_percents', [5, 10, 15]),

@@ -111,9 +111,21 @@ return [
 
     'lobby' => [
         'seat_release_seconds' => (int) env('LOBBY_SEAT_RELEASE_SECONDS', 60),
-        // Betting chips of a lobby, as percentages of its Minimum Entry, 1:1 (no multiplier):
-        // Minimum Entry 100 Chips → chips of 5, 10 and 15 Chips. These are the only bets allowed.
+        // Legacy only: lobbies created before the entry tiers used these percentages of their
+        // Minimum Entry as betting chips. New lobbies use the tiers below.
         'bet_chip_percents' => [5, 10, 15],
+        // Entry tiers (Create Lobby). Key: Minimum Entry = the Chips a player must hold to join.
+        // bets = the only bets allowed (Chips, 1:1); keys = the Keys each player pays to play,
+        // deducted when the game starts. A player must also hold 2× the bet they select.
+        'tiers' => [
+            100 => ['bets' => [5, 10, 15], 'keys' => 1],
+            500 => ['bets' => [20, 30, 40], 'keys' => 2],
+            1000 => ['bets' => [50, 75, 100], 'keys' => 5],
+        ],
+        // Chips a player must hold to play: this multiple of the bet they selected.
+        'player_bet_multiple' => 2,
+        // Keys are refunded when a match ends before any round was completed (it never really began).
+        'refund_keys_if_no_round_completed' => true,
     ],
 
     /*
@@ -145,6 +157,10 @@ return [
         'max_bet_multiple' => 10,
         // A seated player offline at the start of this many rounds in a row is removed.
         'max_missed_rounds' => 2,
+        // No eligible banker (nobody holds 6× the maximum bet): the match pauses and retries every
+        // pause_retry_seconds; if still nobody qualifies after pause_timeout_seconds it ends.
+        'pause_retry_seconds' => (int) env('BANKER_PAUSE_RETRY_SECONDS', 15),
+        'pause_timeout_seconds' => (int) env('BANKER_PAUSE_TIMEOUT_SECONDS', 300),
         'min_players' => 2,
     ],
 

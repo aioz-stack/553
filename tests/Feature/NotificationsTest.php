@@ -21,6 +21,7 @@ function ntPlayer(int $chips = 10_000): User
 {
     $u = User::factory()->player()->create();
     fund($u, $chips * 100);
+    fundKeys($u, 20);
 
     return $u;
 }

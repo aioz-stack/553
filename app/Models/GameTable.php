@@ -30,6 +30,7 @@ class GameTable extends Model
             'countdown_ends_at' => 'datetime',
             'closed_at' => 'datetime',
             'next_round_at' => 'datetime',
+            'paused_at' => 'datetime',
             'rounds_total' => 'integer',
             'rounds_played' => 'integer',
         ];

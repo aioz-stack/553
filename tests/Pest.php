@@ -100,7 +100,25 @@ function startGame(?GameRoom $room = null, bool $ready = true): array
 // ---------------------------------------------------------------------------
 
 /** A player holding `$diamonds` VC. */
-function lbPlayer(int $diamonds = 10_000): User
+function lbPlayer(int $diamonds = 10_000, int $keys = 50): User
+{
+    $u = User::factory()->player()->create();
+    fund($u, $diamonds * 100);
+    // Lobbies charge a Keys entry fee when the game starts (1 / 2 / 5 Keys per tier).
+    if ($keys > 0) {
+        fundKeys($u, $keys);
+    }
+
+    return $u;
+}
+
+function fundKeys(User $u, int $keys): void
+{
+    $wallets = app(\App\Services\Wallet\WalletService::class);
+    app(\App\Services\Wallet\LedgerService::class)->transfer(new \App\Services\Wallet\TransferRequest(\App\Enums\TransactionType::ManualAdjustment, \App\Enums\Currency::KY, null, $wallets->for($u, \App\Enums\Currency::KY), $keys * 100, 'test keys'));
+}
+
+function lbPlayerOnly(int $diamonds = 10_000): User
 {
     $u = User::factory()->player()->create();
     fund($u, $diamonds * 100);

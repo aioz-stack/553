@@ -11,7 +11,7 @@ const EVENTS = [
   'player.disconnected', 'player.reconnected', 'game.cancelled', 'player.updated',
   // banker modes
   'match.started', 'round.started', 'banker.assigned', 'player.bet', 'betting.closed', 'player.lucky',
-  'round.completed', 'match.completed',
+  'round.completed', 'match.completed', 'match.paused', 'match.resumed',
 ];
 
 /**

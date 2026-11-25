@@ -27,8 +27,11 @@ const row = (id: number, over: Record<string, unknown> = {}) => ({
   name: `Room ${id}`,
   game_mode: 'round_bank',
   game_mode_label: 'Round Bank',
-  min_entry: 250,
-  min_bet: '25.00',
+  min_entry: 500,
+  min_bet: '20.00',
+  bet_chips: ['20.00', '30.00', '40.00'],
+  key_fee: 2,
+  bet_multiple: 2,
   preparation_seconds: 45,
   players: 1,
   max_players: 4,
@@ -74,7 +77,7 @@ describe('Multiplayer Lobby', () => {
     expect(screen.getByText('Game Type')).toBeInTheDocument();
     expect(within(items[0]).getByLabelText('Game Type')).toHaveTextContent('Round Bank');
     expect(within(items[2]).getByLabelText('Game Type')).toHaveTextContent('Banker Mode');
-    expect(items[0]).toHaveTextContent('250');
+    expect(items[0]).toHaveTextContent('500');
     expect(items[0]).toHaveTextContent('45s');
     expect(items[0]).toHaveTextContent('1/4');
     expect(items[1]).toHaveTextContent('Private');
@@ -97,7 +100,7 @@ describe('Multiplayer Lobby', () => {
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/lobbies', { query: { tab: 'private', search: '100002', page: 1 } }));
   });
 
-  it('a private lobby asks for the password; a wrong one shows the error, the right one enters the waiting room', async () => {
+  it('Join opens the confirmation: choose a bet, see the wallet requirement and Keys fee, then a private lobby needs the password', async () => {
     let calls = 0;
     routes({ '/lobbies': LIST([row(2, { type: 'private', name: 'Secret' })]) });
     // First try: wrong password; second: the right one.
@@ -110,14 +113,24 @@ describe('Multiplayer Lobby', () => {
     })(apiMock.getMockImplementation() as (p: string, o?: unknown) => Promise<unknown>));
     render(<Lobby />);
     fireEvent.click(await screen.findByRole('button', { name: 'Join Secret' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Private Lobby' });
+    const dialog = await screen.findByRole('dialog', { name: 'Join Lobby' });
+    const terms = within(dialog).getByLabelText('Entry requirements');
+    expect(terms).toHaveTextContent('Minimum Entry500 Chips');
+    expect(terms).toHaveTextContent('2 Keys will be deducted once, when the game starts');
+    expect(within(dialog).getAllByRole('radio').map((b) => (b.textContent ?? '').replace(/^\D+/, ''))).toEqual(['20', '30', '40']);
+    fireEvent.click(within(dialog).getByRole('radio', { name: '40' }));
+    expect(terms).toHaveTextContent('Your Bet40 Chips');
+
+    // A password is required for a private lobby.
+    fireEvent.click(within(dialog).getByRole('button', { name: '▶ Confirm Join' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter the lobby password.');
     fireEvent.change(within(dialog).getByLabelText('Lobby password'), { target: { value: 'nope' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '▶ Join' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '▶ Confirm Join' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Incorrect lobby password.');
     fireEvent.change(within(dialog).getByLabelText('Lobby password'), { target: { value: 'tiger553' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '▶ Join' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '▶ Confirm Join' }));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/lobby/room/?id=2'));
-    expect(apiMock).toHaveBeenCalledWith('/lobbies/2/join', { method: 'POST', body: { password: 'tiger553' } });
+    expect(apiMock).toHaveBeenCalledWith('/lobbies/2/join', { method: 'POST', body: { bet: 40, password: 'tiger553' } });
   });
 
   it('Quick Join enters the room the server picked; with none it says so', async () => {

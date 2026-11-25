@@ -102,16 +102,50 @@ test('the banker rotates clockwise; a player below 6 × the maximum bet is skipp
     expect(mmCurrent($table)->banker_user_id)->toBe($d->id)->and(mmCurrent($table)->round_number)->toBe(3);
 });
 
-test('when nobody holds the banker reserve the match ends instead of naming an underfunded banker', function () {
+test('when nobody holds the banker reserve the match pauses (never an underfunded banker), resumes when someone qualifies', function () {
+    [$owner, $room, $others] = lbFull($this, ['min_entry' => 100]);
+    $table = lbStart($this, [$owner, ...$others], $room);
+    foreach ([$owner, ...$others] as $p) {
+        mmSetChips($p, 40);
+    }
+    \Illuminate\Support\Facades\Event::fake([\App\Events\Game\TableEvent::class]);
+    mmNext($this, $table);
+
+    // Paused, not ended: no round 2, nobody named banker, a clear message in the game state.
+    $t = $table->fresh();
+    expect($t->status)->toBe(TableStatus::InGame)->and($t->paused_at)->not->toBeNull()->and($t->pause_reason)->toBe('no_eligible_banker')
+        ->and(GameSession::query()->where('game_table_id', $table->id)->count())->toBe(1);
+    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\Game\TableEvent::class, fn ($e) => $e->name === \App\Events\Game\GameEvents::MATCH_PAUSED);
+    $state = $this->actingAs($others[0], 'sanctum')->getJson("/api/v1/tables/{$table->id}")->json('data');
+    expect($state['table']['paused']['reason'] ?? $state['paused']['reason'] ?? null)->toBe('no_eligible_banker');
+
+    // Retrying while nobody qualifies keeps it paused.
+    $this->travel(20)->seconds();
+    app(BankerMatchService::class)->startRound($table->fresh());
+    expect($table->fresh()->paused_at)->not->toBeNull()->and(GameSession::query()->where('game_table_id', $table->id)->count())->toBe(1);
+
+    // Seat 2 is loaded up to the 6× reserve (6 × 15 = 90 Chips): the next retry resumes with them as banker.
+    fund($others[0], 10_000);
+    $this->travel(20)->seconds();
+    app(BankerMatchService::class)->startRound($table->fresh());
+    $t = $table->fresh();
+    expect($t->paused_at)->toBeNull()->and($t->status)->toBe(TableStatus::InGame)
+        ->and(mmCurrent($table)->round_number)->toBe(2)->and(mmCurrent($table)->banker_user_id)->toBe($others[0]->id);
+    \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\Game\TableEvent::class, fn ($e) => $e->name === \App\Events\Game\GameEvents::MATCH_RESUMED);
+});
+
+test('a pause that lasts past the timeout ends the match', function () {
     [$owner, $room, $others] = lbFull($this, ['min_entry' => 100]);
     $table = lbStart($this, [$owner, ...$others], $room);
     foreach ([$owner, ...$others] as $p) {
         mmSetChips($p, 40);
     }
     mmNext($this, $table);
+    expect($table->fresh()->status)->toBe(TableStatus::InGame);
 
-    expect($table->fresh()->status)->toBe(TableStatus::Closed)->and($table->fresh()->end_reason)->toBe('no_eligible_banker')
-        ->and(GameSession::query()->where('game_table_id', $table->id)->count())->toBe(1);
+    $this->travel((int) config('pusoy.banker.pause_timeout_seconds') + 1)->seconds();
+    app(BankerMatchService::class)->startRound($table->fresh());
+    expect($table->fresh()->status)->toBe(TableStatus::Closed)->and($table->fresh()->end_reason)->toBe('no_eligible_banker');
 });
 
 test('a match is exactly 12 rounds, numbered 1 to 12, then it completes', function () {

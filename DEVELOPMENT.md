@@ -1662,3 +1662,82 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   (`/admin/revenue-rates`): Shop revenue sharing and game commission rates. The Agent Panel has no such page.
 - Tests: `RevenueHistoryTest` (strict separation, filters, sorting, hierarchy scoping, access, read-only), plus
   `WebPagesTest` and `AgentPanelTest` updated for the removed pages.
+
+## Create Lobby: entry tiers, Keys fee, Round Bank only
+
+- **Tiers** (`config('pusoy.lobby.tiers')`, enforced by `LobbyEntryService`):
+
+  | Minimum Entry | Allowed bets | Keys fee |
+  |---|---|---|
+  | 100 Chips | 5 / 10 / 15 | 1 Key |
+  | 500 Chips | 20 / 30 / 40 | 2 Keys |
+  | 1,000 Chips | 50 / 75 / 100 | 5 Keys |
+
+  - The 250 and 2,000 Chip entries are gone, along with the old bets-as-a-percentage rule for new lobbies.
+  - The bets and Keys fee are stored on each lobby (`game_rooms.bet_options`, `entry_keys`), so a later config
+    change never alters an existing lobby. Older lobbies keep their percentage bets and have no Keys fee.
+- **Round Bank only:** `POST /lobbies` accepts only `game_mode=round_bank` (or none); `banker` is refused. Existing
+  Banker Mode tables still run with their old rules.
+- **Selected bet** (`game_players.selected_bet`):
+  - It is chosen on create, on join (`bet`), or later with `POST /lobbies/{room}/bet` before the countdown, which
+    withdraws your Start.
+  - Quick Join uses the lobby's smallest bet and skips lobbies whose Chips or Keys you lack.
+  - A player needs Chips ≥ the Minimum Entry and ≥ **2× the selected bet**, plus Keys ≥ the fee.
+  - These are checked on create, join, Quick Join, bet change and Start, and again with wallets locked right
+    before the game starts. If anyone fails, the countdown is cancelled (`requirements_not_met`, with who and
+    why), nobody pays, and Start then reports the reason.
+  - In-game, a player who no longer covers 2× their bet sits the round out. An auto-bet uses the selected bet.
+- **Keys fee** (`LOBBY_ENTRY_FEE`):
+  - It is deducted from all four players in the same transaction that starts the game, into the platform Keys
+    wallet: once per player and table (`lobby-keys:{table}:{user}`), never on join.
+  - If the match ends before any round is completed, every fee is refunded once (`LOBBY_ENTRY_REFUND`). After a
+    completed round there is no refund.
+  - Both are written to the ledger and the audit log.
+- **Banker (Round Bank):** 12 rounds, rotating clockwise and skipping players below 6× the maximum bet; the
+  previous banker is checked last. Each round's history records the order, the checks and the banker.
+  - New: when nobody qualifies, the match **pauses** instead of ending. The table gets `paused_at` /
+    `pause_reason`, `match.paused` is sent, and the game state's `table.paused` carries a message.
+  - It retries every `pause_retry_seconds` (15) and resumes (`match.resumed`) as soon as someone qualifies. It
+    ends with `no_eligible_banker` after `pause_timeout_seconds` (300).
+- **Mobile:**
+  - Create Lobby shows the three tiers with their Keys, Round Bank as a fixed label, a "Your Bet" picker and an
+    entry summary (Minimum Entry, bet, required wallet, Keys fee and when it is deducted, your Chips and Keys).
+  - Join opens a "Join Lobby" confirmation with the bet picker, the same summary and the password for private
+    lobbies. Confirm Join is disabled until you qualify.
+  - The waiting room shows the bets, Keys fee and "Your Bet" (changeable before the countdown) with its
+    requirement.
+  - The game table shows a "Game paused — no eligible banker" banner.
+- Tests: `LobbyEntryTest` (tiers, invalid tier and bet combinations, 2× rule, Keys checks, a single deduction at
+  start, no start on failing requirements, refund, bet change, Quick Join), and `MultiplayerMatchTest` (pause,
+  resume, timeout). The lobby tests and the mobile Create Lobby, Lobby and Choose Your Seat tests were updated.
+- **Deploy:** run `php artisan migrate --force`, then rebuild the mobile app.
+
+## Create Lobby popup: compact, no bet; bets chosen in the game
+
+- **The Create Lobby popup is compact** (`Modal compact`: 820 px wide, at most 780 px tall on the 1600×900 stage).
+  - Smaller padding, rows and inputs.
+  - The fields scroll inside the popup while the title and the Cancel / Create buttons stay visible, so it never
+    runs off the screen.
+  - A small box explains the tier: its in-game bets (chosen each round, hold 2× your bet), the Keys fee and when
+    it is deducted, and your Chips and Keys.
+- **"Your Bet" was removed** from Create Lobby, along with its state and handlers. `POST /lobbies` no longer
+  accepts `bet`; a sent one is ignored. The creator's wallet is checked against the tier's smallest bet.
+- **Bets happen in the game, each round**, from the tier's chips only:
+  - 100 Chips → 5 / 10 / 15
+  - 500 → 20 / 30 / 40
+  - 1,000 → 50 / 75 / 100
+
+  The chips come from the round's server config (`bet_chips`, stored on the lobby). There is no custom amount.
+- **On the table:** a chip your Chips cannot cover twice is disabled, with "Needs N Chips (2× the bet)". With less
+  than 2× the smallest chip, it says what is needed.
+- **Server** (`BankerMatchService::placeBet`, `POST /games/{session}/bet`):
+  - It rejects any amount that is not one of the tier's chips (`invalid_bet`).
+  - It locks and checks the wallet against 2× the bet (`insufficient_balance`).
+  - It accepts one bet per round (`already_bet`), so a double tap or retry never holds Chips twice. The bet and
+    its holds are recorded in the ledger.
+- Lobbies created before the tiers keep their own chips. Active games are untouched.
+- Tests:
+  - `LobbyEntryTest`: every tier in the actual game through the API (allowed and refused amounts, the 2× wallet,
+    a single hold).
+  - `MultiplayerTable.test`: the 500-tier chips, chips disabled when the wallet is too low.
+  - `CreateLobbyModal.test`: no bet field, tier rules shown, request without a bet.

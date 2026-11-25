@@ -95,6 +95,25 @@ describe('Multiplayer in-game table', () => {
     await waitFor(() => expect(p.refresh).toHaveBeenCalled());
   });
 
+  it('a 500-Chip game offers only 20 / 30 / 40; chips your wallet cannot cover twice are disabled', () => {
+    const s = session();
+    render(<MultiplayerTable {...props(table(), { ...s, config: { ...s.config, bet_chips: ['20.00', '30.00', '40.00'] } })} chips="70.00" />);
+    const group = screen.getByRole('group', { name: 'Bet chips' });
+    expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Bet 20 Chips', 'Bet 30 Chips', 'Bet 40 Chips']);
+    // 70 Chips covers 2 × 20 and 2 × 30, not 2 × 40.
+    expect(within(group).getByRole('button', { name: 'Bet 20 Chips' })).toBeEnabled();
+    expect(within(group).getByRole('button', { name: 'Bet 30 Chips' })).toBeEnabled();
+    expect(within(group).getByRole('button', { name: 'Bet 40 Chips' })).toBeDisabled();
+    expect(within(group).getByRole('button', { name: 'Bet 40 Chips' })).toHaveAttribute('title', 'Needs 80 Chips (2× the bet)');
+  });
+
+  it('with less than 2× the smallest chip, no chip can be tapped and it says what is needed', () => {
+    render(<MultiplayerTable {...props(table(), session())} chips="9.00" />);
+    const group = screen.getByRole('group', { name: 'Bet chips' });
+    within(group).getAllByRole('button').forEach((b) => expect(b).toBeDisabled());
+    expect(within(group).getByRole('status')).toHaveTextContent('You need 10 Chips (2× the smallest bet) to bet');
+  });
+
   it("shows the server's refusal of a bet", async () => {
     apiMock.mockImplementation((path?: string) => (path?.endsWith('/bet') ? Promise.reject(new Error("Choose one of this table's chips: 5.00, 10.00, 15.00 Chips.")) : Promise.resolve({})));
     render(<MultiplayerTable {...props(table(), session())} />);

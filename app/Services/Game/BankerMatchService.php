@@ -21,6 +21,7 @@ use App\Game\LuckyHand;
 use App\Jobs\CloseBetting;
 use App\Jobs\ExpireArrangement;
 use App\Jobs\StartNextRound;
+use App\Services\Game\LobbyEntryService;
 use App\Models\GameBet;
 use App\Models\GameCard;
 use App\Models\GameHandResult;
@@ -106,6 +107,13 @@ class BankerMatchService
             }
 
             $table->forceFill(['status' => TableStatus::InGame, 'full_at' => now(), 'rounds_played' => 0])->save();
+
+            // Lobbies: every player's Keys entry fee is deducted here, in the transaction that starts
+            // the game (once per player and table; any failure rolls the whole start back).
+            if ($table->room->isLobby()) {
+                app(LobbyEntryService::class)->chargeKeys($table, $table->room, GamePlayer::query()->with('user')->where('game_table_id', $table->id)->get());
+            }
+
             event(new TableEvent($table->id, GameEvents::MATCH_STARTED, [
                 'game_mode' => $table->game_mode->value,
                 'rounds_total' => $table->rounds_total,
@@ -163,7 +171,9 @@ class BankerMatchService
 
             $players = $players->filter(fn (GamePlayer $p) => $p->exists)->values();
             $balances = $players->mapWithKeys(fn (GamePlayer $p) => [$p->user_id => $this->wallets->for($p->user, $currency)->balance])->all();
-            $eligible = $players->filter(fn (GamePlayer $p) => $p->is_connected && $balances[$p->user_id] >= $minReserve)->values();
+            // To take part a player must cover 2× their bet: the bet they selected in the lobby
+            // (lobbies), otherwise the room's minimum bet.
+            $eligible = $players->filter(fn (GamePlayer $p) => $p->is_connected && $balances[$p->user_id] >= max($minReserve, $room->isLobby() ? LobbyEntryService::betOf($room, $p) * LobbyEntryService::betMultiple() : 0))->values();
 
             if ($eligible->count() < 2) {
                 $this->end($table, $players->count() < 2 ? 'not_enough_players' : 'not_enough_eligible_players');
@@ -175,10 +185,31 @@ class BankerMatchService
             [$banker, $reason, $bankerChecks] = $this->chooseBanker($table, $eligible, $balances);
 
             if ($banker === null) {
-                // Nobody seated holds the banker reserve: the match cannot go on.
-                $this->end($table, 'no_eligible_banker');
+                // Nobody holds the banker reserve (6× the maximum bet): pause and retry; end the
+                // match only if nobody qualifies within pause_timeout_seconds.
+                $since = $table->paused_at ?? now();
+                if (now()->diffInSeconds($since, true) >= (int) config('pusoy.banker.pause_timeout_seconds', 300)) {
+                    $this->end($table, 'no_eligible_banker');
+
+                    return null;
+                }
+                $retry = now()->addSeconds(max(1, (int) config('pusoy.banker.pause_retry_seconds', 15)));
+                if (! $table->paused_at) {
+                    event(new TableEvent($table->id, GameEvents::MATCH_PAUSED, [
+                        'reason' => 'no_eligible_banker',
+                        'message' => 'No eligible banker: a banker needs '.Points::format($room->bankerReserve()).' Chips (6× the maximum bet). The game resumes as soon as a player qualifies.',
+                        'banker_reserve' => Points::decimal($room->bankerReserve()),
+                    ]));
+                }
+                $table->forceFill(['paused_at' => $since, 'pause_reason' => 'no_eligible_banker', 'next_round_at' => $retry])->save();
+                StartNextRound::dispatch($table->id)->delay($retry)->afterCommit();
 
                 return null;
+            }
+
+            if ($table->paused_at) {
+                $table->forceFill(['paused_at' => null, 'pause_reason' => null])->save();
+                event(new TableEvent($table->id, GameEvents::MATCH_RESUMED, ['banker_user_id' => $banker->user_id]));
             }
 
             $participants = $eligible->where('user_id', '!=', $banker->user_id)->pluck('user_id')->values()->all();
@@ -475,8 +506,14 @@ class BankerMatchService
                     continue;
                 }
 
+                // Lobbies: the bet the player selected (when it is one of the round's chips).
+                $auto = (int) $session->config['min_bet'];
+                $selected = (int) GamePlayer::query()->where('game_table_id', $session->game_table_id)->where('user_id', $userId)->value('selected_bet');
+                if ($selected > 0 && in_array($selected, array_map('intval', $session->config['bet_chips'] ?? []), true)) {
+                    $auto = $selected;
+                }
                 try {
-                    $this->placeBet(User::query()->findOrFail($userId), $session, (int) $session->config['min_bet'], auto: true);
+                    $this->placeBet(User::query()->findOrFail($userId), $session, $auto, auto: true);
                 } catch (BusinessRuleException) {
                     // cannot afford / banker cannot cover: sits this round out
                 }
@@ -859,9 +896,14 @@ class BankerMatchService
             return;
         }
 
-        $table->forceFill(['status' => TableStatus::Closed, 'closed_at' => now(), 'end_reason' => $reason, 'next_round_at' => null])->save();
+        $table->forceFill(['status' => TableStatus::Closed, 'closed_at' => now(), 'end_reason' => $reason, 'next_round_at' => null, 'paused_at' => null, 'pause_reason' => null])->save();
 
         $room = $table->room;
+
+        // Lobbies: a match that ends before any round was completed refunds the Keys entry fees.
+        if ($room->isLobby() && (int) $table->rounds_played === 0 && config('pusoy.lobby.refund_keys_if_no_round_completed', true)) {
+            app(LobbyEntryService::class)->refundKeys($table, $reason);
+        }
 
         if ($room->owner_id !== null && $room->game_mode->hasBanker()) {
             $room->forceFill(['status' => RoomStatus::Inactive])->save();

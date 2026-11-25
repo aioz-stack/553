@@ -13,7 +13,7 @@ import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useBalance } from '@/lib/useBalance';
 import { useQueryParam } from '@/lib/hooks';
-import { MODE_RULE, fmtChips, useWaitingRoomUpdates, type LobbyDetail, type LobbySeat } from '@/lib/lobby';
+import { MODE_RULE, fmtChips, keysLabel, useWaitingRoomUpdates, type LobbyDetail, type LobbySeat } from '@/lib/lobby';
 import { play } from '@/lib/sound';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
 
@@ -299,6 +299,7 @@ export default function ChooseYourSeat() {
       return;
     }
     act(
+      // Joins with the lobby's smallest bet; change it with Your Bet before the countdown.
       () => api(`/lobbies/${lobby.id}/join`, { method: 'POST', body: password ? { password } : {} }),
       () => setPanel(null),
     );
@@ -354,11 +355,45 @@ export default function ChooseYourSeat() {
                 {lobby.name} · <span className="text-[#ffe14d]">ID {lobby.lobby_id}</span>
               </span>
               <span className="rounded-full bg-black/55 px-4 py-0.5 font-display text-[19px] font-black text-white/90">
-                Bet {fmtChips(lobby.min_bet)} · Min Entry {fmtChips(lobby.min_entry)} · Prep {lobby.preparation_seconds}s
+                Bets {(lobby.bet_chips ?? [lobby.min_bet]).map(fmtChips).join('/')} · Min Entry {fmtChips(lobby.min_entry)}
+                {lobby.key_fee > 0 ? ` · ${keysLabel(lobby.key_fee)}` : ''} · Prep {lobby.preparation_seconds}s
               </span>
               <span className="flex items-center gap-2 rounded-full bg-black/55 px-3 py-0.5 font-display text-[19px] font-black text-white" aria-label="Your Chips">
                 <ChipMark size={24} /> Your Chips <span className="text-[#ffe14d]">{chips !== undefined ? fmtChips(Math.floor(Number(chips))) : '…'}</span>
+                {lobby.key_fee > 0 && (
+                  <>
+                    · Keys <span className="text-[#ffe14d]">{fmtChips(Number(lobby.my_keys))}</span>
+                  </>
+                )}
               </span>
+              {/* Your bet (one of the lobby's three) and what it requires; changeable before the countdown. */}
+              {lobby.is_seated && lobby.my_bet && (
+                <div className="flex w-full flex-col items-end gap-1 rounded-[18px] bg-black/60 px-3 py-1.5" aria-label="Your bet">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-[18px] font-black text-white/85">Your Bet</span>
+                    {(lobby.bet_chips ?? []).map((b) => {
+                      const on = Number(b) === Number(lobby.my_bet);
+                      const locked = counting || lobby.table_status === 'IN_GAME';
+                      return (
+                        <button
+                          key={b}
+                          type="button"
+                          aria-pressed={on}
+                          disabled={busy || locked || on}
+                          onClick={() => act(() => api(`/lobbies/${lobby.id}/bet`, { method: 'POST', body: { bet: b } }), () => play('chip'))}
+                          className={`rounded-full border-2 px-3 font-display text-[18px] font-black ${on ? 'border-[#ffe14d] bg-[#e08a00] text-[#3b1d00]' : 'border-white/40 text-white/85 disabled:opacity-50'}`}
+                        >
+                          {fmtChips(b)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span className={`font-display text-[16px] font-bold ${chips !== undefined && Number(chips) < Number(lobby.my_required_chips) ? 'text-[#ff9aa8]' : 'text-white/70'}`}>
+                    Needs {fmtChips(Number(lobby.my_required_chips))} Chips (2× bet, min entry)
+                    {lobby.key_fee > 0 ? ` · ${keysLabel(lobby.key_fee)} deducted at start` : ''}
+                  </span>
+                </div>
+              )}
               <span className="flex items-center gap-2 rounded-full bg-black/55 px-4 py-0.5 font-display text-[19px] font-black text-white/90">
                 Players <span key={players} className="cs-bump inline-block text-[#ffe14d]">{players}/4</span>
                 {lobby.is_owner && !counting && lobby.table_status !== 'IN_GAME' && (

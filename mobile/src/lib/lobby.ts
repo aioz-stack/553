@@ -22,6 +22,12 @@ export interface LobbySummary {
   min_entry: number;
   /** Minimum bet per round (Chips, decimal string). */
   min_bet: string;
+  /** The only bets allowed in this lobby (Chips, decimal strings), e.g. 20 / 30 / 40. */
+  bet_chips: string[];
+  /** Keys each player pays when the game starts (0 for older lobbies). */
+  key_fee: number;
+  /** A player must hold this multiple of their selected bet (2). */
+  bet_multiple: number;
   preparation_seconds: number;
   players: number;
   max_players: number;
@@ -46,6 +52,8 @@ export interface LobbySeat {
   is_owner?: boolean;
   is_banker?: boolean;
   is_you?: boolean;
+  /** The bet this player selected (Chips, decimal string). */
+  bet?: string;
 }
 
 export interface LobbyDetail extends LobbySummary {
@@ -66,20 +74,60 @@ export interface LobbyDetail extends LobbySummary {
   server_time: string;
   can_press_start: boolean;
   start_hint: string;
+  /** Your selected bet and the Chips you must hold for it: max(Minimum Entry, 2× bet). */
+  my_bet: string | null;
+  my_required_chips: string | null;
+  my_chips: string;
+  my_keys: string;
+}
+
+/** An entry tier (Create Lobby): Minimum Entry, its three bets and the Keys fee. */
+export interface LobbyTier {
+  min_entry: number;
+  bets: number[];
+  keys: number;
 }
 
 export interface LobbyList {
   data: LobbySummary[];
-  meta: { tab: LobbyTab; page: number; pages: number; per_page: number; total: number; counts: Record<LobbyTab, number>; my_lobby_id: number | null; other_table_id: number | null; balance: string };
+  meta: { tab: LobbyTab; page: number; pages: number; per_page: number; total: number; counts: Record<LobbyTab, number>; my_lobby_id: number | null; other_table_id: number | null; balance: string; keys?: string; tiers?: LobbyTier[] };
 }
 
-export const MIN_ENTRIES = [100, 250, 500, 1000, 2000];
+/** The entry tiers (the server sends the same list in the lobby list's meta.tiers and checks them). */
+export const TIERS: LobbyTier[] = [
+  { min_entry: 100, bets: [5, 10, 15], keys: 1 },
+  { min_entry: 500, bets: [20, 30, 40], keys: 2 },
+  { min_entry: 1000, bets: [50, 75, 100], keys: 5 },
+];
+export const MIN_ENTRIES = TIERS.map((t) => t.min_entry);
+export const PLAYER_BET_MULTIPLE = 2;
+export const BANKER_RESERVE_MULTIPLE = 6;
 export const PREPARATION_SECONDS = [30, 45, 60, 75];
+/** Older lobbies may still show Banker Mode; new lobbies are Round Bank only. */
 export const MODE_LABEL: Record<LobbyMode, string> = { banker: 'Banker Mode', round_bank: 'Round Bank' };
 export const MODE_RULE: Record<LobbyMode, string> = {
   banker: '12 rounds · the lobby owner is the banker every round.',
-  round_bank: '12 rounds · the owner banks first, then the banker rotates clockwise.',
+  round_bank: '12 rounds · the owner banks first, then the banker rotates clockwise (a banker needs 6× the maximum bet).',
 };
+
+/** Chips a player must hold to play a bet: max(Minimum Entry, 2× bet). */
+export const requiredChips = (minEntry: number, bet: number, multiple = PLAYER_BET_MULTIPLE) => Math.max(minEntry, bet * multiple);
+export const keysLabel = (n: number) => `${n} ${n === 1 ? 'Key' : 'Keys'}`;
+
+/**
+ * What stops a player from joining with this bet (null = OK). Display only: the server checks again.
+ */
+export function entryProblem(t: { min_entry: number; bets: number[]; keys: number }, bet: number, chips: number | undefined, keys: number | undefined): string | null {
+  if (!t.bets.includes(bet)) return `Choose one of the bets: ${t.bets.map(fmtChips).join(' / ')} Chips.`;
+  const need = requiredChips(t.min_entry, bet);
+  if (chips !== undefined && chips < need) {
+    return need > t.min_entry
+      ? `You need at least ${fmtChips(need)} Chips (2× your ${fmtChips(bet)} bet). You have ${fmtChips(Math.floor(chips))}.`
+      : `You need at least ${fmtChips(need)} Chips for this lobby. You have ${fmtChips(Math.floor(chips))}.`;
+  }
+  if (keys !== undefined && keys < t.keys) return `You need ${keysLabel(t.keys)} to play. You have ${fmtChips(keys)}.`;
+  return null;
+}
 
 /** A Chips amount (whole or with cents), e.g. 1,000 or 12.5. */
 export const fmtChips = (n: number | string) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });

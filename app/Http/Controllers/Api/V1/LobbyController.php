@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GameRoom;
 use App\Services\Game\BankerMatchService;
 use App\Services\Game\LobbyService;
+use App\Support\Points;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -37,13 +38,17 @@ class LobbyController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:30'],
             'password' => ['nullable', 'string', 'min:4', 'max:32'],
-            'game_mode' => ['required', Rule::in([GameMode::Banker->value, GameMode::RoundBank->value])],
-            'min_entry' => ['required', 'integer', Rule::in(LobbyService::MIN_ENTRIES)],
+            // Round Bank is the only game type (Banker Mode was removed).
+            'game_mode' => ['sometimes', Rule::in([GameMode::RoundBank->value])],
+            'min_entry' => ['required', 'integer', Rule::in(LobbyService::minEntries())],
+            // No bet here: bets are chosen in the game, each round, from the tier's chips.
             'preparation_seconds' => ['required', 'integer', Rule::in(LobbyService::PREPARATION_SECONDS)],
         ], [
             'name.required' => 'Enter a lobby name.',
             'name.max' => 'The lobby name can be at most 30 characters.',
             'password.min' => 'A lobby password needs at least 4 characters.',
+            'game_mode.in' => 'Round Bank is the only game type.',
+            'min_entry.in' => 'Choose a Minimum Entry of 100, 500 or 1,000 Chips.',
         ]);
 
         $room = $this->lobbies->create($request->user(), $data);
@@ -69,13 +74,25 @@ class LobbyController extends Controller
         return response()->json(['data' => $this->lobbies->show($request->user(), $room->refresh(), $match)]);
     }
 
-    /** POST /lobbies/{room}/join — private lobbies need the password. */
+    /** POST /lobbies/{room}/join — with your bet (one of the lobby's); private lobbies need the password. */
     public function join(Request $request, GameRoom $room): JsonResponse
     {
-        $data = $request->validate(['password' => ['nullable', 'string', 'max:32']]);
-        $this->lobbies->join($request->user(), $room, $data['password'] ?? null);
+        $data = $request->validate([
+            'password' => ['nullable', 'string', 'max:32'],
+            'bet' => ['nullable', 'regex:/^\d{1,9}(\.\d{1,2})?$/'],
+        ]);
+        $this->lobbies->join($request->user(), $room, $data['password'] ?? null, isset($data['bet']) ? Points::toMinor($data['bet']) : null);
 
         return response()->json(['data' => $this->lobbies->show($request->user(), $room->refresh())], 201);
+    }
+
+    /** POST /lobbies/{room}/bet — change your bet before the countdown (withdraws your Start). */
+    public function bet(Request $request, GameRoom $room, BankerMatchService $match): JsonResponse
+    {
+        $data = $request->validate(['bet' => ['required', 'regex:/^\d{1,9}(\.\d{1,2})?$/']]);
+        $this->lobbies->setBet($request->user(), $room, Points::toMinor($data['bet']));
+
+        return response()->json(['data' => $this->lobbies->show($request->user(), $room->refresh(), $match)]);
     }
 
     /** POST /lobbies/quick-join — the best open public lobby you can afford. */

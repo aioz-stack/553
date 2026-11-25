@@ -50,6 +50,12 @@ class GameStatePresenter
             'creator_user_id' => $table->creator_user_id,
             'next_round_at' => $table->next_round_at?->toIso8601String(),
             'end_reason' => $table->end_reason,
+            // Round Bank waiting for an eligible banker (6× the maximum bet).
+            'paused' => $table->paused_at ? [
+                'reason' => $table->pause_reason,
+                'since' => $table->paused_at->toIso8601String(),
+                'message' => 'Waiting for an eligible banker: a banker needs '.Points::format($room->bankerReserve()).' Chips (6× the maximum bet). The game resumes as soon as a player qualifies.',
+            ] : null,
             'min_players' => $banker ? $this->match->minPlayers($table) : 4,
             'room' => [
                 'id' => $room->id,

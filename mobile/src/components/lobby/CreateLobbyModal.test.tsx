@@ -38,19 +38,31 @@ describe('CreateLobbyModal', () => {
     expect(pw.type).toBe('text');
   });
 
-  it('has the required dropdown options', () => {
-    render(<CreateLobbyModal balance={5000} onClose={() => {}} onCreated={() => {}} />);
+  it('offers only the 100 / 500 / 1,000 tiers with their Keys fee; Round Bank is the only game type', () => {
+    render(<CreateLobbyModal balance={5000} keys={10} onClose={() => {}} onCreated={() => {}} />);
     const opts = (label: string) => Array.from((screen.getByLabelText(label) as HTMLSelectElement).options).map((o) => o.textContent);
-    expect(opts('Type of Game')).toEqual(['Banker Mode', 'Round Bank']);
-    expect(opts('Minimum Entry')).toEqual(['100 Chips', '250 Chips', '500 Chips', '1,000 Chips', '2,000 Chips']);
+    expect(screen.getByLabelText('Type of Game')).toHaveTextContent('Round Bank');
+    expect(screen.getByLabelText('Type of Game').tagName).not.toBe('SELECT');
+    expect(opts('Minimum Entry')).toEqual(['100 Chips · 1 Key', '500 Chips · 2 Keys', '1,000 Chips · 5 Keys']);
     expect(opts('Preparation Time')).toEqual(['30 Seconds', '45 Seconds', '60 Seconds', '75 Seconds']);
+
+    // No bet is chosen here (bets are chosen in the game); the popup only explains the tier's in-game bets.
+    expect(screen.queryByRole('radiogroup', { name: 'Your bet' })).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    const rules = () => screen.getByLabelText('Tier rules');
+    expect(rules()).toHaveTextContent('In-game bets: 5 / 10 / 15 Chips');
+    fireEvent.change(screen.getByLabelText('Minimum Entry'), { target: { value: '500' } });
+    expect(rules()).toHaveTextContent('In-game bets: 20 / 30 / 40 Chips');
+    fireEvent.change(screen.getByLabelText('Minimum Entry'), { target: { value: '1000' } });
+    expect(rules()).toHaveTextContent('In-game bets: 50 / 75 / 100 Chips');
+    expect(rules()).toHaveTextContent('Entry fee: 5 Keys, deducted once when the game starts');
   });
 
   it('validates before sending, blocks an unaffordable entry, then creates exactly once', async () => {
     const created = vi.fn();
     let resolve: (v: unknown) => void = () => {};
     apiMock.mockReturnValue(new Promise((r) => (resolve = r)));
-    render(<CreateLobbyModal balance={800} onClose={() => {}} onCreated={created} />);
+    render(<CreateLobbyModal balance={800} keys={1} onClose={() => {}} onCreated={created} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Lobby' }));
     expect(await screen.findByText('Enter a lobby name.')).toBeInTheDocument();
@@ -62,13 +74,18 @@ describe('CreateLobbyModal', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('You need at least 1,000 Chips');
     expect(apiMock).not.toHaveBeenCalled();
 
+    // 500 Chips tier: enough Chips, but it costs 2 Keys and only 1 is held.
     fireEvent.change(screen.getByLabelText('Minimum Entry'), { target: { value: '500' } });
-    fireEvent.change(screen.getByLabelText('Type of Game'), { target: { value: 'banker' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Lobby' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('You need 2 Keys to play');
+    expect(apiMock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Minimum Entry'), { target: { value: '100' } });
     fireEvent.change(screen.getByLabelText('Preparation Time'), { target: { value: '60' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Lobby' }));
     fireEvent.click(screen.getByRole('button', { name: 'Creating…' }));
     expect(apiMock).toHaveBeenCalledTimes(1);
-    expect(apiMock).toHaveBeenCalledWith('/lobbies', { method: 'POST', body: { name: 'Rookie Room', password: null, game_mode: 'banker', min_entry: 500, preparation_seconds: 60 } });
+    expect(apiMock).toHaveBeenCalledWith('/lobbies', { method: 'POST', body: { name: 'Rookie Room', password: null, game_mode: 'round_bank', min_entry: 100, preparation_seconds: 60 } });
     await act(async () => resolve({ data: { id: 7 } }));
     await waitFor(() => expect(created).toHaveBeenCalledWith({ id: 7 }));
   });

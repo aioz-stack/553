@@ -39,9 +39,11 @@ test('a player chooses an avatar; it is saved, validated and shown on their prof
 test('other players see the avatar in lobbies, and a seated player\'s table is told to refresh', function () {
     $owner = User::factory()->player()->create();
     fund($owner, 1_000_000);
+    fundKeys($owner, 20);
     $room = $this->actingAs($owner, 'sanctum')->postJson('/api/v1/lobbies', ['name' => 'Avatars', 'game_mode' => 'round_bank', 'min_entry' => 100, 'preparation_seconds' => 45])->assertCreated()->json('data');
     $guest = User::factory()->player()->create();
     fund($guest, 1_000_000);
+    fundKeys($guest, 20);
     $this->actingAs($guest, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join")->assertCreated();
 
     Event::fake([TableEvent::class]);

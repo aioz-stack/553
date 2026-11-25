@@ -61,7 +61,38 @@ export function CandyButton({
 }
 
 /** Popup: dark overlay, crimson panel with a gold frame and a ribbon title. */
-export function Modal({ title, children, onClose, width = 920, label }: { title: string; children: ReactNode; onClose: () => void; width?: number; label?: string }) {
+/**
+ * A themed popup on the 1600×900 stage. `compact` keeps it inside the screen: smaller padding, the
+ * whole popup at most `maxHeight` tall, and the content scrolls inside it (pass a fixed footer as
+ * `footer` so the action buttons always stay visible).
+ */
+export function Modal({ title, children, onClose, width = 920, label, compact, maxHeight = 800, footer }: { title: string; children: ReactNode; onClose: () => void; width?: number; label?: string; compact?: boolean; maxHeight?: number; footer?: ReactNode }) {
+  if (compact) {
+    return (
+      <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 pt-[36px]" onClick={onClose}>
+        <div role="dialog" aria-modal="true" aria-label={label ?? title} onClick={(e) => e.stopPropagation()} className="sp-pop lx-gold relative rounded-[36px] p-[8px] shadow-[0_10px_0_#5a2a00,0_16px_32px_rgb(0_0_0/0.5)]" style={{ width, maxWidth: 'calc(100% - 40px)', maxHeight }}>
+          <div className="absolute -top-[34px] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-[26px] border-[4px] border-[#ffd34d] bg-gradient-to-b from-[#c47cff] via-[#8f2ff0] to-[#5a12b0] px-8 py-1 font-display text-[36px] font-black text-white shadow-[0_6px_0_#36086e]">{title}</div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => {
+              play('tap');
+              onClose();
+            }}
+            className="lx-tile absolute -right-[20px] -top-[20px] z-10 flex h-[66px] w-[66px] items-center justify-center rounded-full border-[4px] border-[#ffd34d] bg-gradient-to-b from-[#ff6b5c] to-[#c0101a] shadow-[0_5px_0_#6b0606]"
+          >
+            <svg viewBox="0 0 40 40" className="h-[30px] w-[30px]" aria-hidden="true">
+              <path d="M10 10 L30 30 M30 10 L10 30" stroke="#fff" strokeWidth="7" strokeLinecap="round" />
+            </svg>
+          </button>
+          <div className="flex flex-col rounded-[30px] bg-gradient-to-b from-[#7a0f16] via-[#55070c] to-[#2e0306] px-8 pb-5 pt-9 text-white" style={{ maxHeight: maxHeight - 16 }}>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">{children}</div>
+            {footer && <div className="shrink-0 pt-3">{footer}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={label ?? title} onClick={(e) => e.stopPropagation()} className="sp-pop lx-gold relative rounded-[46px] p-[10px] shadow-[0_14px_0_#5a2a00,0_20px_40px_rgb(0_0_0/0.5)]" style={{ width }}>

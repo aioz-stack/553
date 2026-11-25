@@ -32,7 +32,10 @@ test('create a public lobby: unique 6-digit ID, owner in seat 1, settings stored
         ->assertJsonPath('data.game_mode', 'round_bank')
         ->assertJsonPath('data.min_entry', 1000)
         ->assertJsonPath('data.min_bet', '50.00')
-        ->assertJsonPath('data.bet_chips', ['50.00', '100.00', '150.00'])
+        ->assertJsonPath('data.bet_chips', ['50.00', '75.00', '100.00'])
+        ->assertJsonPath('data.key_fee', 5)
+        ->assertJsonPath('data.my_bet', '50.00')
+        ->assertJsonPath('data.my_required_chips', '1000.00')
         ->assertJsonPath('data.preparation_seconds', 45)
         ->assertJsonPath('data.players', 1)
         ->assertJsonPath('data.status', 'waiting')
@@ -60,7 +63,11 @@ test('create validation: name required and ≤ 30, valid mode / entry / preparat
     lbCreate($this, $u, ['name' => ''])->assertStatus(422)->assertJsonValidationErrors('name');
     lbCreate($this, $u, ['name' => str_repeat('x', 31)])->assertStatus(422)->assertJsonValidationErrors('name');
     lbCreate($this, $u, ['game_mode' => 'classic'])->assertStatus(422)->assertJsonValidationErrors('game_mode');
+    // Banker Mode was removed; 250 and 2,000 are no longer entry tiers.
+    lbCreate($this, $u, ['game_mode' => 'banker'])->assertStatus(422)->assertJsonValidationErrors('game_mode');
     lbCreate($this, $u, ['min_entry' => 300])->assertStatus(422)->assertJsonValidationErrors('min_entry');
+    lbCreate($this, $u, ['min_entry' => 250])->assertStatus(422)->assertJsonValidationErrors('min_entry');
+    lbCreate($this, $u, ['min_entry' => 2000])->assertStatus(422)->assertJsonValidationErrors('min_entry');
     lbCreate($this, $u, ['preparation_seconds' => 90])->assertStatus(422)->assertJsonValidationErrors('preparation_seconds');
     lbCreate($this, lbPlayer(500), ['min_entry' => 1000])->assertStatus(422)->assertJsonPath('error', 'insufficient_balance');
     expect(GameRoom::query()->lobby()->count())->toBe(0);
@@ -84,9 +91,9 @@ test('private lobby: password hashed and never returned; wrong password rejected
 
 test('joining needs the Minimum Entry balance; a full lobby rejects a fifth player', function () {
     $owner = lbPlayer();
-    $id = lbCreate($this, $owner, ['min_entry' => 2000])->json('data.id');
+    $id = lbCreate($this, $owner, ['min_entry' => 1000])->json('data.id');
 
-    $this->actingAs(lbPlayer(1_999), 'sanctum')->postJson("/api/v1/lobbies/{$id}/join")->assertStatus(422)->assertJsonPath('error', 'insufficient_balance');
+    $this->actingAs(lbPlayer(999), 'sanctum')->postJson("/api/v1/lobbies/{$id}/join")->assertStatus(422)->assertJsonPath('error', 'insufficient_balance');
 
     foreach (range(1, 3) as $i) {
         $this->actingAs(lbPlayer(), 'sanctum')->postJson("/api/v1/lobbies/{$id}/join")->assertCreated();
@@ -99,13 +106,13 @@ test('joining needs the Minimum Entry balance; a full lobby rejects a fifth play
 test('quick join: picks an affordable public lobby with free seats (fullest first), never private ones', function () {
     $rich = lbPlayer(10_000);
     $a = lbCreate($this, $rich, ['name' => 'Low', 'min_entry' => 100])->json('data.id');
-    $b = lbCreate($this, lbPlayer(10_000), ['name' => 'High', 'min_entry' => 2000])->json('data.id');
+    $b = lbCreate($this, lbPlayer(10_000), ['name' => 'High', 'min_entry' => 1000])->json('data.id');
     lbCreate($this, lbPlayer(10_000), ['name' => 'Secret', 'min_entry' => 100, 'password' => 'abcd1234']);
     $this->actingAs(lbPlayer(), 'sanctum')->postJson("/api/v1/lobbies/{$b}/join")->assertCreated();
     $this->actingAs(lbPlayer(), 'sanctum')->postJson("/api/v1/lobbies/{$b}/join")->assertCreated(); // High now has 3
 
-    // 1,000 diamonds: only "Low" is affordable.
-    $this->actingAs($p1 = lbPlayer(1_000), 'sanctum')->postJson('/api/v1/lobbies/quick-join')->assertCreated()->assertJsonPath('data.id', $a);
+    // 500 Chips: only "Low" is affordable.
+    $this->actingAs($p1 = lbPlayer(500), 'sanctum')->postJson('/api/v1/lobbies/quick-join')->assertCreated()->assertJsonPath('data.id', $a);
     // 10,000: both affordable; "High" has more players, so it goes first.
     $this->actingAs(lbPlayer(10_000), 'sanctum')->postJson('/api/v1/lobbies/quick-join')->assertCreated()->assertJsonPath('data.id', $b);
     // Already seated: no second room.
@@ -171,7 +178,7 @@ test('all four press Start → synchronized server countdown → the match start
     $session = GameSession::query()->find($table->current_session_id);
     expect($table->status)->toBe(TableStatus::InGame)->and($session->banker_user_id)->toBe($owner->id)
         ->and($session->config['arrangement_seconds'])->toBe(45)->and($session->config['min_bet'])->toBe(5_000)
-        ->and($session->config['bet_chips'])->toBe([5_000, 10_000, 15_000])->and($session->config['max_bet'])->toBe(15_000);
+        ->and($session->config['bet_chips'])->toBe([5_000, 7_500, 10_000])->and($session->config['max_bet'])->toBe(10_000);
     // Seats are kept for the match.
     expect($table->players()->pluck('seat', 'user_id')->all())->toBe([$owner->id => 1, $others[0]->id => 2, $others[1]->id => 3, $others[2]->id => 4]);
     $this->actingAs(lbPlayer(), 'sanctum')->getJson('/api/v1/lobbies')->assertJsonPath('data.0.status', 'in_game');
@@ -214,7 +221,7 @@ test('a player gone longer than the seat timeout loses the seat before the match
     $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.players', 1)->assertJsonPath('data.seats.1.state', 'available');
 });
 
-test('round bank: the creator banks first, then the banker rotates clockwise; banker mode keeps the creator', function () {
+test('round bank: the creator banks first, then the banker rotates clockwise', function () {
     [$owner, $room, $others] = lbFull($this, ['game_mode' => 'round_bank']);
     $table = lbStart($this, [$owner, ...$others], $room);
     $seatOrder = [$owner->id, $others[0]->id, $others[1]->id, $others[2]->id];
@@ -227,13 +234,6 @@ test('round bank: the creator banks first, then the banker rotates clockwise; ba
         app(BankerMatchService::class)->startRound($table->fresh());
     }
     expect($bankers)->toBe($seatOrder);
-
-    [$owner2, $room2, $others2] = lbFull($this, ['game_mode' => 'banker', 'name' => 'Bank']);
-    $t2 = lbStart($this, [$owner2, ...$others2], $room2);
-    lbPlayRound($t2);
-    $this->travel(10)->seconds();
-    app(BankerMatchService::class)->startRound($t2->fresh());
-    expect(GameSession::query()->find($t2->fresh()->current_session_id)->banker_user_id)->toBe($owner2->id);
 });
 
 test('owner leaving passes ownership on; the last player leaving closes the lobby; owner can kick and edit', function () {
@@ -281,15 +281,15 @@ test('lobbies are for players only; guests are rejected', function () {
     lbCreate($this, $agent)->assertStatus(403);
 });
 
-test('the Game Type shown in the list and in the lobby details is the mode the creator chose', function () {
+test('Round Bank is the only game type: new lobbies are Round Bank even when no type is sent', function () {
     $rb = lbCreate($this, lbPlayer(), ['name' => 'RB Room', 'game_mode' => 'round_bank'])->assertCreated()
         ->assertJsonPath('data.game_mode', 'round_bank')->assertJsonPath('data.game_mode_label', 'Round Bank')->json('data.id');
-    $bm = lbCreate($this, lbPlayer(), ['name' => 'BM Room', 'game_mode' => 'banker'])->assertCreated()
-        ->assertJsonPath('data.game_mode', 'banker')->assertJsonPath('data.game_mode_label', 'Banker Mode')->json('data.id');
+    $this->actingAs(lbPlayer(), 'sanctum')->postJson('/api/v1/lobbies', ['name' => 'No type', 'min_entry' => 100, 'preparation_seconds' => 45])->assertCreated()
+        ->assertJsonPath('data.game_mode', 'round_bank');
+    lbCreate($this, lbPlayer(), ['name' => 'BM Room', 'game_mode' => 'banker'])->assertStatus(422);
 
     $viewer = lbPlayer();
     $list = collect($this->actingAs($viewer, 'sanctum')->getJson('/api/v1/lobbies')->assertOk()->json('data'))->keyBy('id');
-    expect($list[$rb]['game_mode_label'])->toBe('Round Bank')->and($list[$bm]['game_mode_label'])->toBe('Banker Mode');
-    $this->actingAs($viewer, 'sanctum')->getJson("/api/v1/lobbies/{$rb}")->assertJsonPath('data.game_mode_label', 'Round Bank');
-    $this->actingAs($viewer, 'sanctum')->getJson("/api/v1/lobbies/{$bm}")->assertJsonPath('data.game_mode_label', 'Banker Mode');
+    expect($list[$rb]['game_mode_label'])->toBe('Round Bank')->and($list->pluck('game_mode')->unique()->values()->all())->toBe(['round_bank']);
+    expect(GameRoom::query()->lobby()->where('game_mode', 'banker')->count())->toBe(0);
 });

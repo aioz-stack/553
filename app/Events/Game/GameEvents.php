@@ -54,6 +54,11 @@ final class GameEvents
 
     public const MATCH_COMPLETED = 'match.completed';
 
+    // Round Bank: nobody holds the banker reserve — the match waits, then resumes (or ends).
+    public const MATCH_PAUSED = 'match.paused';
+
+    public const MATCH_RESUMED = 'match.resumed';
+
     // a seated player changed their profile (e.g. avatar): refresh their seat
     public const PLAYER_UPDATED = 'player.updated';
 

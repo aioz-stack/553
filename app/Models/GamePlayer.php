@@ -17,6 +17,7 @@ class GamePlayer extends Model
             'is_connected' => 'boolean',
             'missed_rounds' => 'integer',
             'banker_rounds' => 'integer',
+            'selected_bet' => 'integer',
             'last_seen_at' => 'datetime',
             'seated_at' => 'datetime',
         ];

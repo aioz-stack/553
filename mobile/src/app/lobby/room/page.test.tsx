@@ -32,7 +32,7 @@ const person = (seat: number, id: number, name: string, over: Seat = {}): Seat =
 
 function detail(seats: Seat[], over: Record<string, unknown> = {}) {
   return {
-    id: 14, lobby_id: '684421', name: 'Seat Test', game_mode: 'round_bank', game_mode_label: 'Round Bank', min_entry: 100, min_bet: '10.00', preparation_seconds: 45,
+    id: 14, lobby_id: '684421', name: 'Seat Test', game_mode: 'round_bank', game_mode_label: 'Round Bank', min_entry: 100, min_bet: '5.00', bet_chips: ['5.00', '10.00', '15.00'], key_fee: 1, bet_multiple: 2, my_bet: '10.00', my_required_chips: '100.00', my_chips: '500.00', my_keys: '3.00', preparation_seconds: 45,
     players: seats.filter((s) => s.user_id).length, max_players: 4, type: 'public', status: 'waiting', owner: 'player', is_mine: true, can_join: true,
     table_id: 8, table_status: 'WAITING_FOR_PLAYERS', seats, is_owner: true, is_seated: true, banker_rule: '', my_seat: 1, my_seat_confirmed: false, my_ready: false,
     all_confirmed: false, ready_count: 0, countdown_ends_at: null, server_time: new Date().toISOString(), can_press_start: false, start_hint: 'Waiting for 3 more players…',
@@ -56,7 +56,10 @@ describe('Choose Your Seat', () => {
     expect(screen.getByRole('button', { name: /Seat 2: reserved by Demo 9/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Seat 3: occupied by Demo 10/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Seat 4: available' })).toBeEnabled();
-    expect(screen.getByText(/Bet 10 · Min Entry 100 · Prep 45s/)).toBeInTheDocument();
+    expect(screen.getByText(/Bets 5\/10\/15 · Min Entry 100 · 1 Key · Prep 45s/)).toBeInTheDocument();
+    // Your bet and what it needs (2× the bet or the Minimum Entry) plus the Keys fee at the start.
+    expect(screen.getByLabelText('Your bet')).toHaveTextContent('Needs 100 Chips (2× bet, min entry) · 1 Key deducted at start');
+    expect(screen.getByRole('button', { name: '10', pressed: true })).toBeDisabled();
     expect(screen.getByText('Round Bank')).toBeInTheDocument();
     // Start stays hidden until all four seats are confirmed.
     expect(screen.queryByRole('button', { name: /START/ })).toBeNull();
