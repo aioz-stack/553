@@ -1741,3 +1741,19 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
     a single hold).
   - `MultiplayerTable.test`: the 500-tier chips, chips disabled when the wallet is too low.
   - `CreateLobbyModal.test`: no bet field, tier rules shown, request without a bet.
+
+## New playing-card design
+
+- `CardArt.tsx` was redrawn; the same file is used in both apps (`mobile/src/components/` and
+  `resources/js/Components/`, kept identical). Its exports, props and every caller are unchanged: the table,
+  arrangement popup, deal and reveal animations, and lobby art.
+  - **Faces:** a white card in a thick gold frame with a fine inner line and gold flourishes in all four
+    corners. A large bold serif rank (Times New Roman, even digits) sits over a large suit symbol; hearts and
+    diamonds are red, spades and clubs black. Every rank uses the same layout. The old pips, Ace emblem and
+    J / Q / K portraits were removed.
+  - **Back:** black with a gold quilted diamond lattice, a gold double frame with corner scrolls, a crown in a
+    gold medallion inside a laurel wreath, and gold fleurs-de-lis above and below. This replaces the red back.
+- The card wrappers (`PlayingCard`, `TableArt`, `DealAnimation`, lobby fan) now use a white or black base and
+  the new corner radius (`rounded-[9%/6.5%]`), so no old colour shows at the corners.
+- The laurel positions are rounded to 2 decimals, so server and browser render the same numbers (no hydration
+  mismatch).

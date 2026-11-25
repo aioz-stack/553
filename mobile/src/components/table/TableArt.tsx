@@ -275,7 +275,7 @@ export function MiniCrest() {
 /** The 553 card back (the shared card design, components/CardArt.tsx) at a fixed size. */
 export function CardBack553({ w = 70, h = 98 }: { w?: number; h?: number }) {
   return (
-    <span className="relative block overflow-hidden rounded-[7%/5%] bg-[#5a0408] shadow-[0_2px_4px_rgb(0_0_0/0.35)]" style={{ width: w, height: h }} aria-hidden="true">
+    <span className="relative block overflow-hidden rounded-[9%/6.5%] bg-[#0b0b0d] shadow-[0_2px_4px_rgb(0_0_0/0.35)]" style={{ width: w, height: h }} aria-hidden="true">
       <CardBackArt className="absolute inset-0 h-full w-full" />
     </span>
   );

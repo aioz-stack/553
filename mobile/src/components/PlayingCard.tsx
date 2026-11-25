@@ -45,7 +45,7 @@ export default function PlayingCard({
 
   if (faceDown || !code) {
     return (
-      <div className={`${dims} relative shrink-0 overflow-hidden rounded-[7%/5%] bg-[#5a0408] shadow-[0_3px_0_rgb(0_0_0/0.25),0_6px_10px_rgb(0_0_0/0.25)] ${className}`} style={style} aria-hidden="true">
+      <div className={`${dims} relative shrink-0 overflow-hidden rounded-[9%/6.5%] bg-[#0b0b0d] shadow-[0_3px_0_rgb(0_0_0/0.25),0_6px_10px_rgb(0_0_0/0.25)] ${className}`} style={style} aria-hidden="true">
         <CardBackArt className="absolute inset-0 h-full w-full" />
       </div>
     );
@@ -61,7 +61,7 @@ export default function PlayingCard({
       aria-label={`${label} of ${suitName(code[1])}`}
       aria-pressed={onClick ? !!selected : undefined}
       style={style}
-      className={`${dims} relative shrink-0 select-none overflow-hidden rounded-[7%/5%] bg-[#fbf5ea] leading-none shadow-[0_3px_0_rgb(0_0_0/0.25),0_6px_10px_rgb(0_0_0/0.25)] transition duration-150 ${
+      className={`${dims} relative shrink-0 select-none overflow-hidden rounded-[9%/6.5%] bg-white leading-none shadow-[0_3px_0_rgb(0_0_0/0.25),0_6px_10px_rgb(0_0_0/0.25)] transition duration-150 ${
         selected ? '-translate-y-2.5 ring-3 ring-gold-300 shadow-[0_0_18px_rgb(255_204_61/0.75)]' : ''
       } ${onClick ? 'cursor-pointer active:scale-95' : 'cursor-default'} ${className}`}
     >

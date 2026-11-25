@@ -230,7 +230,7 @@ function Back() {
 /** Your card face (shared card design), on the far side until the card turns over. */
 function Face({ code }: { code: string }) {
   return (
-    <span className="absolute inset-0 overflow-hidden rounded-[8px] bg-[#fbf5ea] shadow-[0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
+    <span className="absolute inset-0 overflow-hidden rounded-[8px] bg-white shadow-[0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
       <CardFaceArt code={code} className="absolute inset-0 h-full w-full" />
     </span>
   );

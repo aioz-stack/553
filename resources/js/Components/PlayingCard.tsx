@@ -30,7 +30,7 @@ export default function PlayingCard({ code, selected, onClick, size = 'md', face
 
   if (faceDown || !code) {
     return (
-      <div className={`${dims} relative shrink-0 overflow-hidden rounded-[7%/5%] bg-[#5a0408] shadow-theme-sm`} aria-hidden="true">
+      <div className={`${dims} relative shrink-0 overflow-hidden rounded-[9%/6.5%] bg-[#0b0b0d] shadow-theme-sm`} aria-hidden="true">
         <CardBackArt className="absolute inset-0 h-full w-full" />
       </div>
     );
@@ -46,7 +46,7 @@ export default function PlayingCard({ code, selected, onClick, size = 'md', face
       disabled={!onClick}
       aria-label={`${rank} of ${suit?.name}`}
       aria-pressed={selected}
-      className={`${dims} relative shrink-0 select-none overflow-hidden rounded-[7%/5%] bg-[#fbf5ea] shadow-theme-sm transition ${
+      className={`${dims} relative shrink-0 select-none overflow-hidden rounded-[9%/6.5%] bg-white shadow-theme-sm transition ${
         selected ? '-translate-y-2 ring-3 ring-brand-500/60' : ''
       } ${onClick ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'}`}
     >

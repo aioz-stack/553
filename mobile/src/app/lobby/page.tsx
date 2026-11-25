@@ -80,7 +80,7 @@ function LobbyCrest() {
         ['5H', 0, 160],
         ['3D', 16, 228],
       ].map(([c, r, x]) => (
-        <span key={c as string} className="absolute top-[6px] h-[112px] w-[80px] overflow-hidden rounded-[8px] bg-[#fbf5ea] shadow-[0_6px_10px_rgb(0_0_0/0.45)]" style={{ left: x as number, transform: `rotate(${r}deg)` }}>
+        <span key={c as string} className="absolute top-[6px] h-[112px] w-[80px] overflow-hidden rounded-[8px] bg-white shadow-[0_6px_10px_rgb(0_0_0/0.45)]" style={{ left: x as number, transform: `rotate(${r}deg)` }}>
           <CardFaceArt code={c as string} className="h-full w-full" />
         </span>
       ))}
