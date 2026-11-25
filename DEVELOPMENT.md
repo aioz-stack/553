@@ -1757,3 +1757,44 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   the new corner radius (`rounded-[9%/6.5%]`), so no old colour shows at the corners.
 - The laurel positions are rounded to 2 decimals, so server and browser render the same numbers (no hydration
   mismatch).
+
+## Game table redesign (Single Player and Multiplayer)
+
+- **One shared layout** for both modes (mobile `components/table/TableLayout.tsx`, 1600×900 stage), following the
+  reference image:
+  - **Opponents:** top (avatar left of the panel), left (avatar on the far left) and right (avatar on the far
+    right).
+  - **You:** bottom centre, with your avatar inside a red-and-gold panel.
+  - **Centre:** the PUSOY 553 crest with crown and laurels, the **ROUND X / 12** badge (it pops on change) and a
+    one-line status. The status hides during the reveal show.
+  - **Top HUD:** Back, Settings, Help, logo, Total Gold or Chips, Bet or Covering, Round and banker, match /
+    room. **Bottom right:** Skip (reveal show) and Sort (Single Player). These are unchanged.
+- **`HandPanel`:** an emerald panel with a gold border (red for you) holding three rows: Front 3 · Middle 5 ·
+  Back 5.
+  - **Before the deal:** faint slots.
+  - **Once dealt:** card backs (other players' cards stay private).
+  - **After the engine reveals:** the real cards, each lane's hand rank (`RankPill`) and WIN / LOSE / TIE vs the
+    banker (`OutcomePill`). Lucky Hand and Misplaced tags appear under the rows.
+  - In Single Player the cards flip at their moment of the reveal show (`isUp` / `laneShown`), with the zap shake
+    on misplaced lanes.
+- **Banker:** the banker's panel and avatar glow gold with a crowned BANKER tag. When you bank, the large
+  **BANKER (YOU)** ribbon with crown and laurels sits above your panel (`BankerRibbon`). All of this comes from
+  the round's banker (server rotation).
+- **Statuses** come from the game state, under each name: Betting / Bet N / Covering, Arranging, ✓ Ready /
+  Submitted, round and match net, Offline, Can't bank.
+- **Your panel's content:**
+  - **Betting:** the tier's chips (Multiplayer: 5/10/15, 20/30/40, 50/75/100; disabled below 2× the bet), or Deal
+    when you bank.
+  - **Arranging:** your 13 cards when the popup is closed (Single Player); the arrangement popup itself is
+    unchanged.
+  - **After the reveal:** your hand. In Single Player the next round's chips or Deal (and Results at the end) sit
+    in a tray beside it.
+- **Multiplayer** places the real players clockwise from you (left, top, right); an empty seat shows "Empty".
+  **Single Player** keeps LuckyBot left, CardBot top, AceBot right.
+- No engine change: dealing, shuffling, bots, private cards, banker rotation, ranking, scoring, payouts and every
+  action still come from the server.
+- Removed the old `SeatTile`, `Revealed` / `RevealedHand`, the face-down stacks and the old centre text.
+- Verified locally:
+  - Single Player: Beginner round, deal, arrange, reveal, results, next bet.
+  - Multiplayer: four players, private backs, Ready, reveal with WIN / LOSE, nets.
+- The Laravel web app's own player table (`resources/js/Pages/Player/Table`) was not changed.

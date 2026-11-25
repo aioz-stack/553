@@ -2,17 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { CandyText } from '@/components/HomeArt';
 import LandscapeStage from '@/components/LandscapeStage';
-import PlayingCard from '@/components/PlayingCard';
 import { Avatar, ChipIcon } from '@/components/game';
 import LuckPopup, { dealtRows, type Rows } from '@/components/table/LuckPopup';
 import { Chip, LanternRoom, MiniCrest, PokerTable } from '@/components/table/TableArt';
+import { BankerRibbon, HandPanel, TableCrest, type Spot } from '@/components/table/TableLayout';
 import { api, errorText } from '@/lib/api';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
 import { useLandscapeLock } from '@/lib/useLandscapeLock';
-import { LUCKY_LABELS, type Arrangement, type Result, type SeatPlayer, type SessionState, type TableState } from '@/lib/types';
+import { LUCKY_LABELS, type SeatPlayer, type SessionState, type TableState } from '@/lib/types';
 
 /**
  * Multiplayer in-game table (landscape, 1600×900 stage) for lobby matches — the same table as
@@ -29,16 +28,10 @@ import { LUCKY_LABELS, type Arrangement, type Result, type SeatPlayer, type Sess
  * decides a banker, a bet, a score or a payout.
  */
 
-type Lane = 'front' | 'middle' | 'back';
-const LANES: Lane[] = ['front', 'middle', 'back'];
 const CHIP_COLORS = ['#1f6fe0', '#14a046', '#e0262f'];
 
-/** Other seats, clockwise from you: left, top, right (stage coordinates, like Single Player). */
-const SPOTS = [
-  { x: 36, y: 380, reveal: { x: 196, y: 318 }, horizontal: false },
-  { x: 738, y: 94, reveal: { x: 560, y: 262 }, horizontal: true },
-  { x: 1440, y: 380, reveal: { x: 1196, y: 318 }, horizontal: false },
-] as const;
+/** Other seats, clockwise from you: left, top, right (TableLayout positions). */
+const SPOT_ORDER: Spot[] = ['left', 'top', 'right'];
 
 const num = (v: string | number | null | undefined) => Number(v ?? 0);
 const fmt = (n: number) => (Number.isInteger(n) ? n.toLocaleString('en-US') : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -65,64 +58,14 @@ function RoundButton({ label, onClick, children, x }: { label: string; onClick: 
   );
 }
 
-function BankerBadge() {
-  return <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border-[3px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-3 font-display text-[16px] font-black text-[#4a1d00] shadow-[0_3px_0_#7a3e00]">BANKER</span>;
-}
-
-function Outcome({ v }: { v: number }) {
-  const [txt, cls] = v > 0 ? ['WIN', 'bg-[#13a344]'] : v < 0 ? ['LOSS', 'bg-[#d81e3c]'] : ['TIE', 'bg-white/30'];
-  return <span className={`rounded-full px-2 py-[1px] font-display text-[14px] font-black text-white ${cls}`}>{txt}</span>;
-}
-
-/** A revealed hand: three rows (or side by side), the hand names and this seat's lanes vs the banker. */
-function Revealed({ a, r, card, step, horizontal }: { a: Arrangement; r?: Result; card: { w: number; h: number; f: number }; step: number; horizontal?: boolean }) {
-  const sizes: Record<Lane, number> = { front: 3, middle: 5, back: 5 };
+/** Lucky Hand / Misplaced tags under a revealed hand. */
+function HandBadges({ lucky, foul }: { lucky?: string | null; foul?: boolean }) {
+  if (!lucky && !foul) return null;
   return (
-    <div className={`flex ${horizontal ? 'flex-row items-start gap-[18px]' : 'flex-col gap-[4px]'}`} aria-label={`${a.name}'s hand`}>
-      {a.lucky_type ? (
-        <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-4 py-1 font-display text-[20px] font-black text-[#ffe14d]">LUCKY · {LUCKY_LABELS[a.lucky_type] ?? a.lucky_type}</span>
-      ) : null}
-      {LANES.map((lane) => (
-        <div key={lane} className={`flex gap-2 ${horizontal ? 'flex-col items-center' : 'items-center'}`}>
-          <div className="relative shrink-0" style={{ width: card.w + step * (sizes[lane] - 1), height: card.h }}>
-            {a[lane].map((c, i) => (
-              <span key={c} className="absolute top-0" style={{ left: i * step }}>
-                <PlayingCard code={c} style={{ width: card.w, height: card.h, fontSize: card.f }} />
-              </span>
-            ))}
-          </div>
-          <span className={`flex gap-1 ${horizontal ? 'flex-row' : 'flex-col items-start'}`}>
-            {a.labels?.[lane] && <span className="whitespace-nowrap rounded-full bg-black/55 px-2 font-display text-[15px] font-black text-[#ffe14d]">{a.labels[lane]}</span>}
-            {r?.lanes && <Outcome v={r.lanes[lane]} />}
-          </span>
-        </div>
-      ))}
-      {a.is_foul && <span className="w-fit rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISPLACED</span>}
-    </div>
-  );
-}
-
-function SeatTile({ p, x, y, banker, cantBank, status, glow }: { p?: SeatPlayer; x: number; y: number; banker: boolean; cantBank: boolean; status?: ReactNode; glow?: boolean }) {
-  if (!p) {
-    return (
-      <div className="absolute z-10 flex w-[124px] flex-col items-center opacity-60" style={{ left: x, top: y }} aria-label="Empty seat">
-        <div className="flex h-[120px] w-[120px] items-center justify-center rounded-[18px] border-[4px] border-dashed border-white/40 bg-black/25 font-display text-[18px] font-black text-white/70">Empty</div>
-      </div>
-    );
-  }
-  return (
-    <div className="absolute z-10 flex w-[124px] flex-col items-center" style={{ left: x, top: y }} aria-label={`${p.name}${banker ? ' (banker)' : ''}${p.is_connected ? '' : ' (offline)'}`}>
-      <div className={`relative rounded-[18px] p-[6px] ${banker ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_24px_rgb(80_180_255/0.9),0_6px_0_#0c3a8a]' : 'lx-gold shadow-[0_6px_0_#7a3e00]'} ${glow ? 'tb-winner' : ''} ${p.is_connected ? '' : 'grayscale'}`}>
-        {banker && <BankerBadge />}
-        <div className="overflow-hidden rounded-[12px] border-2 border-white/60">
-          <Avatar name={p.name} avatar={p.avatar} userId={p.user_id} size={108} square rim={false} />
-        </div>
-        {!p.is_connected && <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-[#3a0d14] px-2 font-display text-[13px] font-black text-[#ffb3bd]">OFFLINE</span>}
-      </div>
-      <span className="mt-1 max-w-[180px] truncate rounded-full bg-black/60 px-3 py-0.5 font-display text-[18px] font-black text-white">{p.name}</span>
-      {status && <span className="mt-0.5 whitespace-nowrap font-display text-[17px] font-black">{status}</span>}
-      {cantBank && <span className="mt-0.5 whitespace-nowrap rounded-full bg-black/55 px-2 font-display text-[13px] font-bold text-white/75">Can&apos;t bank · low Chips</span>}
-    </div>
+    <span className="flex gap-2">
+      {lucky && <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-3 font-display text-[15px] font-black text-[#ffe14d]">LUCKY · {LUCKY_LABELS[lucky] ?? lucky}</span>}
+      {foul && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISPLACED</span>}
+    </span>
   );
 }
 
@@ -382,133 +325,134 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
         </span>
       </div>
 
-      {/* The other three seats, clockwise from you */}
-      {around.map((p, i) => (
-        <SeatTile key={i} p={p} x={SPOTS[i].x} y={SPOTS[i].y} banker={!!p && p.user_id === bankerId} cantBank={!!p && cantBank.has(p.user_id)} status={status(p)} glow={revealed && num(resultOf(p?.user_id)?.net) > 0} />
-      ))}
-      {revealed &&
-        around.map((p, i) => {
-          const a = arrangementOf(p?.user_id);
-          return a ? (
-            <div key={i} className="absolute z-[5]" style={{ left: SPOTS[i].reveal.x, top: SPOTS[i].reveal.y }}>
-              <Revealed a={a} r={resultOf(p?.user_id)} card={{ w: 44, h: 62, f: 15 }} step={26} horizontal={SPOTS[i].horizontal} />
-            </div>
-          ) : null;
-        })}
-
-      {/* Felt centre: what is happening now */}
-      {!revealed && !arranging && (
-        <div className="absolute left-[400px] top-[262px] z-[5] flex w-[800px] flex-col items-center text-center" role="status" aria-label="Game status">
-          {phase === 'STARTING' && (
-            <>
-              <CandyText text="Get Ready!" width={640} height={100} size={80} sweepDelay={0.2} />
-              <p className="font-display text-[34px] font-black text-white">Seating players and shuffling…</p>
-            </>
-          )}
-          {phase === 'BETTING' && (
-            <>
-              <CandyText text={`Round ${round}`} width={640} height={100} size={80} sweepDelay={0.2} />
-              <p className="font-display text-[34px] font-black text-white drop-shadow-[0_3px_0_rgb(0_0_0/0.5)]">{iBank ? 'You are the banker' : `${bankerName} is the banker`}</p>
-              <p className="mt-1 font-display text-[28px] font-black text-[#ffe14d]">
-                {betSecondsLeft <= 0 ? 'Betting closed — dealing the cards…' : session?.can_bet ? 'Tap a chip to place your bet' : iBank ? 'No bet — you cover the other players' : session?.my_bet ? 'Bet placed — waiting for the others' : 'You sit out this round'} · {betSecondsLeft}s
-              </p>
-              <p className="mt-2 font-display text-[20px] font-bold text-white/70">Every lane vs the banker · 3-0 pays 2× · 2-1 pays 1× · identical lane = banker wins</p>
-            </>
-          )}
-          {(phase === 'ARRANGING' || phase === 'SUBMITTED') && (
-            <>
-              <CandyText text="Arranging" width={640} height={100} size={76} sweepDelay={0.2} />
-              <p className="font-display text-[32px] font-black text-white">
-                {session?.my_submission ? 'Hand locked in — waiting for the others' : session?.my_cards ? 'Arrange your hand' : 'This round is in progress — you are dealt in next round'} · {arrangeSecondsLeft}s
-              </p>
-              <p className="mt-1 font-display text-[24px] font-black text-[#ffe14d]">
-                {players.filter((p) => p.has_submitted).length} / {players.length} ready
-              </p>
-            </>
-          )}
-          {phase === 'CANCELLED' && <p className="mt-16 font-display text-[32px] font-black text-white">Round cancelled ({session?.cancel_reason?.replace(/_/g, ' ')}). Reserved Chips were returned.</p>}
-        </div>
-      )}
-
-      {/* Your revealed hand + this round's result */}
-      {revealed && userId && arrangementOf(userId) && (
-        <div className="absolute left-[520px] top-[392px] z-[6]">
-          <Revealed a={arrangementOf(userId)!} r={myResult} card={{ w: 58, h: 80, f: 19 }} step={40} />
-        </div>
-      )}
-      {revealed && (
-        <div className="absolute left-[880px] top-[430px] z-[6] flex w-[300px] flex-col items-center text-center" aria-label="Round result">
-          <span className="font-display text-[22px] font-black text-white/85">
-            Round {round} · {myResult?.role === 'banker' ? 'you banked' : 'you'}
-          </span>
-          <span className={`font-display text-[56px] font-black leading-tight drop-shadow-[0_3px_0_rgb(0_0_0/0.5)] ${tone(num(myResult?.net))}`}>{myResult ? signed(num(myResult.net)) : '—'}</span>
-          <span className="font-display text-[22px] font-black text-[#ffe14d]">Chips</span>
-          {!matchOver && phase === 'COMPLETED' && <span className="mt-1 font-display text-[20px] font-bold text-white/85">{round >= total ? 'Final round played' : nextIn > 0 ? `Next round in ${nextIn}s` : 'Dealing the next round…'}</span>}
-        </div>
-      )}
-
-      {/* Your seat: avatar + chips (betting) or status */}
-      <div className="absolute left-[300px] top-[752px] z-10 flex h-[140px] w-[1000px] items-center gap-4 rounded-[28px] border-[4px] border-[#ffc531] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-4 shadow-[0_8px_0_#3a0204]">
-        <div className={`relative shrink-0 rounded-[16px] p-[5px] ${iBank ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_20px_rgb(80_180_255/0.9)]' : 'lx-gold'}`} aria-label={`You${iBank ? ' (banker)' : ''}`}>
-          {iBank && <BankerBadge />}
-          <div className="overflow-hidden rounded-[11px] border-2 border-white/60">
-            <Avatar name={me?.name ?? 'You'} avatar={me?.avatar} userId={userId} size={104} square rim={false} />
-          </div>
-        </div>
-
-        {phase === 'BETTING' && session?.can_bet && betSecondsLeft > 0 ? (
-          <div className="flex items-center gap-5" role="group" aria-label="Bet chips">
-            {chipsList.map((c, i) => (
-              <button
-                key={c}
-                type="button"
-                aria-label={`Bet ${fmt(c)} Chips`}
-                title={canCover(c) ? undefined : `Needs ${fmt(c * 2)} Chips (2× the bet)`}
-                disabled={busy || !canCover(c)}
-                onClick={() => bet(c)}
-                className="tb-chip rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
-              >
-                <Chip value={fmt(c)} color={CHIP_COLORS[i % 3]} size={108} />
-              </button>
-            ))}
-            <span className="ml-1 max-w-[300px] font-display text-[21px] font-black leading-tight text-white/85" role="status">
-              {busy
-                ? 'Placing bet…'
-                : affordable.length === 0
-                  ? `You need ${fmt(Math.min(...chipsList) * 2)} Chips (2× the smallest bet) to bet`
-                  : `Tap a chip to bet (hold 2× your bet) · ${betSecondsLeft}s`}
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-between gap-4">
-            <span className="flex flex-col">
-              <span className="font-display text-[26px] font-black text-white">{me?.name ?? 'You'}</span>
-              <span className="font-display text-[20px] font-bold text-white/80">
-                {matchOver
-                  ? 'Match over'
-                  : phase === 'BETTING'
-                    ? iBank
-                      ? `You are the banker — covering ${fmt(covering)} Chips`
-                      : session?.my_bet
-                        ? `Bet ${fmt(num(session.my_bet))} Chips — waiting for the deal`
-                        : betSecondsLeft <= 0 ? 'Betting closed — dealing…' : 'Sitting out this round'
-                    : revealed
-                      ? `Match total ${signed(num(standingOf(userId)?.net))} Chips · round ${round} of ${total}`
-                      : session?.my_submission
-                        ? 'Hand locked in — waiting for the others'
-                        : 'Waiting…'}
+      {/* The other three seats, clockwise from you: left, top, right (the reference layout). */}
+      {around.map((p, i) => {
+        const spot = SPOT_ORDER[i];
+        if (!p) {
+          return <HandPanel key={i} spot={spot} name="Empty seat" label="Empty seat" avatar={<div className="flex h-[116px] w-[116px] items-center justify-center bg-black/30 font-display text-[18px] font-black text-white/60">Empty</div>} cards={{ kind: 'empty' }} />;
+        }
+        const a = revealed ? arrangementOf(p.user_id) : undefined;
+        const r = resultOf(p.user_id);
+        const dealt = (phase === 'ARRANGING' || phase === 'SUBMITTED') && (p.user_id === bankerId || num(p.bet) > 0);
+        return (
+          <HandPanel
+            key={i}
+            spot={spot}
+            name={p.name}
+            avatar={<Avatar name={p.name} avatar={p.avatar} userId={p.user_id} size={116} square rim={false} />}
+            status={
+              <span className="flex flex-col items-center">
+                {status(p)}
+                {cantBank.has(p.user_id) && <span className="rounded-full bg-black/55 px-2 text-[13px] font-bold text-white/75">Can&apos;t bank · low Chips</span>}
               </span>
-            </span>
-            <span className="flex items-center gap-3">
-              {chipsList.map((c, i) => (
-                <span key={c} className="opacity-70" aria-hidden="true">
-                  <Chip value={fmt(c)} color={CHIP_COLORS[i % 3]} size={64} />
+            }
+            banker={p.user_id === bankerId}
+            offline={!p.is_connected}
+            glow={revealed && num(r?.net) > 0}
+            cards={a ? { kind: 'rows', rows: { front: a.front, middle: a.middle, back: a.back }, labels: a.labels ?? null, outcomes: r?.lanes ?? null } : dealt ? { kind: 'backs' } : { kind: 'empty' }}
+            extra={a ? <HandBadges lucky={a.lucky_type} foul={a.is_foul} /> : undefined}
+          />
+        );
+      })}
+
+      {/* Felt centre: PUSOY 553 crest, ROUND X / 12, and what is happening now */}
+      <TableCrest
+        round={round}
+        total={total}
+        status={
+          <span role="status" aria-label="Game status" className="inline-block rounded-full bg-black/45 px-4 py-0.5 font-display text-[19px] font-black leading-snug text-white">
+            {phase === 'STARTING'
+              ? 'Get ready — seating players and shuffling…'
+              : phase === 'BETTING'
+                ? `${iBank ? 'You are the banker' : `${bankerName} is the banker`} · ${betSecondsLeft <= 0 ? 'betting closed' : session?.can_bet ? 'place your bet' : iBank ? 'you cover the bets' : session?.my_bet ? 'bet placed' : 'you sit out'} · ${Math.max(0, betSecondsLeft)}s`
+                : phase === 'ARRANGING' || phase === 'SUBMITTED'
+                  ? `${session?.my_submission ? 'Hand locked in' : session?.my_cards ? 'Arrange your hand' : 'Dealt in next round'} · ${players.filter((x) => x.has_submitted).length} / ${players.length} ready · ${arrangeSecondsLeft}s`
+                  : phase === 'CANCELLED'
+                    ? `Round cancelled (${session?.cancel_reason?.replace(/_/g, ' ')}) — reserved Chips returned`
+                    : revealed && !matchOver && phase === 'COMPLETED'
+                      ? round >= total ? 'Final round played' : nextIn > 0 ? `Next round in ${nextIn}s` : 'Dealing the next round…'
+                      : matchOver ? 'Match over' : 'Every lane vs the banker · 3-0 pays 2× · 2-1 pays 1×'}
+          </span>
+        }
+      />
+      {iBank && !matchOver && <BankerRibbon />}
+
+      {/* Your seat at the bottom centre: your hand after the reveal, or the bet chips / your status */}
+      {(() => {
+        const mine = revealed && userId ? arrangementOf(userId) : undefined;
+        const myStatus = revealed ? (
+          <span aria-label="Round result" className={tone(num(myResult?.net))}>
+            {myResult ? `${signed(num(myResult.net))} Chips` : '—'}
+          </span>
+        ) : undefined;
+        return (
+          <HandPanel
+            spot="bottom"
+            name={me?.name ?? 'You'}
+            label={`You${iBank ? ' (banker)' : ''}`}
+            avatar={<Avatar name={me?.name ?? 'You'} avatar={me?.avatar} userId={userId} size={140} square rim={false} />}
+            status={myStatus}
+            banker={iBank}
+            glow={revealed && num(myResult?.net) > 0}
+            cards={mine ? { kind: 'rows', rows: { front: mine.front, middle: mine.middle, back: mine.back }, labels: mine.labels ?? null, outcomes: myResult?.lanes ?? null } : undefined}
+            extra={mine ? <HandBadges lucky={mine.lucky_type} foul={mine.is_foul} /> : undefined}
+          >
+            {phase === 'BETTING' && session?.can_bet && betSecondsLeft > 0 ? (
+              <div className="flex flex-col gap-2" role="group" aria-label="Bet chips">
+                <div className="flex items-center gap-4">
+                  {chipsList.map((c, i) => (
+                    <button
+                      key={c}
+                      type="button"
+                      aria-label={`Bet ${fmt(c)} Chips`}
+                      title={canCover(c) ? undefined : `Needs ${fmt(c * 2)} Chips (2× the bet)`}
+                      disabled={busy || !canCover(c)}
+                      onClick={() => bet(c)}
+                      className="tb-chip rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale"
+                    >
+                      <Chip value={fmt(c)} color={CHIP_COLORS[i % 3]} size={100} />
+                    </button>
+                  ))}
+                </div>
+                <span className="font-display text-[20px] font-black leading-tight text-white/85" role="status">
+                  {busy
+                    ? 'Placing bet…'
+                    : affordable.length === 0
+                      ? `You need ${fmt(Math.min(...chipsList) * 2)} Chips (2× the smallest bet) to bet`
+                      : `Tap a chip to bet (hold 2× your bet) · ${betSecondsLeft}s`}
                 </span>
-              ))}
-            </span>
-          </div>
-        )}
-      </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <span className="font-display text-[22px] font-bold leading-snug text-white/85">
+                  {matchOver
+                    ? 'Match over'
+                    : phase === 'BETTING'
+                      ? iBank
+                        ? `You are the banker — covering ${fmt(covering)} Chips`
+                        : session?.my_bet
+                          ? `Bet ${fmt(num(session.my_bet))} Chips — waiting for the deal`
+                          : betSecondsLeft <= 0 ? 'Betting closed — dealing…' : 'Sitting out this round'
+                      : revealed
+                        ? `Match total ${signed(num(standingOf(userId)?.net))} Chips · round ${round} of ${total}`
+                        : session?.my_submission
+                          ? 'Hand locked in — waiting for the others'
+                          : session?.my_cards
+                            ? 'Arrange your 13 cards: Front 3 · Middle 5 · Back 5'
+                            : 'Waiting…'}
+                </span>
+                <span className="flex items-center gap-3">
+                  {chipsList.map((c, i) => (
+                    <span key={c} className="opacity-70" aria-hidden="true">
+                      <Chip value={fmt(c)} color={CHIP_COLORS[i % 3]} size={60} />
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+          </HandPanel>
+        );
+      })()}
 
       {/* Arrangement pop-up (your 13 cards, server-checked lane labels) */}
       {arranging && session && (

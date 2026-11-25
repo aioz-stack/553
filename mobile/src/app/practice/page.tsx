@@ -12,6 +12,7 @@ import LuckPopup from '@/components/table/LuckPopup';
 import { useCardDrag } from '@/components/table/useCardDrag';
 import { fxAt, isUp, laneShown, RevealBanner, RevealFx, revealPlan, useRevealClock, type RevealPlan } from '@/components/table/RevealShow';
 import { Chip, Clover, LanternRoom, MiniCrest, PokerTable } from '@/components/table/TableArt';
+import { BankerRibbon, HandPanel, TableCrest, type Spot } from '@/components/table/TableLayout';
 import { Avatar } from '@/components/game';
 import { BOT_AVATARS } from '@/lib/avatars';
 import { Screen } from '@/components/ui';
@@ -98,12 +99,8 @@ const EMPTY: Rows = { front: [], middle: [], back: [] };
 const CHIP_COLORS = ['#1f6fe0', '#14a046', '#e0262f'];
 const BOTS: Record<number, string> = { 2: 'LuckyBot', 3: 'CardBot', 4: 'AceBot' };
 
-/** Where each bot sits on the 1600×900 stage, its look, where its face-down cards and revealed hand go. */
-const SEATS: Record<number, { x: number; y: number; stack: { x: number; y: number }; reveal: { x: number; y: number }; horizontal?: boolean }> = {
-  2: { x: 36, y: 380, stack: { x: 66, y: 288 }, reveal: { x: 196, y: 318 } },
-  3: { x: 738, y: 94, stack: { x: 890, y: 130 }, reveal: { x: 560, y: 262 }, horizontal: true },
-  4: { x: 1440, y: 380, stack: { x: 1470, y: 288 }, reveal: { x: 1196, y: 318 } },
-};
+/** Where each bot sits (TableLayout): LuckyBot left, CardBot top, AceBot right. */
+const BOT_SPOT: Record<number, Spot> = { 2: 'left', 3: 'top', 4: 'right' };
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(n))}`;
@@ -160,61 +157,14 @@ function RoundButton({ label, onClick, children, x }: { label: string; onClick: 
   );
 }
 
-function BankerBadge() {
-  return <span className="absolute -top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border-[3px] border-white bg-gradient-to-b from-[#ffd34d] to-[#e08a00] px-3 font-display text-[16px] font-black text-[#4a1d00] shadow-[0_3px_0_#7a3e00]">BANKER</span>;
-}
-
-function SeatTile({ avatar, name, status, banker, glow, x, y }: { avatar: string; name: string; status?: ReactNode; banker?: boolean; glow?: boolean; x: number; y: number }) {
+/** Lucky Hand / Misplaced tags under a revealed hand. */
+function HandBadges({ lucky, foul }: { lucky?: string | null; foul?: boolean }) {
+  if (!lucky && !foul) return null;
   return (
-    <div className="absolute z-10 flex w-[124px] flex-col items-center" style={{ left: x, top: y }} aria-label={`${name}${banker ? ' (banker)' : ''}`}>
-      <div className={`relative rounded-[18px] p-[6px] ${banker ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_24px_rgb(80_180_255/0.9),0_6px_0_#0c3a8a]' : 'lx-gold shadow-[0_6px_0_#7a3e00]'} ${glow ? 'tb-winner' : ''}`}>
-        {banker && <BankerBadge />}
-        <div className="overflow-hidden rounded-[12px] border-2 border-white/60">
-          <Avatar name={name} avatar={avatar} size={108} square rim={false} />
-        </div>
-      </div>
-      <span className="mt-1 rounded-full bg-black/60 px-3 py-0.5 font-display text-[18px] font-black text-white">{name}</span>
-      {status && <span className="mt-0.5 whitespace-nowrap font-display text-[17px] font-black">{status}</span>}
-    </div>
-  );
-}
-
-function Outcome({ v }: { v: number }) {
-  const [txt, cls] = v > 0 ? ['WIN', 'bg-[#13a344]'] : v < 0 ? ['LOSS', 'bg-[#d81e3c]'] : ['TIE', 'bg-white/30'];
-  return <span className={`rounded-full px-2 py-[1px] font-display text-[14px] font-black text-white ${cls}`}>{txt}</span>;
-}
-
-/** A revealed hand, laid out in rows or side by side, with this seat's lane results vs the banker. */
-function RevealedHand({ p, card, step, gap, horizontal, plan = null, now = Number.POSITIVE_INFINITY, hit = false }: { p: RoundPlayer; card: { w: number; h: number; f: number }; step: number; gap: number; horizontal?: boolean; plan?: RevealPlan | null; now?: number; hit?: boolean }) {
-  return (
-    <div className={`flex ${horizontal ? 'flex-row items-start' : 'flex-col'}`} style={{ gap }} aria-label={`${p.is_you ? 'Your' : `${p.name}'s`} hand`}>
-      {LANES.map((lane) => (
-        <div key={lane} className={`flex gap-2 ${horizontal ? 'flex-col items-center' : 'items-center'}`}>
-          <div className={`relative shrink-0 ${hit && p.misplaced?.includes(lane) ? 'rv-hit' : ''}`} style={{ width: card.w + step * (SIZE[lane] - 1), height: card.h }}>
-            {(p[lane] ?? []).map((c, i) => (
-              // The wrapper carries the position: PlayingCard is itself `relative`. During the reveal show each
-              // card is a two-sided 3D card that turns face up at its moment (the back only exists until then).
-              <span key={c} className="absolute top-0 [perspective:600px]" style={{ left: i * step, width: card.w, height: card.h }}>
-                <span className="rv-card relative block h-full w-full" style={{ transform: isUp(plan, now, p.seat, lane, i) ? 'none' : 'rotateY(180deg)' }}>
-                  <span className="absolute inset-0 [backface-visibility:hidden]">
-                    <PlayingCard code={c} style={{ width: card.w, height: card.h, fontSize: card.f }} />
-                  </span>
-                  {plan && (
-                    <span className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                      <PlayingCard faceDown style={{ width: card.w, height: card.h }} />
-                    </span>
-                  )}
-                </span>
-              </span>
-            ))}
-          </div>
-          <span className={`flex gap-1 ${horizontal ? 'flex-row' : 'flex-col items-start'} ${laneShown(plan, now, lane) ? '' : 'invisible'}`}>
-            {p.labels && <span className="whitespace-nowrap rounded-full bg-black/55 px-2 font-display text-[15px] font-black text-[#ffe14d]">{p.labels[lane]}</span>}
-            {p.lanes && <Outcome v={p.lanes[lane]} />}
-          </span>
-        </div>
-      ))}
-    </div>
+    <span className="flex gap-2">
+      {lucky && <span className="rounded-full bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] px-3 font-display text-[15px] font-black text-[#ffe14d]">LUCKY · {lucky}</span>}
+      {foul && <span className="rounded-full bg-[#d81e3c] px-3 font-display text-[15px] font-black text-white">MISPLACED</span>}
+    </span>
   );
 }
 
@@ -665,6 +615,34 @@ export default function Practice() {
     return s && match && match.rounds_played > 0 ? <span className={tone(s.gold)}>{signed(s.gold)}</span> : <span className="text-white/70">Waiting</span>;
   };
 
+  const betControls: ReactNode =
+    canBet && tier ? (
+      nextBanker === 1 ? (
+        // You bank the next round: no bet — you cover the other players' bets.
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => placeBet(null)} disabled={busy} className="lx-tile h-[86px] shrink-0 rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[36px] font-black text-[#4a1d00] shadow-[0_7px_0_#8a4a00]">
+            {busy ? 'Dealing…' : 'Deal'}
+          </button>
+          <span className="font-display text-[19px] font-black leading-tight text-white/85">
+            {revealed ? `Round ${roundNo + 1}: you bank. ` : ''}You're the banker — no bet needed. You cover the other players' bets.
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1" role="group" aria-label="Bet chips">
+          <div className="flex items-center gap-3">
+            {tier.bets.map((b, i) => (
+              <button key={b} type="button" aria-label={`Bet ${fmt(b)}`} aria-pressed={bet === b} disabled={busy} onClick={() => placeBet(b)} className={`tb-chip rounded-full transition ${bet === b ? 'tb-chip-on' : ''}`}>
+                <Chip value={b >= 10000 ? `${b / 1000}K` : String(b)} color={CHIP_COLORS[i % 3]} size={revealed ? 92 : 100} />
+              </button>
+            ))}
+          </div>
+          <span className="font-display text-[19px] font-black leading-tight text-white/85">
+            {busy ? 'Dealing…' : revealed ? `Round ${roundNo + 1}: ${bankerFor(roundNo + 1) === 1 ? 'you bank' : `${BOTS[bankerFor(roundNo + 1)]} banks`} — pick a bet` : 'Tap a chip to deal'}
+          </span>
+        </div>
+      )
+    ) : null;
+
   return (
     <Screen title="Single Player" immersive>
       <LandscapeStage background={<LanternRoom className="h-full w-full" />}>
@@ -717,54 +695,71 @@ export default function Practice() {
           )}
         </div>
 
-        {/* The three bots */}
+        {/* The three bots: LuckyBot left, CardBot top, AceBot right (the reference layout). */}
         {[2, 3, 4].map((seat) => {
-          const s = SEATS[seat];
           const p = players.find((x) => x.seat === seat);
-          return <SeatTile key={seat} avatar={BOT_AVATARS[seat]} name={BOTS[seat]} status={botStatus(seat)} banker={banker === seat} glow={revealed && !revealing && (p?.gold ?? 0) > 0} x={s.x} y={s.y} />;
+          const shown = revealed && p && p.front;
+          return (
+            <HandPanel
+              key={seat}
+              spot={BOT_SPOT[seat]}
+              name={BOTS[seat]}
+              avatar={<Avatar name={BOTS[seat]} avatar={BOT_AVATARS[seat]} size={116} square rim={false} />}
+              status={botStatus(seat)}
+              banker={banker === seat}
+              glow={revealed && !revealing && (p?.gold ?? 0) > 0}
+              cards={
+                shown
+                  ? {
+                      kind: 'rows',
+                      rows: { front: p.front ?? [], middle: p.middle ?? [], back: p.back ?? [] },
+                      labels: p.labels ?? null,
+                      outcomes: p.lanes ?? null,
+                      up: reveal?.plan ? (lane, i) => isUp(reveal.plan, now, seat, lane, i) : undefined,
+                      laneShown: reveal?.plan ? (lane) => laneShown(reveal.plan, now, lane) : undefined,
+                      hit: fx?.kind === 'zap' && fx.seat === seat ? ((p.misplaced ?? []) as Lane[]) : undefined,
+                    }
+                  : phase === 'arranging' && dealing === null
+                    ? { kind: 'backs' }
+                    : { kind: 'empty' }
+              }
+              extra={shown ? <HandBadges lucky={p.lucky?.label} foul={p.is_foul} /> : undefined}
+            />
+          );
         })}
-        {phase === 'arranging' && dealing === null &&
-          [2, 3, 4].map((seat) => (
-            <div key={seat} className="pointer-events-none absolute" style={{ left: SEATS[seat].stack.x, top: SEATS[seat].stack.y }}>
-              {[0, 1, 2].map((i) => (
-                <PlayingCard key={i} faceDown className="absolute" style={{ left: i * 14, top: 0, width: 50, height: 70, transform: `rotate(${(i - 1) * 8}deg)` }} />
-              ))}
-            </div>
-          ))}
-        {revealed &&
-          players
-            .filter((p) => !p.is_you)
-            .map((p) => (
-              <div key={p.seat} className="absolute z-[5]" style={{ left: SEATS[p.seat].reveal.x, top: SEATS[p.seat].reveal.y }}>
-                <RevealedHand p={p} card={{ w: 44, h: 62, f: 15 }} step={26} gap={SEATS[p.seat].horizontal ? 18 : 4} horizontal={SEATS[p.seat].horizontal} plan={reveal?.plan} now={now} hit={fx?.kind === 'zap' && fx.seat === p.seat} />
-              </div>
-            ))}
 
-        {/* Felt centre */}
-        {(phase === 'loading' || phase === 'betting') && (
-          <div className="absolute left-[400px] top-[262px] z-[5] flex w-[800px] flex-col items-center text-center">
-            {phase === 'loading' ? (
-              <span className="mt-24 font-display text-[36px] font-black text-white/90" role="status">
-                Setting up the table…
-              </span>
-            ) : (
-              tier && (
-                <>
-                  <CandyText text={tier.name} width={640} height={100} size={80} sweepDelay={0.2} />
-                  <p className="font-display text-[36px] font-black text-white drop-shadow-[0_3px_0_rgb(0_0_0/0.5)]">
-                    Round {roundNo} of {total} · {banker === 1 ? 'You are the banker' : `${BOTS[banker]} is the banker`}
-                  </p>
-                  <p className="mt-1 font-display text-[28px] font-black text-[#ffe14d]">{tier.eligible ? (banker === 1 ? 'No bet needed — you cover the other players. Tap Deal.' : 'Tap a chip to place your bet and deal') : `You need at least ${fmt(tier.min_gold)} gold to play ${tier.name}`}</p>
-                  <p className="mt-2 font-display text-[20px] font-bold text-white/70">4 players · every lane vs the banker · 3-0 pays 2× · 2-1 pays 1× · identical lane = banker wins</p>
-                </>
-              )
-            )}
-          </div>
-        )}
+        {/* Felt centre: PUSOY 553 crest, ROUND X / 12 and what to do now */}
+        <TableCrest
+          round={Math.min(roundNo, total)}
+          total={total}
+          status={
+            // Hidden while the reveal show runs (its own banner takes the centre).
+            revealing ? undefined : <span role="status" className="inline-block rounded-full bg-black/45 px-4 py-0.5 font-display text-[19px] font-black leading-snug text-white">
+              {phase === 'loading'
+                ? 'Setting up the table…'
+                : phase === 'betting' && tier
+                  ? tier.eligible
+                    ? `${tier.name} · ${banker === 1 ? 'You are the banker — tap Deal' : `${BOTS[banker]} is the banker — tap a chip to bet`}`
+                    : `You need at least ${fmt(tier.min_gold)} gold to play ${tier.name}`
+                  : phase === 'arranging'
+                    ? dealing !== null ? 'Shuffling and dealing…' : 'Arrange Front 3 · Middle 5 · Back 5'
+                    : revealed && !revealing && result
+                      ? (
+                          <span aria-label="Round result">
+                            Round {round?.round} · <span className={tone(result.gold)}>{signed(result.gold)} Gold</span> · {outcomeText}
+                            {!round?.wagering && <span className="text-white/60"> · Practice Gold — not credited</span>}
+                          </span>
+                        )
+                      : '4 players · every lane vs the banker · 3-0 pays 2× · 2-1 pays 1×'}
+            </span>
+          }
+        />
+        {banker === 1 && !matchOver && <BankerRibbon />}
 
         {phase === 'arranging' && round && dealing === null && (
           <>
-            <div className="absolute left-[430px] top-[268px] z-[6] flex flex-col gap-[14px]">
+            <div className="absolute left-[408px] top-[252px] z-[8] h-[452px] w-[1036px] rounded-[30px] border-[3px] border-[#d9a441]/70 bg-[#0b2a18]/95 shadow-[0_10px_30px_rgb(0_0_0/0.55)]" aria-hidden="true" />
+            <div className="absolute left-[430px] top-[268px] z-[8] flex flex-col gap-[14px]">
               {LANES.map((lane) => {
                 const size = SIZE[lane];
                 const open = picked.length > 0 && rows[lane].length < size;
@@ -802,14 +797,14 @@ export default function Practice() {
               })}
             </div>
             {(foul || locked) && (
-              <div role="status" className={`absolute left-[480px] top-[690px] z-[6] rounded-full px-4 py-1 font-display text-[20px] font-black text-white ${foul ? 'bg-[#d81e3c]' : 'bg-black/55'}`}>
+              <div role="status" className={`absolute left-[480px] top-[690px] z-[8] rounded-full px-4 py-1 font-display text-[20px] font-black text-white ${foul ? 'bg-[#d81e3c]' : 'bg-black/55'}`}>
                 {foul ? 'Misplaced cards — submitting now pays a 2× bet penalty. Tap Reset to fix.' : '🔒 Cards locked — tap Reset to rearrange'}
               </div>
             )}
             <button
               type="button"
               onClick={reopen}
-              className="lx-tile absolute left-[1250px] top-[262px] z-[6] h-[60px] w-[150px] rounded-full border-[4px] border-white/60 bg-black/35 font-display text-[24px] font-black text-white"
+              className="lx-tile absolute left-[1250px] top-[262px] z-[8] h-[60px] w-[150px] rounded-full border-[4px] border-white/60 bg-black/35 font-display text-[24px] font-black text-white"
             >
               Reset
             </button>
@@ -818,7 +813,7 @@ export default function Practice() {
                 type="button"
                 onClick={declareLuck}
                 disabled={declaring}
-                className="lx-tile absolute left-[1222px] top-[400px] z-[6] flex h-[96px] w-[200px] items-center gap-1 rounded-full border-[4px] border-[#ffc531] bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] pl-2 pr-3 shadow-[0_6px_0_#2a0660]"
+                className="lx-tile absolute left-[1222px] top-[400px] z-[8] flex h-[96px] w-[200px] items-center gap-1 rounded-full border-[4px] border-[#ffc531] bg-gradient-to-b from-[#a24dff] to-[#4a0f9a] pl-2 pr-3 shadow-[0_6px_0_#2a0660]"
               >
                 <Clover size={62} />
                 <span className="flex flex-col items-center font-display font-black leading-none">
@@ -831,81 +826,53 @@ export default function Practice() {
               type="button"
               onClick={() => submit()}
               disabled={busy}
-              className={`lx-tile absolute left-[1230px] top-[540px] z-[6] h-[88px] w-[190px] rounded-full border-[5px] font-display text-[32px] font-black text-white ${foul ? 'border-[#ffc2c2] bg-gradient-to-b from-[#ff6b6b] to-[#b3121a] shadow-[0_7px_0_#6b0606]' : 'border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] shadow-[0_7px_0_#0b6b2a]'} ${complete ? '' : 'opacity-80'}`}
+              className={`lx-tile absolute left-[1230px] top-[540px] z-[8] h-[88px] w-[190px] rounded-full border-[5px] font-display text-[32px] font-black text-white ${foul ? 'border-[#ffc2c2] bg-gradient-to-b from-[#ff6b6b] to-[#b3121a] shadow-[0_7px_0_#6b0606]' : 'border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] shadow-[0_7px_0_#0b6b2a]'} ${complete ? '' : 'opacity-80'}`}
             >
               {busy ? '…' : 'Submit'}
             </button>
           </>
         )}
 
-        {revealed && me && (
-          <>
-            <div className="absolute left-[520px] top-[392px] z-[6]">
-              <RevealedHand p={me} card={{ w: 58, h: 80, f: 19 }} step={40} gap={6} plan={reveal?.plan} now={now} hit={fx?.kind === 'zap' && fx.seat === me.seat} />
-            </div>
-            {result && !revealing && (
-              <div className="absolute left-[880px] top-[430px] z-[6] flex w-[300px] flex-col items-center text-center" aria-label="Round result">
-                <span className="font-display text-[22px] font-black text-white/85">Round {round?.round} · you</span>
-                <span className={`font-display text-[56px] font-black leading-tight drop-shadow-[0_3px_0_rgb(0_0_0/0.5)] ${tone(result.gold)}`}>{signed(result.gold)}</span>
-                <span className="font-display text-[22px] font-black text-[#ffe14d]">Gold</span>
-                <span className="mt-1 font-display text-[20px] font-bold text-white/85">{outcomeText}</span>
-                {!round?.wagering && <span className="mt-1 text-[15px] text-white/55">Practice Gold — not credited</span>}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* My seat: avatar + chips (betting / after a round) or the 13-card hand (arranging) */}
-        <div className="absolute left-[300px] top-[752px] z-10 flex h-[140px] w-[1000px] items-center gap-4 rounded-[28px] border-[4px] border-[#ffc531] bg-gradient-to-b from-[#b3141b] to-[#5a0609] px-4 shadow-[0_8px_0_#3a0204]">
-          <div className={`relative shrink-0 rounded-[16px] p-[5px] ${banker === 1 ? 'bg-gradient-to-b from-[#9fe0ff] to-[#1f6fe0] shadow-[0_0_20px_rgb(80_180_255/0.9)]' : 'lx-gold'}`} title={name} aria-label={`You${banker === 1 ? ' (banker)' : ''}`}>
-            {banker === 1 && <BankerBadge />}
-            <div className="overflow-hidden rounded-[11px] border-2 border-white/60">
-              <Avatar name={name} avatar={user?.avatar} userId={user?.id} size={104} square rim={false} />
-            </div>
-          </div>
-
-          {canBet && tier && nextBanker === 1 && (
-            // You bank the next round: no bet — you cover the other players' bets.
-            <div className="flex items-center gap-5">
-              <button type="button" onClick={() => placeBet(null)} disabled={busy} className="lx-tile h-[96px] rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-10 font-display text-[40px] font-black text-[#4a1d00] shadow-[0_7px_0_#8a4a00]">
-                {busy ? 'Dealing…' : 'Deal'}
-              </button>
-              <span className="max-w-[460px] font-display text-[21px] font-black leading-tight text-white/85">
-                {revealed ? `Round ${roundNo + 1}: you bank. ` : ''}You're the banker — no bet needed. You cover the other players' bets.
+        {/* Your seat at the bottom centre: your revealed hand, or the bet chips / Deal / your 13 cards */}
+        <HandPanel
+          spot="bottom"
+          name={name}
+          label={`You${banker === 1 ? ' (banker)' : ''}`}
+          avatar={<Avatar name={name} avatar={user?.avatar} userId={user?.id} size={140} square rim={false} />}
+          status={
+            revealed && result && !revealing ? (
+              <span className={tone(result.gold)}>
+                {signed(result.gold)} Gold{!round?.wagering ? ' · practice' : ''}
               </span>
-            </div>
-          )}
-
-          {canBet && tier && nextBanker !== 1 && (
-            <div className="flex items-center gap-5" role="group" aria-label="Bet chips">
-              {tier.bets.map((b, i) => (
-                <button
-                  key={b}
-                  type="button"
-                  aria-label={`Bet ${fmt(b)}`}
-                  aria-pressed={bet === b}
-                  disabled={busy}
-                  onClick={() => placeBet(b)}
-                  className={`tb-chip rounded-full transition ${bet === b ? 'tb-chip-on' : ''}`}
-                >
-                  <Chip value={b >= 10000 ? `${b / 1000}K` : String(b)} color={CHIP_COLORS[i % 3]} size={108} />
-                </button>
-              ))}
-              <span className="ml-1 max-w-[300px] font-display text-[21px] font-black leading-tight text-white/85">
-                {busy ? 'Dealing…' : revealed ? `Round ${roundNo + 1}: ${bankerFor(roundNo + 1) === 1 ? 'you bank' : `${BOTS[bankerFor(roundNo + 1)]} banks`} — pick a bet` : 'Tap a chip to deal'}
-              </span>
-            </div>
-          )}
-
+            ) : undefined
+          }
+          banker={banker === 1}
+          glow={revealed && !revealing && (result?.gold ?? 0) > 0}
+          cards={
+            revealed && me && me.front
+              ? {
+                  kind: 'rows',
+                  rows: { front: me.front ?? [], middle: me.middle ?? [], back: me.back ?? [] },
+                  labels: me.labels ?? null,
+                  outcomes: me.lanes ?? null,
+                  up: reveal?.plan ? (lane, i) => isUp(reveal.plan, now, me.seat, lane, i) : undefined,
+                  laneShown: reveal?.plan ? (lane) => laneShown(reveal.plan, now, lane) : undefined,
+                  hit: fx?.kind === 'zap' && fx.seat === me.seat ? ((me.misplaced ?? []) as Lane[]) : undefined,
+                }
+              : undefined
+          }
+          extra={revealed && me ? <HandBadges lucky={me.lucky?.label} foul={me.is_foul} /> : undefined}
+        >
+          {!revealed && betControls}
           {(phase === 'betting' || phase === 'loading') && tier && !tier.eligible && <span className="font-display text-[26px] font-black text-white/80">Not enough gold for {tier.name}</span>}
 
           {/* Your hand on the table only when the arrangement popup is closed (no second card panel). */}
           {phase === 'arranging' && !luck && dealing === null && (
-            <div data-zone="hand" className="relative h-[120px] flex-1" aria-label="Your hand">
+            <div data-zone="hand" className="relative h-[120px]" aria-label="Your hand">
               {hand.map((c, i) => {
                 const on = picked.includes(c);
                 return (
-                  <span key={c} data-card={c} onPointerDown={bindDrag(c)} className={`absolute touch-none transition-[left] ${dragging === c ? 'opacity-0' : ''}`} style={{ left: i * Math.min(62, 760 / Math.max(hand.length, 1)), top: 8 }}>
+                  <span key={c} data-card={c} onPointerDown={bindDrag(c)} className={`absolute touch-none transition-[left] ${dragging === c ? 'opacity-0' : ''}`} style={{ left: i * Math.min(56, 420 / Math.max(hand.length - 1, 1)), top: 8 }}>
                     <PlayingCard
                       code={c}
                       selected={on}
@@ -913,7 +880,7 @@ export default function Practice() {
                       onClick={() => {
                         if (suppressClick.current || locked) return;
                         play('tap');
-                        setPicked((s) => (s.includes(c) ? s.filter((x) => x !== c) : [...s, c]));
+                        setPicked((x) => (x.includes(c) ? x.filter((y) => y !== c) : [...x, c]));
                       }}
                     />
                   </span>
@@ -922,18 +889,28 @@ export default function Practice() {
               {hand.length === 0 && <span className="absolute inset-0 flex items-center font-display text-[26px] font-black text-[#7dffa0]">All cards placed — tap Submit!</span>}
             </div>
           )}
+          {phase === 'arranging' && luck && dealing === null && <span className="font-display text-[22px] font-bold text-white/85">Arranging your 13 cards…</span>}
+          {phase === 'arranging' && dealing !== null && <span className="font-display text-[22px] font-bold text-white/85">Shuffling and dealing…</span>}
+        </HandPanel>
 
-          {revealed && !revealing && matchOver && match && (
-            <div className="flex flex-1 items-center justify-between">
-              <span className="font-display text-[28px] font-black text-white">
-                Match over · <span className={tone(match.gold)}>{signed(match.gold)} Gold</span>
-              </span>
-              <button type="button" onClick={() => setPanel('summary')} className="lx-tile h-[78px] rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[30px] font-black text-[#4a1d00] shadow-[0_6px_0_#8a4a00]">
-                Results
-              </button>
-            </div>
-          )}
-        </div>
+        {/* After a reveal your hand stays on show: the next round's bet (or Deal) and Results sit beside it. */}
+        {revealed && !revealing && (canBet || matchOver) && (
+          <div className="absolute left-[1170px] top-[588px] z-10 w-[410px] rounded-[24px] border-[3px] border-[#d9a441]/80 bg-gradient-to-b from-[#6e0b10]/95 to-[#2a0305]/95 p-3 shadow-[0_8px_0_rgb(0_0_0/0.35)]" aria-label="Next round">
+            {matchOver && match ? (
+              <div className="flex flex-col items-center gap-2">
+                <span className="font-display text-[24px] font-black text-white">
+                  Match over · <span className={tone(match.gold)}>{signed(match.gold)} Gold</span>
+                </span>
+                <button type="button" onClick={() => setPanel('summary')} className="lx-tile h-[70px] rounded-full border-[5px] border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[28px] font-black text-[#4a1d00] shadow-[0_6px_0_#8a4a00]">
+                  Results
+                </button>
+              </div>
+            ) : (
+              betControls
+            )}
+          </div>
+        )}
+
         {/* Sort */}
         <div className="absolute right-[24px] top-[748px] z-10 flex flex-col items-end gap-3">
           <button
