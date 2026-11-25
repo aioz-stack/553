@@ -118,6 +118,25 @@ describe('Home — Main Lobby top bar', () => {
     expect(container.querySelector('a[href="/leaderboard/"]')).toBeNull();
   });
 
+  it('Gold, Chips and Keys are information only; only the Keys (+) is a button, and it opens the Shop', async () => {
+    routes(gold({ out_of_gold: false }));
+    render(<Home />);
+    const wallets = await screen.findByRole('group', { name: 'Wallets' });
+    // The only button among the wallets is the Keys (+).
+    expect(within(wallets).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Buy Keys in the Shop']);
+    for (const name of ['Gold', 'Chips', 'Keys']) {
+      const bar = within(wallets).getByRole('group', { name: new RegExp(`^${name} wallet`) });
+      expect(bar.tagName).not.toBe('BUTTON');
+      fireEvent.click(bar);
+    }
+    // Tapping the bars opens nothing and goes nowhere.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+
+    fireEvent.click(within(wallets).getByRole('button', { name: 'Buy Keys in the Shop' }));
+    expect(await screen.findByRole('dialog', { name: /shop/i })).toBeInTheDocument();
+  });
+
   it('has no notification bell on the Main Lobby', async () => {
     routes(gold({ out_of_gold: false }));
     render(<Home />);

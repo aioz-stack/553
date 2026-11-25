@@ -9,7 +9,8 @@ import { play } from '@/lib/sound';
 /**
  * Main Lobby wallets, stacked in the upper-right corner: Gold, Chips, Keys (in that order).
  * Every number is the player's server balance (passed in by the page, which keeps it live);
- * nothing here changes a balance. Each card has a fixed width with room for 7 digits
+ * nothing here changes a balance. The bars are information only (not buttons); the one control is
+ * the (+) inside the Keys bar, which opens the Shop. Each card has a fixed width with room for 7 digits
  * (9,999,999) in tabular figures, so the layout never shifts as balances change.
  */
 export type WalletKind = 'gold' | 'chips' | 'keys';
@@ -39,7 +40,7 @@ function useFlash(value: number | undefined): 'up' | 'down' | null {
   return flash;
 }
 
-function WalletCard({ kind, value, icon, onOpen, onPlus, delay }: { kind: WalletKind; value: number | undefined; icon: ReactNode; onOpen: () => void; onPlus?: () => void; delay: number }) {
+function WalletCard({ kind, value, icon, onPlus, delay }: { kind: WalletKind; value: number | undefined; icon: ReactNode; onPlus?: () => void; delay: number }) {
   const t = THEME[kind];
   const flash = useFlash(value);
   const text = value !== undefined ? fmt(value) : '…';
@@ -47,14 +48,11 @@ function WalletCard({ kind, value, icon, onOpen, onPlus, delay }: { kind: Wallet
     // Every bar is the same width; the (+) sits inside the Keys bar at its far right.
     <div className={`relative flex h-[64px] w-[356px] items-center rounded-full bg-gradient-to-b ${t.frame} p-[4px] shadow-[0_6px_0_rgb(0_0_0/0.35)]`}>
       <div className={`lx-gloss relative flex h-full min-w-0 flex-1 items-center rounded-full bg-gradient-to-b ${t.body} shadow-[inset_0_-6px_12px_rgb(0_0_0/0.4)]`}>
-      <button
-        type="button"
-        onClick={() => {
-          play('tap');
-          onOpen();
-        }}
+      {/* Information only: no button, no pointer, no press animation. */}
+      <div
+        role="group"
         aria-label={`${t.label} wallet: ${text}`}
-        className={`lx-tile relative flex h-full min-w-0 flex-1 items-center gap-2 rounded-full pl-1 text-left ${onPlus ? 'pr-2' : 'pr-3'}`}
+        className={`relative flex h-full min-w-0 flex-1 cursor-default select-none items-center gap-2 rounded-full pl-1 text-left ${onPlus ? 'pr-2' : 'pr-3'}`}
       >
         <RimGlint width={3} delay={delay} />
         <span className="relative z-[4] shrink-0">{icon}</span>
@@ -66,7 +64,7 @@ function WalletCard({ kind, value, icon, onOpen, onPlus, delay }: { kind: Wallet
         >
           {text}
         </span>
-      </button>
+      </div>
       {onPlus && (
         <button
           type="button"
@@ -74,7 +72,7 @@ function WalletCard({ kind, value, icon, onOpen, onPlus, delay }: { kind: Wallet
             play('tap');
             onPlus();
           }}
-          aria-label={`Get ${t.label}`}
+          aria-label={kind === 'keys' ? 'Buy Keys in the Shop' : `Get ${t.label}`}
           className="lx-tile relative z-[4] mr-[4px] flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full border-[3px] border-[#c8ffd8] bg-gradient-to-b from-[#5ef08a] to-[#13a344] font-display text-[30px] font-black leading-none text-white shadow-[0_3px_0_#0b6b2a,inset_0_3px_0_rgb(255_255_255/0.5)]"
         >
           +
@@ -85,12 +83,13 @@ function WalletCard({ kind, value, icon, onOpen, onPlus, delay }: { kind: Wallet
   );
 }
 
-export default function WalletStack({ gold, chips, keys, onOpen, onGetKeys, className = '' }: { gold?: number; chips?: number; keys?: number; onOpen: (kind: WalletKind) => void; onGetKeys: () => void; className?: string }) {
+/** `onBuyKeys`: the Keys (+) — opens the Shop. Gold and Chips have no action. */
+export default function WalletStack({ gold, chips, keys, onBuyKeys, className = '' }: { gold?: number; chips?: number; keys?: number; onBuyKeys: () => void; className?: string }) {
   return (
     <div className={`flex flex-col items-end gap-[12px] ${className}`} role="group" aria-label="Wallets">
-      <WalletCard kind="gold" value={gold} icon={<GoldCoins size={48} />} onOpen={() => onOpen('gold')} delay={0.6} />
-      <WalletCard kind="chips" value={chips} icon={<ChipIcon size={46} />} onOpen={() => onOpen('chips')} delay={1.4} />
-      <WalletCard kind="keys" value={keys} icon={<KeyIcon size={46} />} onOpen={() => onOpen('keys')} onPlus={onGetKeys} delay={2.2} />
+      <WalletCard kind="gold" value={gold} icon={<GoldCoins size={48} />} delay={0.6} />
+      <WalletCard kind="chips" value={chips} icon={<ChipIcon size={46} />} delay={1.4} />
+      <WalletCard kind="keys" value={keys} icon={<KeyIcon size={46} />} onPlus={onBuyKeys} delay={2.2} />
     </div>
   );
 }

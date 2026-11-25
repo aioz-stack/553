@@ -8,6 +8,7 @@ import FriendsPanel from '@/components/FriendsPanel';
 import LandscapeStage from '@/components/LandscapeStage';
 import CreateLobbyModal from '@/components/lobby/CreateLobbyModal';
 import { BetPicker, EntryTerms } from '@/components/lobby/EntryTerms';
+import ShopModal from '@/components/lobby/ShopModal';
 import { CandyButton, EyeButton, ChipMark, Lock, Modal, People, TypeBadge, inputClass } from '@/components/lobby/LobbyUI';
 import AvatarPicker from '@/components/AvatarPicker';
 import SettingsPanel from '@/components/SettingsPanel';
@@ -151,7 +152,9 @@ export default function MultiplayerLobby() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
-  const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | 'avatar' | null>(null);
+  const [panel, setPanel] = useState<'create' | 'settings' | 'friends' | 'avatar' | 'shop' | null>(null);
+  // Leaving the Multiplayer Lobby while seated in a lobby that has not started: confirm first.
+  const [leaveAsk, setLeaveAsk] = useState<LobbyDetail | null>(null);
   const [joinFor, setJoinFor] = useState<LobbySummary | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -242,6 +245,51 @@ export default function MultiplayerLobby() {
     }
   };
 
+  /**
+   * Leave Multiplayer Lobby → Home. If you sit in a lobby that has not started, it asks first (others
+   * are told live; ownership passes on, or the lobby closes when you were the last). A match in
+   * progress is never abandoned from here: you go Home and can return to it.
+   */
+  const leaveLobby = async () => {
+    if (busy) return;
+    play('tap');
+    if (!myLobby) {
+      router.push('/home/');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api<{ data: LobbyDetail }>(`/lobbies/${myLobby}`);
+      if (r.data.is_seated && r.data.table_id && r.data.table_status !== 'IN_GAME') {
+        setLeaveAsk(r.data);
+      } else {
+        router.push('/home/');
+      }
+    } catch {
+      router.push('/home/');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmLeave = async (lobby: LobbyDetail) => {
+    if (busy || !lobby.table_id) return;
+    setBusy(true);
+    try {
+      await api(`/tables/${lobby.table_id}/leave`, { method: 'POST' });
+      window.dispatchEvent(new Event('pusoy:wallet'));
+      setLeaveAsk(null);
+      router.push('/home/');
+    } catch (e) {
+      play('lose');
+      say(false, errorText(e));
+      setLeaveAsk(null);
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const counts = list?.meta.counts ?? { all: 0, public: 0, private: 0 };
   const pages = list?.meta.pages ?? 1;
   const rows = list?.data ?? [];
@@ -276,12 +324,10 @@ export default function MultiplayerLobby() {
         <div className="lx-gold absolute left-[560px] top-[22px] z-10 h-[78px] w-[480px] rounded-full p-[5px] shadow-[0_6px_0_#7a3e00]">
           <div className="flex h-full items-center gap-3 rounded-full bg-gradient-to-b from-[#5a0609] to-[#2a0204] pl-4 pr-2">
             <ChipMark size={56} />
-            <span className="flex-1 text-center font-display text-[38px] font-black text-white" aria-label="Chips balance">
+            {/* Display only: no (+), no tap action. */}
+            <span className="flex-1 cursor-default select-none pr-[58px] text-center font-display text-[38px] font-black text-white" aria-label="Chips balance">
               {balance !== undefined ? fmtChips(Math.floor(balance)) : '…'}
             </span>
-            <Link href="/wallet/" aria-label="Chips wallet" onClick={() => play('tap')} className="lx-tile flex h-[58px] w-[58px] items-center justify-center rounded-full border-[3px] border-[#fff3a0] bg-gradient-to-b from-[#ffe46a] to-[#e08a00] font-display text-[42px] font-black leading-none text-[#4a1d00]">
-              +
-            </Link>
           </div>
         </div>
 
@@ -306,30 +352,48 @@ export default function MultiplayerLobby() {
         </div>
 
         {/* ---- left sidebar ---- */}
-        <Link href="/home/" aria-label="Back to home" onClick={() => play('tap')} className="lx-tile absolute left-[38px] top-[150px] z-10 flex h-[64px] w-[64px] items-center justify-center rounded-full border-[4px] border-[#ffc531] bg-gradient-to-b from-[#8a1a1f] to-[#3a0406] text-white shadow-[0_5px_0_#1a0204]">
-          <svg viewBox="0 0 40 40" className="h-9 w-9" aria-hidden="true">
-            <path d="M24 9 L12 20 L24 31 M12 20 H32" stroke="currentColor" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Leave Multiplayer Lobby: back to Home (leaving a lobby you sit in first, after confirming). */}
+        <button
+          type="button"
+          onClick={leaveLobby}
+          disabled={busy}
+          className="lx-tile absolute left-[18px] top-[146px] z-10 flex h-[70px] items-center gap-3 rounded-full border-[4px] border-[#ffc531] bg-gradient-to-b from-[#8a1a1f] to-[#3a0406] pl-2 pr-5 text-white shadow-[0_5px_0_#1a0204] disabled:opacity-60"
+        >
+          <span className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#ffd34d] to-[#e08a00] shadow-[inset_0_2px_0_rgb(255_255_255/0.5)]">
+            {/* door with an arrow going out */}
+            <svg viewBox="0 0 40 40" className="h-[38px] w-[38px]" aria-hidden="true">
+              <path d="M8 5 H22 V35 H8Z" fill="#7a3e00" stroke="#4a1d00" strokeWidth="1.6" strokeLinejoin="round" />
+              <path d="M8 5 L19 8 V37 L8 35Z" fill="#b5651d" stroke="#4a1d00" strokeWidth="1.4" strokeLinejoin="round" />
+              <circle cx="16.5" cy="21" r="1.4" fill="#ffe14d" />
+              <path d="M24 20 H37 M31 14 L37 20 L31 26" fill="none" stroke="#4a1d00" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="font-display text-[22px] font-black leading-none drop-shadow-[0_2px_0_rgb(0_0_0/0.6)]">Leave Multiplayer Lobby</span>
+          <svg viewBox="0 0 24 24" className="h-6 w-6 text-[#ffe14d]" aria-hidden="true">
+            <path d="M5 12 H18 M13 7 L18 12 L13 17" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-        </Link>
+        </button>
         <nav className="lx-gold absolute left-[18px] top-[230px] z-10 w-[150px] rounded-[30px] p-[5px] shadow-[0_6px_0_#5a2a00]" aria-label="Lobby menu">
           <div className="flex flex-col divide-y divide-[#ffc531]/30 rounded-[25px] bg-gradient-to-b from-[#6a1220] to-[#2e0408] py-1">
             <SideItem label="Friends" onClick={() => setPanel('friends')}>
               <People size={50} color="#ffb36b" />
             </SideItem>
-            <SideItem label="Ranking" href="/leaderboard/">
-              <svg viewBox="0 0 40 40" className="h-[62px] w-[62px]" aria-hidden="true">
-                <path d="M10 6 H30 V16 Q30 26 20 27 Q10 26 10 16Z" fill="#ffd34d" stroke="#8a4a00" strokeWidth="1.5" />
-                <path d="M10 9 Q3 9 4 15 Q5 20 11 20 M30 9 Q37 9 36 15 Q35 20 29 20" fill="none" stroke="#ffd34d" strokeWidth="2.5" />
-                <rect x="16" y="27" width="8" height="5" fill="#e0a020" />
-                <rect x="11" y="32" width="18" height="5" rx="1.5" fill="#b07a0e" />
-              </svg>
-            </SideItem>
-            <SideItem label="Rewards" href="/wallet/">
+            <SideItem
+              label="Shop"
+              onClick={() => {
+                play('tap');
+                setPanel('shop');
+              }}
+            >
+              {/* store front with an awning */}
               <svg viewBox="0 0 40 40" className="h-[60px] w-[60px]" aria-hidden="true">
-                <rect x="6" y="16" width="28" height="20" rx="2" fill="#e0262f" />
-                <rect x="4" y="11" width="32" height="7" rx="2" fill="#ff5a4a" />
-                <rect x="17.5" y="11" width="5" height="25" fill="#ffd34d" />
-                <path d="M20 11 C14 2 8 6 12 10 M20 11 C26 2 32 6 28 10" fill="none" stroke="#ffd34d" strokeWidth="3" />
+                <path d="M7 17 V35 H33 V17" fill="#fff3d6" stroke="#8a4a00" strokeWidth="1.5" />
+                <rect x="16" y="24" width="8" height="11" rx="1" fill="#b5651d" stroke="#8a4a00" strokeWidth="1" />
+                <path d="M4 10 L8 4 H32 L36 10Z" fill="#ffd34d" stroke="#8a4a00" strokeWidth="1.5" strokeLinejoin="round" />
+                {[0, 1, 2, 3].map((i) => (
+                  <path key={i} d={`M${4 + i * 8} 10 H${12 + i * 8} V14 Q${8 + i * 8} 19 ${4 + i * 8} 14Z`} fill={i % 2 ? '#ffffff' : '#e0262f'} stroke="#8a4a00" strokeWidth="1" />
+                ))}
+                <circle cx="27" cy="27" r="3" fill="#ffd34d" stroke="#8a4a00" strokeWidth="1" />
               </svg>
             </SideItem>
           </div>
@@ -519,6 +583,8 @@ export default function MultiplayerLobby() {
         {/* ---- popups ---- */}
         {panel === 'create' && <CreateLobbyModal balance={balance} keys={keyCount} tiers={list?.meta.tiers} onClose={() => setPanel(null)} onCreated={enter} />}
         {panel === 'settings' && <SettingsPanel onClose={() => setPanel(null)} />}
+        {panel === 'shop' && <ShopModal onClose={() => setPanel(null)} />}
+        {leaveAsk && <LeaveLobbyConfirm lobby={leaveAsk} busy={busy} onCancel={() => setLeaveAsk(null)} onLeave={() => confirmLeave(leaveAsk)} />}
         {panel === 'avatar' && <AvatarPicker onClose={() => setPanel(null)} />}
         {panel === 'friends' && (
           <Modal title="Friends" onClose={() => setPanel(null)} width={620}>
@@ -537,6 +603,28 @@ export default function MultiplayerLobby() {
         </div>
       </LandscapeStage>
     </Screen>
+  );
+}
+
+/** Leaving the Multiplayer Lobby while seated in a lobby: what happens to it, then Leave or Stay. */
+function LeaveLobbyConfirm({ lobby, busy, onCancel, onLeave }: { lobby: LobbyDetail; busy: boolean; onCancel: () => void; onLeave: () => void }) {
+  const others = lobby.seats.filter((x) => x.user_id && !x.is_you).length;
+  const effect = others === 0 ? 'You are the only player, so the lobby will close.' : lobby.is_owner ? `Ownership passes to the next player, and the other ${others === 1 ? 'player is' : `${others} players are`} told right away.` : `The other ${others === 1 ? 'player is' : `${others} players are`} told right away.`;
+  return (
+    <Modal title="Leave Lobby?" onClose={onCancel} width={760}>
+      <p className="text-center font-display text-[28px] font-black text-[#ffe9b0]">
+        {lobby.name} <span className="text-white/60">· ID {lobby.lobby_id}</span>
+      </p>
+      <p className="mt-3 text-center text-[24px] font-bold text-white/85">Leaving the Multiplayer Lobby also removes you from this lobby. {effect}</p>
+      <div className="mt-7 flex justify-center gap-6">
+        <CandyButton tone="dark" onClick={onCancel} className="h-[78px] w-[240px] text-[30px]">
+          Stay
+        </CandyButton>
+        <CandyButton tone="gold" onClick={onLeave} disabled={busy} className="h-[78px] w-[300px] text-[30px]">
+          {busy ? 'Leaving…' : 'Leave Lobby'}
+        </CandyButton>
+      </div>
+    </Modal>
   );
 }
 

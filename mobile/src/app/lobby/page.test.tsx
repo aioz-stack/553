@@ -165,4 +165,62 @@ describe('Multiplayer Lobby — top bar', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Sound/ })).toBeInTheDocument();
   });
+
+  it('Chips is display only; no Ranking or Rewards; Shop sits right below Friends and opens the Shop', async () => {
+    routes({ '/lobbies': LIST([]) });
+    const { container } = render(<Lobby />);
+    await screen.findByText('No open lobbies yet.');
+    expect(screen.getByLabelText('Chips balance')).toHaveTextContent('2,055');
+    expect(screen.queryByRole('link', { name: 'Chips wallet' })).toBeNull();
+    expect(container.querySelector('a[href="/wallet/"]')).toBeNull();
+    expect(container.querySelector('a[href="/leaderboard/"]')).toBeNull();
+    const menu = screen.getByRole('navigation', { name: 'Lobby menu' });
+    expect(within(menu).getAllByRole('button').map((b) => b.textContent)).toEqual(['Friends', 'Shop']);
+    fireEvent.click(within(menu).getByRole('button', { name: 'Shop' }));
+    expect(await screen.findByRole('dialog', { name: 'Shop' })).toBeInTheDocument();
+  });
+
+  it('Leave Multiplayer Lobby goes straight Home when you are not in a lobby', async () => {
+    routes({ '/lobbies': LIST([]) });
+    render(<Lobby />);
+    await screen.findByText('No open lobbies yet.');
+    expect(screen.queryByRole('link', { name: 'Back to home' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Leave Multiplayer Lobby/ }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/home/'));
+    expect(apiMock).not.toHaveBeenCalledWith(expect.stringContaining('/leave'), expect.anything());
+  });
+
+  it('seated in a waiting lobby: asks first, then leaves the lobby on the server and goes Home', async () => {
+    const detail = {
+      ...DETAIL,
+      id: 3,
+      name: 'Mine',
+      lobby_id: '100003',
+      table_id: 77,
+      table_status: 'WAITING_FOR_PLAYERS',
+      is_seated: true,
+      is_owner: true,
+      seats: [
+        { seat: 1, user_id: 5, state: 'occupied', is_you: true },
+        { seat: 2, user_id: 9, state: 'occupied' },
+        { seat: 3, user_id: null, state: 'available' },
+        { seat: 4, user_id: null, state: 'available' },
+      ],
+    };
+    routes({ '/lobbies': LIST([row(3, { is_mine: true, name: 'Mine' })], { my_lobby_id: 3 }), '/lobbies/3': { data: detail }, '/tables/77/leave': {} });
+    render(<Lobby />);
+    await screen.findByText('Mine');
+    fireEvent.click(screen.getByRole('button', { name: /Leave Multiplayer Lobby/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Leave Lobby?' });
+    expect(dialog).toHaveTextContent('Ownership passes to the next player');
+    // Stay keeps you in the lobby.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Stay' }));
+    expect(screen.queryByRole('dialog', { name: 'Leave Lobby?' })).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Leave Multiplayer Lobby/ }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Leave Lobby?' })).getByRole('button', { name: 'Leave Lobby' }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/home/'));
+    expect(apiMock).toHaveBeenCalledWith('/tables/77/leave', { method: 'POST' });
+  });
 });

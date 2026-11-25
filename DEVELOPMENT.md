@@ -1798,3 +1798,32 @@ php artisan pusoy:assign-admin <incorporator> <admin> [--move-shop-shares]
   - Single Player: Beginner round, deal, arrange, reveal, results, next bet.
   - Multiplayer: four players, private backs, Ready, reveal with WIN / LOSE, nets.
 - The Laravel web app's own player table (`resources/js/Pages/Player/Table`) was not changed.
+
+## Home wallets: information only; Keys (+) opens the Shop
+
+- The Gold, Chips and Keys bars on Home (`WalletStack`) are now plain display groups, not buttons: no tap action,
+  no pointer cursor, no press animation, and they no longer open the wallet page. They still update live (server
+  balances, `pusoy:wallet`).
+- The only control is the green **(+) inside the Keys bar** (`Buy Keys in the Shop`). It opens the existing
+  **Shop** popup (`ShopModal`, the same one as the Shop tile), with its packages, prices, confirmation,
+  idempotency key (no duplicate purchases), success or error message and live balances.
+- The old "Get Keys" info panel is no longer opened from Home (`GetKeysPanel` is still in `LobbyPanels.tsx`).
+- Test: `home/page.test.tsx` checks that only the Keys (+) is a button, that tapping the bars does nothing, and
+  that the (+) opens the Shop.
+
+## Multiplayer Lobby: Leave button, Shop, no Ranking / Rewards / Chips (+)
+
+- **Chips balance** in the lobby's top bar is display only. The (+) link to the wallet was removed; balances
+  still update live.
+- **Sidebar:** Ranking and Rewards were removed from this lobby (the leaderboard and wallet pages still exist).
+  **Shop** sits directly below Friends and opens the existing `ShopModal`, with its packages, confirmation,
+  idempotent purchase, feedback and live balances.
+- **Leave Multiplayer Lobby** (door icon, text, arrow) replaces the back arrow and goes to Home:
+  - Not seated in a lobby, or seated in a match already in progress: goes straight Home. A running match is
+    never abandoned from here; Home brings you back to it.
+  - Seated in a lobby that has not started: a **Leave Lobby?** confirmation says what happens (the lobby closes
+    when you were the only player; otherwise the others are told live and, if you owned it, ownership passes
+    on). **Stay** keeps you seated. **Leave Lobby** calls `POST /tables/{id}/leave`, the same server rules as the
+    waiting room's Leave, with live updates to the other players. Then it goes Home.
+- Tests: `lobby/page.test.tsx` covers Chips display only, no Ranking / Rewards, Shop below Friends opening the
+  Shop, Leave going Home, and the confirmation with Stay / Leave calling the server.

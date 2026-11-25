@@ -10,7 +10,6 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import BeachLandscape from '@/components/BeachLandscape';
 import FriendsPanel from '@/components/FriendsPanel';
 import WalletStack from '@/components/lobby/WalletStack';
-import { GetKeysPanel } from '@/components/lobby/LobbyPanels';
 import ShopModal from '@/components/lobby/ShopModal';
 import { Avatar } from '@/components/game';
 import { CandyText, CrownArt, ExitArt, GearArt, LogoCrest, RoundBankArt } from '@/components/HomeArt';
@@ -185,7 +184,7 @@ export default function Home() {
   const [seat, setSeat] = useState<TableState | null>(null);
   const [picker, setPicker] = useState(false);
   const [settings, setSettings] = useState(false);
-  const [panel, setPanel] = useState<'keys' | 'shop' | null>(null);
+  const [panel, setPanel] = useState<'shop' | null>(null);
   const [avatarPicker, setAvatarPicker] = useState(false);
   const chipCount = useCountUp(chips !== undefined ? Math.floor(Number(chips)) : undefined);
   const keyCount = useCountUp(keys !== undefined ? Math.floor(Number(keys)) : undefined);
@@ -274,15 +273,8 @@ export default function Home() {
         </div>
 
         {/* Wallets (upper right, top to bottom): Gold (Single Player), Chips (Multiplayer), Keys — three
-            separate server balances, live; tapping one opens the wallet history, Keys (+) shows how to get Keys. */}
-        <WalletStack
-          className="absolute right-[24px] top-[50px] z-10"
-          gold={coins}
-          chips={chipCount}
-          keys={keyCount}
-          onOpen={() => router.push('/wallet/')}
-          onGetKeys={() => setPanel('keys')}
-        />
+            separate server balances, live and information only; the Keys (+) opens the Shop to buy Keys. */}
+        <WalletStack className="absolute right-[24px] top-[50px] z-10" gold={coins} chips={chipCount} keys={keyCount} onBuyKeys={() => setPanel('shop')} />
 
 
         {/* Friends */}
@@ -328,14 +320,6 @@ export default function Home() {
         </Tile>
 
         {settings && <SettingsPanel onClose={() => setSettings(false)} />}
-        {panel === 'keys' && (
-          <GetKeysPanel
-            keys={keyCount}
-            agentName={(user as { owning_agent?: { name?: string | null } | null } | null)?.owning_agent?.name ?? null}
-            onClose={() => setPanel(null)}
-            onWallet={() => router.push('/wallet/')}
-          />
-        )}
         {panel === 'shop' && <ShopModal onClose={() => setPanel(null)} />}
         {avatarPicker && <AvatarPicker onClose={() => setAvatarPicker(false)} />}
         {/* Change avatar / nickname: the pencil badge on your portrait (the only clickable part of the profile). */}
