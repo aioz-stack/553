@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import AvatarPicker from '@/components/AvatarPicker';
 import { Avatar, GameButton, GlassCard } from '@/components/game';
-import { IconList, IconSettings, IconTrophy } from '@/components/icons';
+import { IconList, IconSettings } from '@/components/icons';
 import { Field, Notice, Screen } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -96,10 +96,9 @@ export default function Profile() {
         <GameButton className="w-full" onClick={save}>SAVE</GameButton>
       </GlassCard>
 
-      <div className="mb-4 grid grid-cols-3 gap-2">
+      <div className="mb-4 grid grid-cols-2 gap-2">
         {[
           ['/history/', 'History', IconList],
-          ['/leaderboard/', 'Ranks', IconTrophy],
           ['/settings/', 'Settings', IconSettings],
         ].map(([href, label, Icon]) => {
           const I = Icon as typeof IconList;

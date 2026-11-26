@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { CandyText } from '@/components/HomeArt';
 import { api, errorText } from '@/lib/api';
@@ -315,9 +314,6 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
               {busy ? 'UPDATING…' : 'UPDATE PASSWORD'}
             </button>
           </div>
-          <Link href="/settings/devices/" className="absolute bottom-[18px] right-[34px] text-[17px] font-bold text-[#8a5a2a] underline">
-            Signed-in devices ›
-          </Link>
         </div>
       </div>
     </div>

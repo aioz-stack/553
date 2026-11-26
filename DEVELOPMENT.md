@@ -2159,3 +2159,11 @@ Tests:
 - `tests/Unit/Game/DeckDealToTest.php`.
 - `DealAnimation.test.tsx` (2-seat order, timing, counters).
 - Updated: `LobbyTest.php`.
+
+## Mobile Settings: Devices screen removed
+
+The mobile app's Devices screen (`/settings/devices`: connection status and the signed-in devices list) and its "Signed-in devices ›" link at the bottom of the Settings panel are removed, as on the web Settings earlier. The `GET/DELETE /api/v1/auth/devices` endpoints remain on the server but no app uses them. One-login-per-player (`PlayerSessions`) still signs out other sessions automatically.
+
+## Mobile: Ranks (Leaderboard) removed
+
+The Ranks tab in the bottom bar, the Ranks shortcut on the Me screen and the Leaderboard screen (`/leaderboard`) are removed from the mobile app. The bar is now Home · Wallet · Play · Me (4 columns). The server's leaderboard endpoint and the web app's leaderboard are unchanged.

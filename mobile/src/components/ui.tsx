@@ -8,7 +8,7 @@ import { useOnline } from '@/lib/hooks';
 import { springStyle } from '@/lib/spring';
 import { useBalance } from '@/lib/useBalance';
 import { Avatar, CoinPill, GameButton, GlassCard } from './game';
-import { IconBack, IconBell, IconHome, IconSpade, IconTrophy, IconUser, IconWallet } from './icons';
+import { IconBack, IconBell, IconHome, IconSpade, IconUser, IconWallet } from './icons';
 
 const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(' ');
 
@@ -16,7 +16,6 @@ const TABS = [
   { href: '/home/', label: 'Home', Icon: IconHome },
   { href: '/wallet/', label: 'Wallet', Icon: IconWallet },
   { href: '/lobby/', label: 'Play', Icon: IconSpade, primary: true },
-  { href: '/leaderboard/', label: 'Ranks', Icon: IconTrophy },
   { href: '/profile/', label: 'Me', Icon: IconUser },
 ];
 
@@ -102,7 +101,7 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
 
       {tabs && (
         <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-gradient-to-b from-night-800/95 to-night-950/95 backdrop-blur">
-          <ul className="grid h-16 grid-cols-5 items-end">
+          <ul className="grid h-16 grid-cols-4 items-end">
             {TABS.map(({ href, label, Icon, primary }) => {
               const active = !!path?.startsWith(href.replace(/\/$/, ''));
 
