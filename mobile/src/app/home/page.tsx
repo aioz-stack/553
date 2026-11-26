@@ -174,6 +174,18 @@ function useCountUp(target: number | undefined): number | undefined {
   return shown;
 }
 
+/**
+ * The wallet badges with their count-up animation. Kept in their own component so a counting
+ * balance re-renders only these badges each frame, not the whole Home screen.
+ */
+function CountingWallets({ gold, chips, keys, onBuyKeys }: { gold?: number; chips?: number; keys?: number; onBuyKeys: () => void }) {
+  const coins = useCountUp(gold);
+  const chipCount = useCountUp(chips);
+  const keyCount = useCountUp(keys);
+
+  return <WalletStack className="absolute right-[24px] top-[50px] z-10" gold={coins} chips={chipCount} keys={keyCount} onBuyKeys={onBuyKeys} />;
+}
+
 export default function Home() {
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -186,15 +198,12 @@ export default function Home() {
   const [settings, setSettings] = useState(false);
   const [panel, setPanel] = useState<'shop' | null>(null);
   const [avatarPicker, setAvatarPicker] = useState(false);
-  const chipCount = useCountUp(chips !== undefined ? Math.floor(Number(chips)) : undefined);
-  const keyCount = useCountUp(keys !== undefined ? Math.floor(Number(keys)) : undefined);
-  const coins = useCountUp(goldWallet ? Math.floor(Number(goldWallet.total ?? goldWallet.gold)) : undefined);
   // Single Player Out of Gold: the free Gold popup (never shown for Multiplayer).
   const [outOfGold, setOutOfGold] = useState<GoldWallet | null>(null);
 
   useLandscapeLock();
   // Reconnect: if a match you are seated in is still being played, go straight back to it.
-  useResumeMatch(user?.id);
+  useResumeMatch(user?.id, setSeat);
 
   /** Single Player: Out of Gold opens the free Gold popup instead of the level picker. */
   const openPicker = async () => {
@@ -227,12 +236,6 @@ export default function Home() {
       window.history.replaceState(null, '', '/home/');
     }
   }, []);
-
-  useEffect(() => {
-    if (user) {
-      api<{ data: TableState | null }>('/tables/current').then((r) => setSeat(r.data)).catch(() => undefined);
-    }
-  }, [user]);
 
   const level = stats.data?.data.level ?? user?.level;
   const name = user ? (user.display_name ?? user.name) : '';
@@ -274,7 +277,12 @@ export default function Home() {
 
         {/* Wallets (upper right, top to bottom): Gold (Single Player), Chips (Multiplayer), Keys — three
             separate server balances, live and information only; the Keys (+) opens the Shop to buy Keys. */}
-        <WalletStack className="absolute right-[24px] top-[50px] z-10" gold={coins} chips={chipCount} keys={keyCount} onBuyKeys={() => setPanel('shop')} />
+        <CountingWallets
+          gold={goldWallet ? Math.floor(Number(goldWallet.total ?? goldWallet.gold)) : undefined}
+          chips={chips !== undefined ? Math.floor(Number(chips)) : undefined}
+          keys={keys !== undefined ? Math.floor(Number(keys)) : undefined}
+          onBuyKeys={() => setPanel('shop')}
+        />
 
 
         {/* Friends */}

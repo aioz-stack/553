@@ -121,6 +121,9 @@ class PlayerController extends Controller
         unset($data['theme']);
         $raw = is_array($user->preferences) ? $user->preferences : [];
         $saved = array_merge($raw, $user->gamePreferences(), array_map(fn ($v) => is_string($v) ? $v : (bool) $v, $data));
+        if (array_key_exists('motion', $data)) {
+            $saved['motion_chosen'] = true; // picked by the player (not the device default)
+        }
         if ($theme !== null) {
             $saved['theme'] = $theme;
         }

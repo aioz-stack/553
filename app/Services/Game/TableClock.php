@@ -27,6 +27,12 @@ class TableClock
 
     public function tick(GameTable $table): void
     {
+        // Almost every call (polls, heartbeats) finds nothing due: decide that from the rows already
+        // at hand, without taking the lock or writing anything.
+        if (! $this->due($table)) {
+            return;
+        }
+
         $lock = Cache::lock("table-clock:{$table->id}", 10);
 
         if (! $lock->get()) {
@@ -64,5 +70,24 @@ class TableClock
         } finally {
             $lock->release();
         }
+    }
+
+    /** Something to do now: a deadline passed, a round is waiting to resolve, or the next round is due. */
+    private function due(GameTable $table): bool
+    {
+        if ($table->status !== TableStatus::InGame) {
+            return false;
+        }
+
+        $session = $table->current_session_id ? GameSession::query()->find($table->current_session_id) : null;
+
+        return match (true) {
+            $session === null => $table->game_mode !== GameMode::Classic,
+            $session->status === GameStatus::Betting => (bool) $session->betting_deadline?->isPast(),
+            $session->status === GameStatus::Arranging => $this->engine->expiresAt($session)->isPast(),
+            in_array($session->status, [GameStatus::Submitted, GameStatus::Revealing, GameStatus::Scoring], true) => true,
+            $session->status->isFinal() => $table->game_mode !== GameMode::Classic && ($table->next_round_at === null || $table->next_round_at->isPast()) && $session->updated_at < now()->subSeconds(5),
+            default => false,
+        };
     }
 }

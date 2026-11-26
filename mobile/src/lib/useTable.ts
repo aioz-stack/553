@@ -28,9 +28,15 @@ export function useTable(tableId: number | null, userId: number | undefined) {
   const [removed, setRemoved] = useState(false);
   const offset = useRef(0);
   const busy = useRef(false);
+  /** Asked again while a refresh was running: run once more afterwards (nothing is ever dropped). */
+  const again = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!tableId || busy.current) {
+    if (!tableId) {
+      return;
+    }
+    if (busy.current) {
+      again.current = true;
       return;
     }
 
@@ -54,8 +60,25 @@ export function useTable(tableId: number | null, userId: number | undefined) {
       setError(errorText(e));
     } finally {
       busy.current = false;
+      if (again.current) {
+        again.current = false;
+        void refresh();
+      }
     }
   }, [tableId]);
+
+  // A burst of table events (submitted ×3, all submitted, revealed, scored…) becomes one refresh.
+  const burst = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshSoon = useCallback(() => {
+    if (burst.current) clearTimeout(burst.current);
+    burst.current = setTimeout(() => {
+      burst.current = null;
+      void refresh();
+    }, 120);
+  }, [refresh]);
+  useEffect(() => () => {
+    if (burst.current) clearTimeout(burst.current);
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -75,13 +98,16 @@ export function useTable(tableId: number | null, userId: number | undefined) {
       }
 
       const channel = echo.join(`table.${tableId}`);
-      EVENTS.forEach((e) => channel.listen(`.${e}`, () => refresh()));
+      EVENTS.forEach((e) => channel.listen(`.${e}`, refreshSoon));
       channel.here(() => setLive(true)).error(() => setLive(false));
-      echo.private(`user.${userId}`).listen('.cards.dealt', () => refresh());
+      // Your private channel is shared (wallet updates, account notices): stop only this listener,
+      // never leave the channel itself.
+      const mine = echo.private(`user.${userId}`);
+      mine.listen('.cards.dealt', refreshSoon);
 
       cleanup = () => {
         echo.leave(`table.${tableId}`);
-        echo.leave(`user.${userId}`);
+        mine.stopListening('.cards.dealt', refreshSoon);
       };
     });
 
@@ -89,7 +115,7 @@ export function useTable(tableId: number | null, userId: number | undefined) {
       cancelled = true;
       cleanup();
     };
-  }, [tableId, userId, refresh]);
+  }, [tableId, userId, refreshSoon]);
 
   // Heartbeat, polling fallback, and recovery when the app returns to the foreground.
   useEffect(() => {
@@ -127,18 +153,28 @@ export function useTable(tableId: number | null, userId: number | undefined) {
   return { table, session, error, live, refresh, removed, clockOffset: offset.current };
 }
 
+/**
+ * Whole seconds left until `deadline` (server-aligned). Re-renders only when the number shown
+ * changes — once a second — instead of on every check (the table screen is large).
+ */
 export function useSecondsLeft(deadline: string | null | undefined, offsetMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
+  const calc = useCallback(
+    () => (deadline ? Math.max(0, Math.ceil((new Date(deadline).getTime() - (Date.now() + offsetMs)) / 1000)) : 0),
+    [deadline, offsetMs],
+  );
+  const [left, setLeft] = useState(calc);
 
   useEffect(() => {
+    setLeft(calc());
     if (!deadline) {
       return undefined;
     }
 
-    const id = setInterval(() => setNow(Date.now()), 250);
+    // Same value → React skips the render.
+    const id = setInterval(() => setLeft(calc()), 250);
 
     return () => clearInterval(id);
-  }, [deadline]);
+  }, [deadline, calc]);
 
-  return deadline ? Math.max(0, Math.ceil((new Date(deadline).getTime() - (now + offsetMs)) / 1000)) : 0;
+  return left;
 }

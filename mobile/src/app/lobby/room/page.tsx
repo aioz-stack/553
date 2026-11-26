@@ -157,7 +157,7 @@ export default function ChooseYourSeat() {
   const [panel, setPanel] = useState<'settings' | 'help' | 'edit' | 'leave' | 'password' | null>(null);
   const [locked, setLocked] = useState(0); // bumps to replay the lock-in flash
   const [exiting, setExiting] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  const [countState, setCountState] = useState<number | null>(null);
   const clockOffset = useRef(0); // server time − local time
   const knownPlayers = useRef<Map<number, string> | null>(null);
   const wasSeated = useRef(false);
@@ -204,16 +204,19 @@ export default function ChooseYourSeat() {
   }, [load]);
 
   const counting = !!lobby?.countdown_ends_at;
-  useWaitingRoomUpdates(lobby?.is_seated ? lobby.table_id : null, load, counting);
+  useWaitingRoomUpdates(lobby?.is_seated ? lobby.table_id : null, load, counting, lobby?.countdown_ends_at ? new Date(lobby.countdown_ends_at).getTime() - clockOffset.current : null);
 
-  // Countdown clock (aligned to the server).
+  // Countdown clock (aligned to the server). It re-renders the room only when the number changes
+  // (once a second), not on every check.
+  const endsAt = lobby?.countdown_ends_at ?? null;
   useEffect(() => {
-    if (!counting) return undefined;
-    const id = setInterval(() => setNow(Date.now()), 100);
+    const read = () => (endsAt ? Math.max(0, Math.ceil((new Date(endsAt).getTime() - (Date.now() + clockOffset.current)) / 1000)) : null);
+    setCountState(read());
+    if (!endsAt) return undefined;
+    const id = setInterval(() => setCountState(read()), 100); // same number → no render
     return () => clearInterval(id);
-  }, [counting]);
-  const remainingMs = lobby?.countdown_ends_at ? new Date(lobby.countdown_ends_at).getTime() - (now + clockOffset.current) : null;
-  const count = remainingMs !== null ? Math.max(0, Math.ceil(remainingMs / 1000)) : null;
+  }, [endsAt]);
+  const count = countState;
   const lastCount = useRef<number | null>(null);
   useEffect(() => {
     if (count !== null && count !== lastCount.current) {

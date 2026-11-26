@@ -149,28 +149,87 @@ final class LuckyHand
     public static function threeStraights(array $cards): ?array
     {
         $cards = array_values($cards);
-        $n = count($cards);
+        if (count($cards) !== 13) {
+            return null;
+        }
 
-        foreach (self::combinations(range(0, $n - 1), 5) as $first) {
-            $five = array_map(fn (int $i) => $cards[$i], $first);
-            if (! self::isStraight($five)) {
+        // Straights depend only on ranks: work on rank counts (at most 10 × 10 five-card rank runs to
+        // try) instead of every 5-card subset, then deal the actual cards out per rank.
+        $byRank = [];
+        foreach ($cards as $card) {
+            $byRank[Card::fromString($card)->rank][] = $card;
+        }
+        $counts = array_map('count', $byRank);
+        $fives = self::rankRuns(5);
+        $threes = self::rankRuns(3);
+
+        foreach ($fives as $i => $a) {
+            $left = self::takeRun($counts, $a);
+            if ($left === null) {
                 continue;
             }
-            $rest = array_values(array_diff_key($cards, array_flip($first)));
-
-            foreach (self::combinations(range(0, 7), 5) as $second) {
-                $other = array_map(fn (int $i) => $rest[$i], $second);
-                if (! self::isStraight($other)) {
+            foreach (array_slice($fives, $i, null, true) as $b) {
+                $rest = self::takeRun($left, $b);
+                if ($rest === null) {
                     continue;
                 }
-                $front = array_values(array_diff_key($rest, array_flip($second)));
-                if (self::isStraight($front)) {
-                    return [$front, $five, $other];
+                foreach ($threes as $c) {
+                    $none = self::takeRun($rest, $c);
+                    if ($none !== null && array_sum($none) === 0) {
+                        $pool = $byRank;
+                        $deal = function (array $run) use (&$pool): array {
+                            $lane = [];
+                            foreach ($run as $r) {
+                                $lane[] = array_shift($pool[$r]);
+                            }
+
+                            return $lane;
+                        };
+
+                        $five = $deal($a);
+                        $other = $deal($b);
+
+                        return [$deal($c), $five, $other];
+                    }
                 }
             }
         }
 
         return null;
+    }
+
+    /**
+     * Every run of $length consecutive ranks (Ace high or low: 14 also plays as 1).
+     *
+     * @return list<list<int>>
+     */
+    private static function rankRuns(int $length): array
+    {
+        static $cache = [];
+
+        return $cache[$length] ??= array_map(
+            fn (int $low) => array_map(fn (int $r) => $r === 1 ? 14 : $r, range($low, $low + $length - 1)),
+            range(1, 15 - $length),
+        );
+    }
+
+    /**
+     * The rank counts left after using one card of each rank in $run, or null if one is missing.
+     *
+     * @param  array<int, int>  $counts
+     * @param  list<int>  $run
+     * @return array<int, int>|null
+     */
+    private static function takeRun(array $counts, array $run): ?array
+    {
+        foreach ($run as $rank) {
+            if (($counts[$rank] ?? 0) < 1) {
+                return null;
+            }
+            $counts[$rank]--;
+        }
+
+        return $counts;
     }
 
     /**
@@ -197,23 +256,6 @@ final class LuckyHand
         sort($low);
 
         return end($low) - $low[0] === count($low) - 1;
-    }
-
-    /**
-     * @param  list<int>  $items
-     * @return \Generator<list<int>>
-     */
-    private static function combinations(array $items, int $k, int $start = 0, array $picked = []): \Generator
-    {
-        if (count($picked) === $k) {
-            yield $picked;
-
-            return;
-        }
-
-        for ($i = $start; $i <= count($items) - ($k - count($picked)); $i++) {
-            yield from self::combinations($items, $k, $i + 1, [...$picked, $items[$i]]);
-        }
     }
 
     /**

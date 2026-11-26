@@ -49,6 +49,8 @@ test('3-Straight: a 3-card straight Front and 5-card straight Middle and Back, t
         ->and(LuckyHand::isStraight($lucky['arrangement']->middle))->toBeTrue()
         ->and(LuckyHand::isStraight($lucky['arrangement']->back))->toBeTrue()
         ->and(count($lucky['arrangement']->allCards()))->toBe(13)
+        // every dealt card exactly once (no card in two lanes)
+        ->and(collect($lucky['arrangement']->allCards())->sort()->values()->all())->toBe(collect(['AC', '2D', '3H', '4S', '5C', '6D', '7H', '8S', '9C', 'TD', 'JH', 'QS', 'KC'])->sort()->values()->all())
         ->and($lucky['arrangement']->isFoul())->toBeFalse();
 
     // Q-K-A on top, and the cards need not be in order.

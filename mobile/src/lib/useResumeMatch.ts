@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { api } from './api';
 import type { TableState } from './types';
 
@@ -11,8 +11,11 @@ import type { TableState } from './types';
  * played, go straight back to it (/play/?table=ID) — the table then restores your round, cards and
  * saved arrangement from the server. Finished matches and waiting lobbies are left alone.
  */
-export function useResumeMatch(userId: number | undefined) {
+export function useResumeMatch(userId: number | undefined, onSeat?: (seat: TableState | null) => void) {
   const router = useRouter();
+  // The screen can reuse this answer (one /tables/current request, not two).
+  const seatCb = useRef(onSeat);
+  seatCb.current = onSeat;
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -21,7 +24,9 @@ export function useResumeMatch(userId: number | undefined) {
     const check = () => {
       api<{ data: TableState | null }>('/tables/current')
         .then((r) => {
-          if (!cancelled && r?.data && r.data.status === 'IN_GAME') router.replace(`/play/?table=${r.data.id}`);
+          if (cancelled) return;
+          seatCb.current?.(r?.data ?? null);
+          if (r?.data && r.data.status === 'IN_GAME') router.replace(`/play/?table=${r.data.id}`);
         })
         .catch(() => undefined);
     };

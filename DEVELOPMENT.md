@@ -2037,3 +2037,72 @@ Tests:
 - `MultiplayerTable.test.tsx`: auto-submit at 0s once; a late refusal catches up.
 
 Reverb, the queue worker and the scheduler are still recommended locally for instant updates (see the Reverb / queue sections); they are no longer needed for a round to finish.
+
+## Performance pass (2026-11-26): measured, root causes fixed
+
+Measured first (local XAMPP, warm OPcache-less CLI), then fixed what the numbers showed. No rules, payouts, animations or features changed.
+
+**Game engine:**
+- `LuckyHand::threeStraights` now works on rank counts (at most 10 × 10 five-card rank runs) instead of every 5-card subset with re-parsed cards. 3-Straight: **7.3 ms → 0.013 ms**; full Lucky Hand detection: **7.5 ms → 0.23 ms**. Detection runs on every game-state poll while arranging, on each declaration, and for each Single Player bot. A 4,000-hand comparison against the old brute force found 0 differences, and the unit test now checks no card is used twice.
+- `BotArranger::arrange` does the same exhaustive search with flat lookups, an inline expected-value sum in the original order, cached masks and the cards parsed once: **43 ms → 21 ms** per bot, with identical arrangements on 60 sample hands. A Single Player deal arranges three bots.
+
+**Backend:**
+- `TableClock::tick` checks whether anything is due before taking its lock, so a normal heartbeat or poll writes nothing. Heartbeat **17.5 → 7.2 ms** (17 → 13 queries); `GET tables/{id}` **21.8 → 12.7 ms**.
+- `GameStatePresenter::session` reads seat connection state in one query instead of one per player. Together with the Lucky Hand fix, `GET games/{id}` went from **39.9 → 16.9 ms**.
+- Indexes were already in place for every hot query (checked); no migration.
+- Production already uses OPcache, `php artisan optimize` and Redis for cache, sessions and queues (DEPLOYMENT.md). Locally the cache is the database, so the rate limiter adds a few small queries per request.
+
+**Mobile app:**
+- `useSecondsLeft` re-renders the table screen only when the shown second changes (it was 4 renders a second). The lobby countdown likewise (it was 10 a second).
+- `useTable`: real-time event bursts (submitted ×3, all submitted, revealed…) are merged into one refresh. A refresh asked for while one is running now runs once more afterwards; before, it was dropped and the screen could stay stale until the next poll.
+- **Bug fixed:** leaving a table called `echo.leave('user.{id}')`, which unsubscribed the whole private channel. That silently stopped live wallet updates and the "Account Already Connected" notice. Now only the table's own listener is removed.
+- The lobby list and waiting-room subscriptions no longer leak when the screen closes before the socket connects.
+- **Waiting-room countdown polls once a second** (it was every 0.4 s, about 150 requests a minute, over the 120/minute API limit, so players were refused right at match start), plus one look right as the countdown ends.
+- Home's balance count-up re-renders only the wallet badges, not the whole screen each frame. Home and the resume-match check share one `/tables/current` request.
+
+**Web app:**
+- Test files are excluded from the page bundle (a stale test chunk had been built).
+- ApexCharts (~1 MB) loads on demand inside the chart component, so admin pages render before the chart library arrives.
+
+**Not changed:**
+- Mobile assets are already small (880 KB, all WebP).
+- The always-on decorative CSS loops (gold shimmer, rotating rims, glow pulses) animate paint-heavy properties. They need on-device profiling to judge, and the existing Medium / Low motion quality settings already switch them off.
+
+Tests: `mobile/src/lib/useTable.test.ts` (refresh merging; per-second rendering); the Lucky Hand unit test checks no card is used twice.
+
+### Decorative animation profiling (2026-11-26)
+
+Method: headless Chrome over the DevTools protocol with GPU compositing on, a phone-sized landscape screen (915×412 at DPR 2.625), and the CPU slowed 4×. Run against the production build. Each run was checked for the page it landed on, the motion setting in effect, and the number of animations actually running.
+
+| Screen | High (default) | Medium | Low |
+|---|---|---|---|
+| Home | 14.6 fps (158 animations) | 26 fps (69) | 56 fps (0) |
+| Home + Single Player picker | 9 fps (250) | 15 fps (102) | 35 fps (0) |
+
+**Cause.** No single effect: it's the number of animations that need the main thread every frame. Switching off only those kinds, and keeping the plain move/fade animations the GPU runs alone, takes Home to 42.6 fps (37 still running) and the picker to 22 fps. About 120 of Home's 158 animations are main-thread kinds:
+- SVG artwork motion inside the illustrations (about 80 on Home; browsers never GPU-composite SVG parts);
+- the gold shimmer (`background-position`) and orbiting rim glint (a registered custom property), about 0.9 ms each per frame;
+- glow filters, text glows and text sweeps;
+- the clip-path glitter flecks.
+
+**Tried and rejected:**
+- *Gold shimmer and rim as GPU layers* (a sliding gradient strip, and a rotating conic layer in the ring mask). No frame-rate gain while the other main-thread animations still run, and Chrome's layer-tree estimate went from 374 MB to 1,137 MB of GPU textures. Reverted.
+- *Removing the reduce-mode `[class*='lx-']` substring selectors.* 3 paired runs: no measurable difference (a single earlier run suggesting ~25% was noise). Unchanged.
+- *The picker's backdrop blur.* No difference.
+
+**What works without code changes:** the existing Motion Effects settings. Medium nearly doubles the frame rate on slow phones; Low reaches 35–56 fps.
+
+### Motion Effects default: Medium on weak phones (2026-11-26)
+
+Until a player picks a Motion Effects level, a **weak phone starts on Medium** instead of High. Weak means 4 GB of memory or less, or 4 CPU cores or fewer, as the browser reports them (`weakDevice()` in `lib/motion.ts`, the same rule in the inline boot script in `lib/motionBoot.ts`, so it applies before first paint). Any level the player picks in Settings → Motion Effects, High included, always wins and follows the account. A device that asks for reduced motion still gets Low. Settings shows "Set automatically for this device" while nobody has chosen.
+
+**Account flag.** `motion_chosen` is set when a level is saved through `PUT /profile/preferences` and is returned with the preferences (`User::gamePreferences`).
+- Before this, every account returned the default `motion: high`. The app applied it at sign-in, and saving any other setting also stored `high`. So the default High is never treated as a choice.
+- An older saved Medium or Low counts as chosen; an older saved High can't be told apart from the default, so it counts as not chosen.
+- When the account says not chosen, the app drops a High that older versions copied into local storage (`clearQuality`).
+
+**Checked** on the production build in headless Chrome (CPU 4× slower, phone screen, no reduced-motion preference, `player` account never chose):
+- Reporting 4 cores, the app started on Medium: Home 26.6 fps, Single Player picker 14.6 fps.
+- Reporting 8 cores, it stayed on High: 14.6 and 8.2 fps.
+
+Tests: `mobile/src/lib/motion.test.ts` (device rule, the boot script agreeing, the player's choice winning, never-chosen account prefs); `tests/Feature/SettingsTest.php` (the `motion_chosen` flag).

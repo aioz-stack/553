@@ -15,16 +15,16 @@ test('game preferences default to BGM on, sound on, high motion and are saved on
     $me = User::factory()->player()->create();
 
     $this->actingAs($me, 'sanctum')->getJson('/api/v1/profile/preferences')->assertOk()
-        ->assertExactJson(['data' => ['bgm' => true, 'sfx' => true, 'motion' => 'high']]);
+        ->assertExactJson(['data' => ['bgm' => true, 'sfx' => true, 'motion' => 'high', 'motion_chosen' => false]]);
 
     $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['bgm' => false, 'motion' => 'low'])->assertOk()
-        ->assertExactJson(['data' => ['bgm' => false, 'sfx' => true, 'motion' => 'low']]);
+        ->assertExactJson(['data' => ['bgm' => false, 'sfx' => true, 'motion' => 'low', 'motion_chosen' => true]]);
     $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['sfx' => false])->assertOk()
-        ->assertExactJson(['data' => ['bgm' => false, 'sfx' => false, 'motion' => 'low']]);
+        ->assertExactJson(['data' => ['bgm' => false, 'sfx' => false, 'motion' => 'low', 'motion_chosen' => true]]);
 
     // They come back with your account (e.g. after logging out and in again) and only on your own record.
     $this->actingAs($me->fresh(), 'sanctum')->getJson('/api/v1/auth/me')->assertOk()
-        ->assertJsonPath('data.preferences', ['bgm' => false, 'sfx' => false, 'motion' => 'low']);
+        ->assertJsonPath('data.preferences', ['bgm' => false, 'sfx' => false, 'motion' => 'low', 'motion_chosen' => true]);
 
     $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['motion' => 'ultra'])->assertStatus(422);
     $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['bgm' => 'loud'])->assertStatus(422);
@@ -58,4 +58,23 @@ test('changing your password: current password checked, rules enforced, stored h
         ->and(Hash::check('newpass123', $raw))->toBeTrue()
         ->and(Hash::check('oldpass123', $raw))->toBeFalse()
         ->and(AuditLog::query()->where('action', 'user.password_changed')->count())->toBe(1);
+});
+
+test('motion counts as chosen only when the player picks a level, so weak phones can default to Medium', function () {
+    $me = User::factory()->player()->create();
+
+    // Changing sound does not choose a motion level (the default High is not "chosen").
+    $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['sfx' => false])->assertOk()
+        ->assertJsonPath('data.motion', 'high')->assertJsonPath('data.motion_chosen', false);
+    $this->actingAs($me->fresh(), 'sanctum')->getJson('/api/v1/auth/me')->assertJsonPath('data.preferences.motion_chosen', false);
+
+    // Picking High explicitly is a choice, and stays one when other settings change.
+    $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['motion' => 'high'])->assertJsonPath('data.motion_chosen', true);
+    $this->actingAs($me, 'sanctum')->putJson('/api/v1/profile/preferences', ['bgm' => false])->assertJsonPath('data.motion_chosen', true);
+
+    // Saved before the flag existed: Medium / Low were picked by the player; High cannot be told from the default.
+    $old = User::factory()->player()->create(['preferences' => ['bgm' => true, 'sfx' => true, 'motion' => 'medium']]);
+    expect($old->gamePreferences()['motion_chosen'])->toBeTrue();
+    $oldHigh = User::factory()->player()->create(['preferences' => ['bgm' => true, 'sfx' => true, 'motion' => 'high']]);
+    expect($oldHigh->gamePreferences()['motion_chosen'])->toBeFalse();
 });

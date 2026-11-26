@@ -115,9 +115,11 @@ class GameStatePresenter
                 ->map(fn (GamePlayer $p) => ['user' => $p->user, 'seat' => $p->seat]);
         }
 
-        $players = $roster->map(function (array $row) use ($viewer, $submittedIds, $session, $bets, $luckyIds, $autoBets) {
+        // Connection state for every seat in one query (not one per player).
+        $connected = GamePlayer::query()->where('game_table_id', $session->game_table_id)->pluck('is_connected', 'user_id');
+
+        $players = $roster->map(function (array $row) use ($viewer, $submittedIds, $session, $bets, $luckyIds, $autoBets, $connected) {
             $user = $row['user'];
-            $seat = GamePlayer::query()->where('game_table_id', $session->game_table_id)->where('user_id', $user->id)->first();
 
             return [
                 'user_id' => $user->id,
@@ -126,7 +128,7 @@ class GameStatePresenter
                 'seat' => $row['seat'],
                 'is_you' => $user->id === $viewer->id,
                 'has_submitted' => in_array($user->id, $submittedIds, true),
-                'is_connected' => $seat?->is_connected ?? false,
+                'is_connected' => (bool) ($connected[$user->id] ?? false),
                 'is_banker' => $session->banker_user_id === $user->id,
                 'bet' => isset($bets[$user->id]) ? Points::decimal((int) $bets[$user->id]) : null,
                 // AUTO when the server placed the minimum bet at the betting timeout, MANUAL when chosen.

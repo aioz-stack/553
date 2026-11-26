@@ -29,6 +29,11 @@ final class BotArranger
     /** @var list<list<int>>|null 5-of-8 index patterns */
     private static ?array $middlePatterns = null;
 
+    /** @var list<int>|null every 5-of-13 / 3-of-13 mask (computed once per process) */
+    private static ?array $masks5 = null;
+
+    private static ?array $masks3 = null;
+
     /**
      * @param  list<string>  $cards  13 distinct cards
      */
@@ -41,24 +46,37 @@ final class BotArranger
         }
 
         $payoff = self::payoffTable();
-        $five = [];   // mask => [strength, P(win as Middle), P(win as Back)]
-        $three = [];  // mask => [strength, P(win as Front)]
+        // Parse the 13 cards once (evaluating 1,573 hands would otherwise parse each card again and again).
+        $parsed = array_map(fn (string $c) => Card::fromString($c), $cards);
+        // Flat lookups by mask (no per-split array allocation in the hot loop below).
+        $fiveS = [];    // mask => strength
+        $fiveMid = [];  // mask => P(win as Middle)
+        $fiveBack = []; // mask => P(win as Back)
+        $threeS = [];   // mask => strength
+        $threeP = [];   // mask => P(win as Front)
 
-        foreach (self::masks(13, 5) as $mask) {
-            $s = self::strength(HandEvaluator::evaluate(self::pick($cards, $mask)));
-            $five[$mask] = [$s, BotStrength::chance('middle', $s), BotStrength::chance('back', $s)];
+        foreach (self::$masks5 ??= self::masks(13, 5) as $mask) {
+            $s = self::strength(HandEvaluator::evaluate(self::pick($parsed, $mask)));
+            $fiveS[$mask] = $s;
+            $fiveMid[$mask] = BotStrength::chance('middle', $s);
+            $fiveBack[$mask] = BotStrength::chance('back', $s);
         }
-        foreach (self::masks(13, 3) as $mask) {
-            $s = self::strength(HandEvaluator::evaluate(self::pick($cards, $mask)));
-            $three[$mask] = [$s, BotStrength::chance('front', $s)];
+        foreach (self::$masks3 ??= self::masks(13, 3) as $mask) {
+            $s = self::strength(HandEvaluator::evaluate(self::pick($parsed, $mask)));
+            $threeS[$mask] = $s;
+            $threeP[$mask] = BotStrength::chance('front', $s);
         }
 
         $patterns = self::$middlePatterns ??= self::patterns();
         $full = (1 << 13) - 1;
+        [$w0, $w1, $w2, $w3] = [$payoff[0], $payoff[1], $payoff[2], $payoff[3]];
         $best = null;
-        $bestKey = null;
+        $bestEv = 0.0;
+        $bestBack = $bestMid = $bestFront = 0;
 
-        foreach ($five as $backMask => [$backS, , $pBack]) {
+        foreach ($fiveS as $backMask => $backS) {
+            $pBack = $fiveBack[$backMask];
+            $qBack = 1 - $pBack;
             $restBits = [];
             for ($i = 0, $rest = $full & ~$backMask; $i < 13; $i++) {
                 if ($rest & (1 << $i)) {
@@ -68,14 +86,14 @@ final class BotArranger
 
             foreach ($patterns as $pattern) {
                 $midMask = $restBits[$pattern[0]] | $restBits[$pattern[1]] | $restBits[$pattern[2]] | $restBits[$pattern[3]] | $restBits[$pattern[4]];
-                [$midS, $pMid] = $five[$midMask];
+                $midS = $fiveS[$midMask];
 
                 if ($midS > $backS) {
                     continue;
                 }
 
                 $frontMask = $rest & ~$midMask;
-                [$frontS, $pFront] = $three[$frontMask];
+                $frontS = $threeS[$frontMask];
 
                 // Front vs Middle compares only the ranks both hands have (HandValue::compare); the 0-padded
                 // Front strength is above the Middle's exactly when an overlapping rank is higher (a foul).
@@ -83,12 +101,30 @@ final class BotArranger
                     continue;
                 }
 
-                $ev = self::expected($pFront, $pMid, $pBack, $payoff);
-                $key = [$ev, $backS, $midS, $frontS];
+                // expected(): the same eight outcomes, summed in the same order (identical floats).
+                $pF = $threeP[$frontMask];
+                $pM = $fiveMid[$midMask];
+                $qF = 1 - $pF;
+                $qM = 1 - $pM;
+                $ev = 0.0;
+                $ev += $qF * $qM * $qBack * $w0;
+                $ev += $qF * $qM * $pBack * $w1;
+                $ev += $qF * $pM * $qBack * $w1;
+                $ev += $qF * $pM * $pBack * $w2;
+                $ev += $pF * $qM * $qBack * $w1;
+                $ev += $pF * $qM * $pBack * $w2;
+                $ev += $pF * $pM * $qBack * $w2;
+                $ev += $pF * $pM * $pBack * $w3;
 
-                if ($bestKey === null || self::better($key, $bestKey)) {
-                    $bestKey = $key;
+                // better(): higher expected result, then the stronger Back, Middle, Front.
+                if ($best === null
+                    || ($ev - $bestEv > 1e-9)
+                    || (abs($ev - $bestEv) <= 1e-9 && [$backS, $midS, $frontS] > [$bestBack, $bestMid, $bestFront])) {
                     $best = [$frontMask, $midMask, $backMask];
+                    $bestEv = $ev;
+                    $bestBack = $backS;
+                    $bestMid = $midS;
+                    $bestFront = $frontS;
                 }
             }
         }

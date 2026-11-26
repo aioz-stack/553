@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CandyText } from '@/components/HomeArt';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useQuality, type Quality } from '@/lib/motion';
+import { qualityChosen, useQuality, type Quality } from '@/lib/motion';
 import { useMusic } from '@/lib/music';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
@@ -166,6 +166,9 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [bgm] = useMusic();
   const [sfx] = useSound();
   const [quality] = useQuality();
+  // Read after mount (the page is prerendered): no level picked yet → the device chose it.
+  const [autoQuality, setAutoQuality] = useState(false);
+  useEffect(() => setAutoQuality(!qualityChosen()), [quality]);
   const [form, setForm] = useState({ current: '', next: '', confirm: '' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -273,6 +276,11 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 );
               })}
             </div>
+            {autoQuality && (
+              <p role="note" className="mt-3 text-center text-[19px] font-bold text-[#8a5a2a]">
+                Set automatically for this device{quality === 'medium' ? ' (Medium for smoother play)' : ''}. Tap a level to choose your own.
+              </p>
+            )}
           </Card>
 
           {/* 3. Change password */}

@@ -11,7 +11,7 @@ createInertiaApp({
   resolve: (name) => {
     // Baseplate pages are .jsx; new platform pages are written in TypeScript (.tsx).
     // Pages are code-split and loaded on demand.
-    const pages = import.meta.glob('./Pages/**/*.{jsx,tsx}');
+    const pages = import.meta.glob(['./Pages/**/*.{jsx,tsx}', '!./Pages/**/*.test.{jsx,tsx}']);
     const page = pages[`./Pages/${name}.tsx`] ?? pages[`./Pages/${name}.jsx`];
 
     if (!page) {

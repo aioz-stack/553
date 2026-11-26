@@ -14,7 +14,7 @@ export interface User {
   display_name?: string | null;
   level?: Level;
   /** Your saved game settings (only on your own record). */
-  preferences?: { bgm: boolean; sfx: boolean; motion: 'low' | 'medium' | 'high' };
+  preferences?: { bgm: boolean; sfx: boolean; motion: 'low' | 'medium' | 'high'; motion_chosen?: boolean };
 }
 
 export interface Level {

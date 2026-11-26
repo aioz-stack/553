@@ -81,8 +81,11 @@ class User extends Authenticatable
 
     /**
      * This player's game settings (BGM, sound effects, motion quality), defaults filled in.
+     * motion_chosen: the player picked a Motion Effects level themselves. Until then the app picks
+     * one for the device (Medium on weak phones, else High) instead of applying the default High.
+     * A saved Medium / Low from before this flag counts as chosen (High can't be told from the default).
      *
-     * @return array{bgm: bool, sfx: bool, motion: string}
+     * @return array{bgm: bool, sfx: bool, motion: string, motion_chosen: bool}
      */
     public function gamePreferences(): array
     {
@@ -93,6 +96,7 @@ class User extends Authenticatable
             'bgm' => (bool) $p['bgm'],
             'sfx' => (bool) $p['sfx'],
             'motion' => in_array($p['motion'], self::MOTION_LEVELS, true) ? $p['motion'] : 'high',
+            'motion_chosen' => (bool) ($saved['motion_chosen'] ?? (isset($saved['motion']) && in_array($saved['motion'], ['low', 'medium'], true))),
         ];
     }
 

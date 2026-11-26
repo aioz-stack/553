@@ -151,9 +151,10 @@ export function useLobbyUpdates(onChange: () => void, enabled = true): void {
       timer = setTimeout(() => cb.current(), 250);
     };
 
+    let cancelled = false;
     getEcho()
       .then((echo) => {
-        if (!echo) return;
+        if (!echo || cancelled) return; // closed before the socket was ready: subscribe to nothing
         const ch = echo.channel('lobbies');
         ch.listen('.lobby.updated', bump);
         live = true;
@@ -173,6 +174,7 @@ export function useLobbyUpdates(onChange: () => void, enabled = true): void {
       clearInterval(poll);
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
+      cancelled = true;
       leave?.();
     };
   }, [enabled]);
@@ -180,19 +182,21 @@ export function useLobbyUpdates(onChange: () => void, enabled = true): void {
 
 /**
  * Live Choose Your Seat: table events on the seated players' presence channel (`table.{id}`)
- * plus polling — every 3 s normally, every 0.4 s while the countdown runs. Each poll (GET
+ * plus polling — every 3 s normally, every 1 s while the countdown runs (and once right as it
+ * ends, via `endsAt`). Each poll (GET
  * /lobbies/{id}) is also your heartbeat and lets the server run the countdown / start the match.
  */
-export function useWaitingRoomUpdates(tableId: number | null, onChange: () => void, fast = false): void {
+export function useWaitingRoomUpdates(tableId: number | null, onChange: () => void, fast = false, endsAt: number | null = null): void {
   const cb = useRef(onChange);
   cb.current = onChange;
 
   useEffect(() => {
     if (!tableId) return undefined;
     let leave: (() => void) | null = null;
+    let cancelled = false;
     getEcho()
       .then((echo) => {
-        if (!echo) return;
+        if (!echo || cancelled) return;
         const ch = echo.join(`table.${tableId}`);
         ['player.joined', 'player.left', 'player.ready', 'player.seated', 'player.updated', 'table.full', 'match.countdown', 'match.countdown_cancelled', 'match.started', 'match.completed', 'player.disconnected', 'player.reconnected'].forEach((e) =>
           ch.listen(`.${e}`, () => cb.current()),
@@ -200,12 +204,22 @@ export function useWaitingRoomUpdates(tableId: number | null, onChange: () => vo
         leave = () => echo.leave(`table.${tableId}`);
       })
       .catch(() => undefined);
-    return () => leave?.();
+    return () => {
+      cancelled = true;
+      leave?.();
+    };
   }, [tableId]);
 
   useEffect(() => {
     if (!tableId) return undefined;
-    const poll = setInterval(() => cb.current(), fast ? 400 : 3_000);
+    const poll = setInterval(() => cb.current(), fast ? 1_000 : 3_000);
     return () => clearInterval(poll);
   }, [tableId, fast]);
+
+  // The countdown's last moment: look once just after it ends (the server starts the match on that look).
+  useEffect(() => {
+    if (!tableId || endsAt === null) return undefined;
+    const t = setTimeout(() => cb.current(), Math.max(0, endsAt - Date.now()) + 150);
+    return () => clearTimeout(t);
+  }, [tableId, endsAt]);
 }
