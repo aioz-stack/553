@@ -398,7 +398,7 @@ export default function ChooseYourSeat() {
                 </div>
               )}
               <span className="flex items-center gap-2 rounded-full bg-black/55 px-4 py-0.5 font-display text-[19px] font-black text-white/90">
-                Players <span key={players} className="cs-bump inline-block text-[#ffe14d]">{players}/4</span>
+                <span key={players} className="cs-bump inline-block text-[#ffe14d]" aria-label={`${players} of ${lobby.max_players ?? 4} players`}>{players}/{lobby.max_players ?? 4}</span> Players
                 {lobby.is_owner && !counting && lobby.table_status !== 'IN_GAME' && (
                   <button type="button" onClick={() => setPanel('edit')} className="ml-1 rounded-full border-2 border-[#ffd34d]/70 px-3 text-[16px] text-[#ffe14d]">
                     ⚙ Edit lobby
@@ -460,7 +460,7 @@ export default function ChooseYourSeat() {
                 </>
               ) : (
                 <div className="cs-rise flex flex-col items-center gap-3">
-                  <p className="font-display text-[26px] font-black text-[#ffe9b0]">All four seats confirmed · {lobby.ready_count}/4 pressed Start</p>
+                  <p className="font-display text-[26px] font-black text-[#ffe9b0]">{(() => { const n = lobby.seated_count ?? players; return `${n === 4 ? 'All four' : `All ${n}`} seats confirmed · ${lobby.ready_count}/${n} pressed Start`; })()}</p>
                   {lobby.my_ready ? (
                     <>
                       <span className="rounded-full bg-black/55 px-8 py-3 font-display text-[30px] font-black text-white" role="status">

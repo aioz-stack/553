@@ -66,6 +66,19 @@ PHASES.complete = PHASES.deal + 51 * DEAL_GAP + FLIGHT + 2 * BOUNCE + 40;
 // Your cards turn over, then arrangement opens straight away (a short beat, no waiting).
 PHASES.done = PHASES.complete + 12 * FLIP_GAP + FLIP + 100;
 
+const ALL_SEATS = [1, 2, 3, 4];
+
+/** The occupied seats in the order they receive cards (a 2- or 3-player table skips empty seats). */
+export function dealSeats(banker: number, seats: number[] = ALL_SEATS): number[] {
+  return dealOrder(banker).filter((s) => seats.includes(s));
+}
+
+/** When the deal of n seats × 13 cards completes and the animation ends (n = 4: PHASES.complete / done). */
+export function timing(n: number): { complete: number; done: number } {
+  const complete = PHASES.deal + (13 * n - 1) * DEAL_GAP + FLIGHT + 2 * BOUNCE + 40;
+  return { complete, done: complete + 12 * FLIP_GAP + FLIP + 100 };
+}
+
 /** Which phase is showing at time t. */
 export function phaseAt(t: number): 'gather' | 'form' | 'split' | 'riffle' | 'merge' | 'ready' | 'deal' | 'complete' {
   if (t >= PHASES.complete) return 'complete';
@@ -127,7 +140,7 @@ function rng(seed: number) {
  * Keyframes for the card that ends up p-th from the top of the shuffled deck.
  * Riffle: even p fall from the left pile, odd p from the right, bottom card first.
  */
-export function cardKeys(p: number, banker: number, seed: number): Key[] {
+export function cardKeys(p: number, banker: number, seed: number, seats: number[] = ALL_SEATS): Key[] {
   const r = rng(seed * 131 + p * 7919 + 17);
   const left = p % 2 === 0;
   const pileH = left ? (50 - p) / 2 : (51 - p) / 2; // height within its pile (0 = bottom)
@@ -176,9 +189,17 @@ export function cardKeys(p: number, banker: number, seed: number): Key[] {
   at(PHASES.merge + T(330), { rz: (51 - p) * 0.14 + 3, z: deckZ(51 - p) + 4 }, 'ease-in-out');
   at(PHASES.ready, { x: CX, y: CY, rz: 0, z: deckZ(51 - p) });
 
-  // 6 DECK READY: hold while the camera settles.  7-8 DEAL CLOCKWISE from the top, one card at a time.
-  const seat = dealOrder(banker)[p % 4];
-  const target = fanPose(seat, Math.floor(p / 4));
+  // 6 DECK READY: hold while the camera settles.  7-8 DEAL CLOCKWISE from the top, one card at a time,
+  // to the occupied seats only (13 each); the cards nobody is dealt stay in the deck.
+  const order = dealSeats(banker, seats);
+  const n = order.length;
+  const { complete, done } = timing(n);
+  if (p >= 13 * n) {
+    at(done, {});
+    return keys;
+  }
+  const seat = order[p % n];
+  const target = fanPose(seat, Math.floor(p / n));
   const go = PHASES.deal + p * DEAL_GAP;
   const spin = target.rz > 90 ? -1 : 1;
   at(go, {}, 'cubic-bezier(.35,0,.25,1)');
@@ -189,12 +210,12 @@ export function cardKeys(p: number, banker: number, seed: number): Key[] {
 
   // 9 COMPLETE: your cards turn over, left to right.
   if (seat === 1) {
-    const flip = PHASES.complete + Math.floor(p / 4) * FLIP_GAP;
+    const flip = complete + Math.floor(p / n) * FLIP_GAP;
     at(flip, {}, 'ease-in');
     at(flip + FLIP / 2, { z: target.z + 26, ry: 90 }, 'ease-out');
     at(flip + FLIP, { z: target.z, ry: 180 });
   }
-  at(PHASES.done, {});
+  at(done, {});
   return keys;
 }
 
@@ -203,9 +224,9 @@ const LIFT_Y = 0.6;
 const transformOf = (k: Pose) => `translate3d(${(k.x - CARD_W / 2).toFixed(1)}px, ${(k.y - CARD_H / 2 - k.z * LIFT_Y).toFixed(1)}px, ${k.z.toFixed(1)}px) rotateX(${k.rx}deg) rotateZ(${k.rz.toFixed(1)}deg) rotateY(${k.ry.toFixed(1)}deg) scale(${k.s.toFixed(3)})`;
 
 /** Turn absolute-time keys into a Web Animations keyframe list spanning PHASES.done. */
-function toFrames(keys: Key[], shadow = false): Keyframe[] {
+function toFrames(keys: Key[], duration: number = PHASES.done, shadow = false): Keyframe[] {
   return keys.map((k) => {
-    const f: Keyframe = { offset: Math.min(1, Math.max(0, k.t / PHASES.done)), easing: k.e ?? 'linear' };
+    const f: Keyframe = { offset: Math.min(1, Math.max(0, k.t / duration)), easing: k.e ?? 'linear' };
     if (shadow) {
       // A soft shadow on the felt under a lifted card: further, bigger and fainter the higher it flies.
       const lift = Math.max(0, k.z - 4);
@@ -258,6 +279,7 @@ export default function DealAnimation({
   banker,
   cards,
   names,
+  seats = ALL_SEATS,
   onDone,
 }: {
   roundId: number;
@@ -267,6 +289,8 @@ export default function DealAnimation({
   cards: string[];
   /** Seat → name for the dealing caption. */
   names: Record<number, string>;
+  /** Occupied seats (display numbers, 1 = you). A 2- or 3-player table deals to those only. */
+  seats?: number[];
   onDone: () => void;
 }) {
   const scene = useRef<HTMLDivElement>(null);
@@ -282,7 +306,11 @@ export default function DealAnimation({
   };
   // Travelling shadows: not on low-end devices or at Medium motion quality.
   const shadows = useMemo(() => !lowEnd() && !lightNow(), []);
-  const order = dealOrder(banker);
+  const order = dealSeats(banker, seats);
+  const n = order.length;
+  const total = 13 * n;
+  const { done: doneAt } = timing(n);
+  const seatsKey = order.join(',');
 
   useEffect(() => {
     const root = scene.current;
@@ -291,20 +319,20 @@ export default function DealAnimation({
       finish();
       return undefined;
     }
-    const opts: KeyframeAnimationOptions = { duration: PHASES.done, fill: 'forwards', easing: 'linear' };
+    const opts: KeyframeAnimationOptions = { duration: doneAt, fill: 'forwards', easing: 'linear' };
     const anims: Animation[] = [];
     root.querySelectorAll<HTMLElement>('[data-deal-card]').forEach((el) => {
       const p = Number(el.dataset.dealCard);
-      anims.push(el.animate(toFrames(cardKeys(p, banker, roundId)), opts));
+      anims.push(el.animate(toFrames(cardKeys(p, banker, roundId, order), doneAt), opts));
     });
     root.querySelectorAll<HTMLElement>('[data-deal-shadow]').forEach((el) => {
       const p = Number(el.dataset.dealShadow);
-      anims.push(el.animate(toFrames(cardKeys(p, banker, roundId), true), opts));
+      anims.push(el.animate(toFrames(cardKeys(p, banker, roundId, order), doneAt, true), opts));
     });
     // A subtle camera push-in on the finished deck, easing back out as the deal starts.
     const cam = root.querySelector<HTMLElement>('[data-deal-camera]');
     if (cam) {
-      const o = (t: number) => t / PHASES.done;
+      const o = (t: number) => t / doneAt;
       anims.push(
         cam.animate(
           [
@@ -324,9 +352,9 @@ export default function DealAnimation({
     const later = (t: number, f: () => void) => timers.push(setTimeout(f, t));
     (Object.keys(CAPTION) as Array<keyof typeof CAPTION>).forEach((ph) => later(PHASES[ph], () => setPhase(ph)));
     later(PHASES.riffle, () => play('deal'));
-    for (let p = 0; p < 52; p++) later(landsAt(p), () => setLanded(p + 1));
-    for (let p = 0; p < 52; p += 4) later(landsAt(p), () => play('tap'));
-    later(PHASES.done, finish);
+    for (let p = 0; p < total; p++) later(landsAt(p), () => setLanded(p + 1));
+    for (let p = 0; p < total; p += n) later(landsAt(p), () => play('tap'));
+    later(doneAt, finish);
     // Belt and braces: open arrangement as soon as every card animation has played out, even if a
     // throttled timer runs late. (A cancelled animation rejects: nothing happens then.)
     if (anims.every((a) => a.finished instanceof Promise)) {
@@ -338,11 +366,11 @@ export default function DealAnimation({
       anims.forEach((a) => a.cancel());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundId, banker]);
+  }, [roundId, banker, seatsKey]);
 
-  const counts = [1, 2, 3, 4].map((seat) => ({ seat, n: Array.from({ length: landed }, (_, p) => order[p % 4]).filter((s) => s === seat).length }));
+  const counts = order.map((seat) => ({ seat, n: Array.from({ length: landed }, (_, p) => order[p % n]).filter((s) => s === seat).length }));
   const badge: Record<number, { x: number; y: number }> = { 1: { x: CX + 230, y: 600 }, 2: { x: 330, y: 360 }, 3: { x: CX + 140, y: 250 }, 4: { x: 1270, y: 360 } };
-  // Your cards, by deck position: the k-th card you receive is deck[order.indexOf(1) + 4k].
+  // Your cards, by deck position: the k-th card you receive is deck[order.indexOf(1) + n·k].
   const mine = order.indexOf(1);
 
   return (
@@ -359,16 +387,17 @@ export default function DealAnimation({
               />
             ))}
           {Array.from({ length: 52 }, (_, p) => {
-            const yours = p % 4 === mine;
+            const dealt = p < total;
+            const yours = dealt && p % n === mine;
             return (
               <span
                 key={p}
                 data-deal-card={p}
                 className="absolute left-0 top-0 will-change-transform [transform-style:preserve-3d]"
-                style={{ width: CARD_W, height: CARD_H, transform: transformOf({ ...fanPose(order[p % 4], Math.floor(p / 4)), ry: yours ? 180 : 0 }) }}
+                style={{ width: CARD_W, height: CARD_H, transform: dealt ? transformOf({ ...fanPose(order[p % n], Math.floor(p / n)), ry: yours ? 180 : 0 }) : transformOf({ x: CX, y: CY, z: 1 + (51 - p) * STEP, rz: 0, rx: TILT, ry: 0, s: 1 }) }}
               >
                 <Back />
-                {yours && <Face code={cards[Math.floor(p / 4)] ?? 'AS'} />}
+                {yours && <Face code={cards[Math.floor(p / n)] ?? 'AS'} />}
               </span>
             );
           })}

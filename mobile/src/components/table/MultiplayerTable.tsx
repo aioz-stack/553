@@ -590,6 +590,8 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
           banker={bankerView}
           cards={session.my_cards}
           names={{ 1: 'You', 2: around[0]?.name ?? 'Seat', 3: around[1]?.name ?? 'Seat', 4: around[2]?.name ?? 'Seat' }}
+          // 2–4 players: cards go to the seats in this round only (as the server dealt them).
+          seats={players.map((pl) => viewSeat(pl.seat))}
           onDone={() => setDealing(null)}
         />
       )}

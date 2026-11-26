@@ -2134,3 +2134,28 @@ Tests:
 - `tests/Feature/LeaveRulesTest.php` (new).
 - Updated: `BankerModesTest`, `GoldWalletTest`.
 - App: `MultiplayerTable.test.tsx` (Leave panel; no submit on a stale 0), `useTable.test.ts` (late deadline), `practice/page.test.tsx`.
+
+## Multiplayer starts with 2 players (2–4 seated)
+
+A lobby match starts with **at least 2** seated players (`LobbyService::MIN_PLAYERS`); the table still seats 4. The existing readiness rules are unchanged: every seated player confirms a seat and presses Start, the server runs the 3-second countdown, then rechecks Chips, Keys and presence before starting.
+
+**Server:**
+- `pressStart` refuses fewer than 2 seated players with 409 `not_enough_players`: "At least 2 players are required to start the game." It refuses unconfirmed seats as before.
+- The countdown is cancelled when fewer than 2 remain, or anyone seated is not started, confirmed or connected.
+- Nobody can join during a running countdown (409 `countdown_running`): with free seats, a late joiner would only cancel the start.
+- A match starts once: the table and round rows are locked and the state rechecked, so a repeated Start changes nothing.
+- Lobby rooms are created with `min_players = 2` (`BankerMatchService::minPlayers`). Migration `2026_12_01_100000_lobbies_start_with_two_players` sets 2 on existing lobby rooms; matches in progress are unaffected.
+- Lobby state adds `seated_count` and `min_players`; `start_hint` shows the 2-player message.
+
+**Dealing only to occupied seats.** `Deck::dealTo` deals one card at a time, clockwise from the seat after the banker, to the round's seats only: 26 cards for 2 players, 39 for 3. With four seats it's exactly the previous deal (tested). Keys are charged to the seated players only; banker rotation, betting and settlement are unchanged, since they already handled 2–3 players.
+
+**App:**
+- The lobby room shows "N/4 Players" and "All N seats confirmed · R/N pressed Start". Start appears once 2 or more seats are confirmed; alone, it shows the 2-player message.
+- On the table, empty seats show "Empty seat".
+- The deal animation (`DealAnimation`, `seats` prop) shuffles the whole deck but deals only to occupied seats; the rest stays in the deck, and it ends sooner.
+
+Tests:
+- `tests/Feature/LobbyMinPlayersTest.php`: alone refused; 2 and 3 players start; dealt to the two only; Keys from the two; no joining during the countdown; leaving stops the start; double Start.
+- `tests/Unit/Game/DeckDealToTest.php`.
+- `DealAnimation.test.tsx` (2-seat order, timing, counters).
+- Updated: `LobbyTest.php`.

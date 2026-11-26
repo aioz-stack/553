@@ -47,7 +47,7 @@ test('create a public lobby: unique 6-digit ID, owner in seat 1, settings stored
     Event::assertDispatched(LobbyEvent::class);
 
     $room = GameRoom::query()->findOrFail($res->json('data.id'));
-    expect($room->owner_starts)->toBeTrue()->and($room->min_players)->toBe(4)->and($room->lobby_password)->toBeNull();
+    expect($room->owner_starts)->toBeTrue()->and($room->min_players)->toBe(2)->and($room->lobby_password)->toBeNull();
 
     // A second lobby gets a different ID; you cannot create one while seated.
     lbCreate($this, $owner)->assertStatus(409)->assertJsonPath('error', 'already_seated');
@@ -143,9 +143,8 @@ test('choose your seat: one seat per player, no two players on one seat, reserve
 
     $seats = GameTable::query()->find($room['table_id'])->players()->pluck('seat', 'user_id')->all();
     expect($seats)->toBe([$owner->id => 3, $guest->id => 4]);
-    // Start stays unavailable until all four have confirmed.
-    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.can_press_start', false)->assertJsonPath('data.all_confirmed', false);
-    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertStatus(409)->assertJsonPath('error', 'seats_not_confirmed');
+    // Two players, both seats confirmed: Start is available (a match starts with 2 to 4 players).
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertJsonPath('data.can_press_start', true)->assertJsonPath('data.all_confirmed', true)->assertJsonPath('data.seated_count', 2);
     // Lobby tables cannot be readied the old way.
     $this->actingAs($owner, 'sanctum')->postJson("/api/v1/tables/{$room['table_id']}/ready", ['ready' => true])->assertStatus(409)->assertJsonPath('error', 'use_lobby_start');
 });

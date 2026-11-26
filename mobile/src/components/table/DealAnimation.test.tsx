@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import DealAnimation, { cardKeys, dealOrder, landsAt, PHASES, phaseAt } from './DealAnimation';
+import DealAnimation, { cardKeys, dealOrder, dealSeats, landsAt, PHASES, phaseAt, timing } from './DealAnimation';
 
 const MINE = ['2C', '3D', '4H', '5S', '6C', '7D', '8H', '9S', 'TC', 'JD', 'QH', 'KS', 'AC'];
 const NAMES = { 1: 'You', 2: 'LuckyBot', 3: 'CardBot', 4: 'AceBot' };
@@ -30,6 +30,20 @@ describe('deal order', () => {
       for (let i = 1; i < keys.length; i++) expect(keys[i].t).toBeGreaterThanOrEqual(keys[i - 1].t);
       expect(keys[keys.length - 1].t).toBe(PHASES.done);
     }
+  });
+});
+
+describe('deal order with empty seats (2 or 3 players)', () => {
+  it('deals only to occupied seats, clockwise from the seat after the banker, in a shorter time', () => {
+    expect(dealSeats(1, [1, 3])).toEqual([3, 1]);
+    expect(dealSeats(2, [1, 2, 4])).toEqual([4, 1, 2]);
+    expect(dealSeats(3)).toEqual(dealOrder(3));
+    expect(timing(4)).toEqual({ complete: PHASES.complete, done: PHASES.done });
+    expect(timing(2).done).toBeLessThan(timing(4).done);
+    // Cards past 26 stay in the deck (their last keyframe is still the deck, at the end of the 2-seat deal).
+    const rest = cardKeys(30, 1, 7, [1, 3]);
+    expect(rest[rest.length - 1].t).toBe(timing(2).done);
+    expect(Math.round(rest[rest.length - 1].x)).toBe(800);
   });
 });
 
@@ -95,5 +109,33 @@ describe('DealAnimation', () => {
     render(<DealAnimation roundId={9} banker={1} cards={MINE} names={NAMES} onDone={done} />);
     expect(done).toHaveBeenCalledTimes(1);
     expect(animate).not.toHaveBeenCalled();
+  });
+});
+
+describe('DealAnimation — a 2-player table', () => {
+  const animate = vi.fn(() => ({ cancel: vi.fn() }) as unknown as Animation);
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }));
+    localStorage.setItem('pusoy.motion', 'on');
+    (HTMLElement.prototype as unknown as { animate: typeof animate }).animate = animate;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    localStorage.removeItem('pusoy.motion');
+    delete (HTMLElement.prototype as unknown as { animate?: unknown }).animate;
+  });
+
+  it('counts 13 for each of the two seats only and hands over when the 26 cards are out', () => {
+    const done = vi.fn();
+    render(<DealAnimation roundId={9} banker={1} cards={MINE} names={NAMES} seats={[1, 3]} onDone={done} />);
+    act(() => vi.advanceTimersByTime(timing(2).complete + 10));
+    expect(screen.getByLabelText('CardBot cards')).toHaveTextContent('13');
+    expect(screen.getByLabelText('You cards')).toHaveTextContent('13');
+    expect(screen.queryByLabelText('LuckyBot cards')).toBeNull();
+    expect(screen.queryByLabelText('AceBot cards')).toBeNull();
+    act(() => vi.advanceTimersByTime(timing(2).done - timing(2).complete));
+    expect(done).toHaveBeenCalledTimes(1);
   });
 });

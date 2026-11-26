@@ -68,6 +68,9 @@ export interface LobbyDetail extends LobbySummary {
   my_ready: boolean;
   all_confirmed: boolean;
   ready_count: number;
+  /** Players seated now; a match starts with min_players (2) up to max_players (4). */
+  seated_count?: number;
+  min_players?: number;
   /** Server time the synchronized countdown ends (ISO, ms); null when none is running. */
   countdown_ends_at: string | null;
   /** Server clock at response time, to line the countdown up across devices. */

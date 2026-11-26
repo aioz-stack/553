@@ -559,7 +559,11 @@ class BankerMatchService
         // four seats, starting with the seat after the banker; each player keeps their own seat's 13.
         $deck = Deck::shuffled($session->server_seed);
         $bankerSeat = (int) ($seats[$session->banker_user_id] ?? 1);
-        $hands = Deck::deal($deck, 4, 13, ($bankerSeat % 4) + 1);
+        // Only the seats in this round (2 to 4 players), clockwise from the seat after the banker.
+        $first = ($bankerSeat % 4) + 1;
+        $order = array_values(array_map('intval', $seats->values()->all()));
+        usort($order, fn (int $a, int $b) => (($a - $first + 4) % 4) <=> (($b - $first + 4) % 4));
+        $hands = Deck::dealTo($deck, $order, 13);
         $dealt = [];
 
         foreach ($seats as $userId => $seat) {

@@ -126,7 +126,7 @@ class LobbyService
                 'platform_fee_bps' => 0,
                 'arrangement_seconds' => (int) $data['preparation_seconds'],
                 'betting_seconds' => config('pusoy.banker.default_betting_seconds'),
-                'min_players' => 4,
+                'min_players' => self::MIN_PLAYERS, // starts with 2–4 seated (BankerMatchService::minPlayers)
                 'max_players' => 4,
                 'tie_handling' => 'split_equally',
                 'timeout_policy' => 'auto_arrange',
@@ -330,7 +330,7 @@ class LobbyService
         }
 
         $seated = $players->firstWhere('user_id', $user->id);
-        $allConfirmed = $players->count() === 4 && $players->every('seat_confirmed');
+        $allConfirmed = $players->count() >= self::MIN_PLAYERS && $players->every('seat_confirmed');
         $inGame = $table?->status === TableStatus::InGame;
         $counting = (bool) $table?->countdown_ends_at;
         $unconfirmed = $players->where('seat_confirmed', false)->count();
@@ -346,6 +346,9 @@ class LobbyService
             'my_seat_confirmed' => (bool) $seated?->seat_confirmed,
             'my_ready' => (bool) $seated?->is_ready,
             'all_confirmed' => $allConfirmed,
+            // "2/4 Players": a match starts with 2 to 4.
+            'seated_count' => $players->count(),
+            'min_players' => self::MIN_PLAYERS,
             'ready_count' => $players->where('is_ready', true)->count(),
             'countdown_ends_at' => $table?->countdown_ends_at?->toIso8601ZuluString('millisecond'),
             'server_time' => now()->toIso8601ZuluString('millisecond'),
@@ -361,7 +364,7 @@ class LobbyService
                 $table === null => 'This lobby is closed.',
                 $inGame => 'The game is starting…',
                 $counting => 'Get ready…',
-                $players->count() < 4 => 'Waiting for '.(4 - $players->count()).' more player'.(4 - $players->count() === 1 ? '' : 's').'…',
+                $players->count() < self::MIN_PLAYERS => self::MIN_PLAYERS_MESSAGE,
                 ! $allConfirmed => $unconfirmed === 1 ? 'Waiting for 1 player to confirm a seat…' : "Waiting for {$unconfirmed} players to confirm their seats…",
                 $notStarted > 0 => $seated?->is_ready ? "Waiting for {$notStarted} more to press Start…" : 'All seats confirmed — press Start!',
                 default => 'Starting…',
@@ -394,8 +397,13 @@ class LobbyService
             throw new BusinessRuleException($password ? 'Incorrect lobby password.' : 'This is a private lobby — enter its password.', 422, 'wrong_password');
         }
 
-        if ($room->status !== RoomStatus::Active || $this->openTable($room) === null) {
+        if ($room->status !== RoomStatus::Active || ($open = $this->openTable($room)) === null) {
             throw new BusinessRuleException('This lobby is closed.', 409, 'room_closed');
+        }
+        // A match can start with free seats: once its countdown runs, nobody new sits down (a late
+        // arrival would only cancel the start). Should one slip in, tick() still cancels the countdown.
+        if ($open->countdown_ends_at) {
+            throw new BusinessRuleException('This game is starting — try another lobby or join again in a moment.', 409, 'countdown_running');
         }
 
         // TableService locks the player and the room, re-checks the seat count and the balance.
@@ -502,10 +510,16 @@ class LobbyService
         });
     }
 
+    /** A Multiplayer match starts with 2, 3 or 4 seated players (the table seats 4). */
+    public const MIN_PLAYERS = 2;
+
+    public const MIN_PLAYERS_MESSAGE = 'At least 2 players are required to start the game.';
+
     /**
-     * Press (or withdraw) Start. Only once all four players have confirmed their seats. When all
-     * four have pressed it, the server starts the synchronized 3-second countdown; the match begins
-     * when it ends (tick) unless someone leaves, withdraws or drops out first.
+     * Press (or withdraw) Start. Only with at least 2 players seated, every seated player's seat
+     * confirmed (empty seats are fine). When everyone seated has pressed it, the server starts the
+     * synchronized 3-second countdown; the match begins when it ends (tick) unless someone leaves,
+     * withdraws or drops out first, or fewer than 2 remain.
      */
     public function pressStart(User $user, GameRoom $room, bool $ready, BankerMatchService $match): GameTable
     {
@@ -520,8 +534,13 @@ class LobbyService
             $players = GamePlayer::query()->where('game_table_id', $table->id)->lockForUpdate()->get();
             $me = $players->firstWhere('user_id', $user->id) ?? throw new BusinessRuleException('Join this lobby first.', 404, 'not_seated');
 
-            if ($ready && ($players->count() !== 4 || ! $players->every('seat_confirmed'))) {
-                throw new BusinessRuleException('All four players must confirm their seats first.', 409, 'seats_not_confirmed');
+            // Revalidated on every Start: at least 2 players seated (empty seats are fine), every seated
+            // player's seat confirmed. The countdown then needs everyone seated to have pressed Start.
+            if ($ready && $players->count() < self::MIN_PLAYERS) {
+                throw new BusinessRuleException(self::MIN_PLAYERS_MESSAGE, 409, 'not_enough_players');
+            }
+            if ($ready && ! $players->every('seat_confirmed')) {
+                throw new BusinessRuleException('Every seated player must confirm their seat first.', 409, 'seats_not_confirmed');
             }
             // Your Chips (Minimum Entry and 2× your bet) and Keys are checked again before you start.
             if ($ready) {
@@ -573,7 +592,8 @@ class LobbyService
             }
 
             if ($table->countdown_ends_at) {
-                $missing = $players->count() !== 4 || ! $players->every(fn (GamePlayer $p) => $p->is_ready && $p->seat_confirmed && $p->is_connected);
+                // Fewer than 2 left, or anyone seated (a late joiner too) not confirmed, started and here.
+                $missing = $players->count() < self::MIN_PLAYERS || ! $players->every(fn (GamePlayer $p) => $p->is_ready && $p->seat_confirmed && $p->is_connected);
                 if ($missing) {
                     $this->cancelCountdown($table, 'player_disconnected');
                 } elseif ($now->gte($table->countdown_ends_at)) {

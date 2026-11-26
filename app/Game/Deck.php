@@ -84,4 +84,26 @@ final class Deck
 
         return $hands;
     }
+
+    /**
+     * Deal one card at a time to the given seats in this order (clockwise, the seat after the banker
+     * first), $perSeat each — only to occupied seats, so a 2- or 3-player table deals 26 / 39 cards.
+     * With all four seats in order this is exactly deal($deck, 4, $perSeat, $order[0]).
+     *
+     * @param  list<string>  $deck
+     * @param  list<int>  $order  seat numbers
+     * @return array<int, list<string>> seat => cards
+     */
+    public static function dealTo(array $deck, array $order, int $perSeat = 13): array
+    {
+        $order = array_values($order);
+        $n = count($order);
+        $hands = array_fill_keys($order, []);
+
+        for ($i = 0; $i < $n * $perSeat; $i++) {
+            $hands[$order[$i % $n]][] = $deck[$i];
+        }
+
+        return $hands;
+    }
 }
