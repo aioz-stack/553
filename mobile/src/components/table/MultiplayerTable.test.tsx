@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMock = vi.fn();
@@ -272,7 +272,7 @@ describe('Multiplayer table — time up', () => {
 
   it('at 0s submits the rows on screen as they are, once, and catches up with the table', async () => {
     apiMock.mockResolvedValue({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } });
-    const p = props(table({ current_session_id: 72 }), session({ id: 72, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards }));
+    const p = props(table({ current_session_id: 72 }), session({ id: 72, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards, arrangement_deadline: new Date(Date.now() - 500).toISOString() }));
     const { rerender } = render(<MultiplayerTable {...p} arrangeSecondsLeft={1} />);
     expect(apiMock).not.toHaveBeenCalledWith('/games/72/submit', expect.anything());
     rerender(<MultiplayerTable {...p} arrangeSecondsLeft={0} />);
@@ -284,8 +284,64 @@ describe('Multiplayer table — time up', () => {
 
   it('a late SUBMIT the server refuses (time up) does not leave an error: the table catches up', async () => {
     apiMock.mockImplementation((path?: string) => (path?.endsWith('/submit') ? Promise.reject(Object.assign(new Error('The arrangement timer has expired.'), { code: 'timer_expired' })) : Promise.resolve({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } })));
-    const p = props(table({ current_session_id: 72 }), session({ id: 72, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards }));
+    const p = props(table({ current_session_id: 72 }), session({ id: 72, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards, arrangement_deadline: new Date(Date.now() - 500).toISOString() }));
     render(<MultiplayerTable {...p} arrangeSecondsLeft={0} />);
     await waitFor(() => expect(p.refresh).toHaveBeenCalled());
+  });
+});
+
+describe('Multiplayer table — Leave Game only in the Betting Phase', () => {
+  const BLOCKED = 'You cannot leave the game once the betting phase has ended. Please wait until the round is complete.';
+  beforeEach(() => apiMock.mockReset());
+
+  it('Betting Phase, server allows: Leave is enabled and calls the leave', async () => {
+    const p = props(table({ leave: { allowed: true, reason: null } }), session());
+    render(<MultiplayerTable {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    const dialog = screen.getByRole('dialog', { name: 'Leave table' });
+    expect(dialog).toHaveTextContent('You can leave now, during betting.');
+    const leave = within(dialog).getByRole('button', { name: 'Leave' });
+    expect(leave).toBeEnabled();
+    fireEvent.click(leave);
+    await waitFor(() => expect(p.onLeave).toHaveBeenCalled());
+  });
+
+  it('after betting the server refuses: Leave is disabled and the message is shown', () => {
+    render(<MultiplayerTable {...props(table({ leave: { allowed: false, reason: BLOCKED } }), session({ status: 'ARRANGING', can_bet: false }))} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    const dialog = screen.getByRole('dialog', { name: 'Leave table' });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(BLOCKED);
+    expect(within(dialog).getByRole('button', { name: 'Leave' })).toBeDisabled();
+  });
+
+  it('the betting countdown reached 0: disabled at once, before the next refresh says so', () => {
+    render(<MultiplayerTable {...props(table({ leave: { allowed: true, reason: null } }), session())} betSecondsLeft={0} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(within(screen.getByRole('dialog', { name: 'Leave table' })).getByRole('button', { name: 'Leave' })).toBeDisabled();
+  });
+
+  it('the Android back button opens the same panel (never a silent exit)', () => {
+    const p = props(table({ leave: { allowed: false, reason: BLOCKED } }), session({ status: 'ARRANGING', can_bet: false }));
+    render(<MultiplayerTable {...p} />);
+    act(() => {
+      window.dispatchEvent(new Event('pusoy:back'));
+    });
+    expect(screen.getByRole('dialog', { name: 'Leave table' })).toHaveTextContent(BLOCKED);
+    expect(p.onLeave).not.toHaveBeenCalled();
+  });
+});
+
+describe('Multiplayer table — no automatic submit before the time is really up', () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    apiMock.mockResolvedValue({ data: { labels: { front: null, middle: null, back: null }, is_foul: false } });
+    sessionStorage.setItem('pusoy.mp.dealt.73', '1');
+  });
+
+  it('a stale 0 with a deadline still ahead (a round that just started) submits nothing', () => {
+    const cards = ['2C','3C','4C','5D','6D','7D','8H','9H','TH','JS','QS','KS','AS'];
+    const s = session({ id: 73, status: 'ARRANGING', can_bet: false, my_bet: '10.00', my_cards: cards, arrangement_deadline: new Date(Date.now() + 60_000).toISOString() });
+    render(<MultiplayerTable {...props(table({ current_session_id: 73 }), s)} arrangeSecondsLeft={0} />);
+    expect(apiMock).not.toHaveBeenCalledWith('/games/73/submit', expect.anything());
   });
 });

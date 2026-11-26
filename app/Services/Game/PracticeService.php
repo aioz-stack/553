@@ -491,9 +491,9 @@ class PracticeService
     }
 
     /**
-     * Leave Single Player (the Leave button, or closing the game for good): the match ends now.
-     * An unsubmitted round is void, so both reserves are returned in full (ledger keys
-     * `sp:{round}:release:*`, once). A match that is already over is returned unchanged.
+     * Leave Single Player: the match ends now. Allowed only in the Betting Phase — no round dealt
+     * and unsettled (409 leave_not_allowed otherwise). A match that is already over is returned
+     * unchanged. abandon() still voids an open round (reserves back) for its other callers.
      */
     public function leave(User $user, PracticeMatch $match): PracticeMatch
     {
@@ -501,6 +501,13 @@ class PracticeService
             /** @var PracticeMatch $match */
             $match = PracticeMatch::query()->whereKey($match->id)->lockForUpdate()->firstOrFail();
             $this->ownMatch($user, $match);
+
+            // Leave only in the Betting Phase (no round dealt and unsettled): a dealt round is played
+            // out first — the same rule as Multiplayer (BankerMatchService::leaveBlock).
+            if ($match->status === PracticeMatch::ACTIVE
+                && PracticeGame::query()->where('practice_match_id', $match->id)->where('status', PracticeGame::ARRANGING)->exists()) {
+                throw new BusinessRuleException(BankerMatchService::LEAVE_BLOCKED, 409, 'leave_not_allowed');
+            }
 
             if ($match->status === PracticeMatch::ACTIVE) {
                 $this->abandon($match);

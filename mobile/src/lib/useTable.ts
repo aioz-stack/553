@@ -162,19 +162,20 @@ export function useSecondsLeft(deadline: string | null | undefined, offsetMs: nu
     () => (deadline ? Math.max(0, Math.ceil((new Date(deadline).getTime() - (Date.now() + offsetMs)) / 1000)) : 0),
     [deadline, offsetMs],
   );
-  const [left, setLeft] = useState(calc);
+  // The state only triggers a re-render when the shown second changes (same value → React skips it).
+  const [, setShown] = useState(calc);
 
   useEffect(() => {
-    setLeft(calc());
     if (!deadline) {
       return undefined;
     }
 
-    // Same value → React skips the render.
-    const id = setInterval(() => setLeft(calc()), 250);
+    const id = setInterval(() => setShown(calc()), 250);
 
     return () => clearInterval(id);
   }, [deadline, calc]);
 
-  return left;
+  // Always computed for the current deadline: a deadline that just arrived (a new round) is never
+  // reported with the previous value — a stale 0 here would auto-submit a hand at the start.
+  return calc();
 }

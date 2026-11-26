@@ -50,6 +50,9 @@ class GameStatePresenter
             'creator_user_id' => $table->creator_user_id,
             'next_round_at' => $table->next_round_at?->toIso8601String(),
             'end_reason' => $table->end_reason,
+            // Leave Game: only in the round's Betting Phase (BankerMatchService::leaveBlock, the same check
+            // the leave request runs). The app enables the Leave button and shows the reason from this.
+            'leave' => $banker && $table->hasPlayer($viewer) ? (($why = $this->match->leaveBlock($table, $viewer)) ? ['allowed' => false, 'reason' => $why] : ['allowed' => true, 'reason' => null]) : null,
             // Round Bank waiting for an eligible banker (6× the maximum bet).
             'paused' => $table->paused_at ? [
                 'reason' => $table->pause_reason,

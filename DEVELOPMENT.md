@@ -2106,3 +2106,31 @@ Until a player picks a Motion Effects level, a **weak phone starts on Medium** i
 - Reporting 8 cores, it stayed on High: 14.6 and 8.2 fps.
 
 Tests: `mobile/src/lib/motion.test.ts` (device rule, the boot script agreeing, the player's choice winning, never-chosen account prefs); `tests/Feature/SettingsTest.php` (the `motion_chosen` flag).
+
+## Leave Game only in the Betting Phase (Multiplayer and Single Player)
+
+**Rule:** `CanLeaveGame = (current round is BETTING)`. It's decided on the server from the round state (`BankerMatchService::leaveBlock`) and enforced in the same transaction that removes the seat (`assertCanLeave`, called by `TableService::leave`).
+
+**Multiplayer:**
+- **Betting Phase, nothing at stake:** the player may leave. The seat is freed and they are not auto-bet or dealt in.
+- **Betting Phase with Chips at stake:** refused until the round is complete. This applies to a player who placed a bet, or the banker once any bet is covered. No rule exists to cancel or refund a bet on leaving, so none was added; the player leaves in the next Betting Phase.
+- **Banker before any bet:** may leave. Nothing is held, so that round is voided (`CANCELLED`, `cancel_reason = banker_left`, not counted) and the next round starts at once with another banker. With fewer than 2 players left, the match ends as before.
+- **Everything after Betting** (dealing, arranging, submitted, reveal, scoring, results, and the pause before the next round): refused for everyone seated with 409 `leave_not_allowed`: "You cannot leave the game once the betting phase has ended. Please wait until the round is complete." A Betting round past its deadline counts as over even before the server closes it.
+- **Not in a round:** the existing rules apply. This covers the lobby before the match, a match paused for lack of an eligible banker, and a closed table.
+- **Races:** `TableService::leave` locks the current round before the table (the order `closeBetting` and `resolve` use), so a leave and the end of betting can't interleave or deadlock. A second leave answers 404 "not seated".
+- **Disconnections** are unchanged and separate: a disconnected player stays in the round.
+
+**Single Player:** `PracticeService::leave` refuses (same message, 409) while a dealt round is open. The Betting Phase is the bet chooser, before the deal and after the reveal.
+
+**App:**
+- `GET tables/{id}` returns `leave: {allowed, reason}` for the seated viewer, from the same check.
+- The Multiplayer Leave panel enables Leave only when allowed, and shows the server's reason otherwise. Locally, betting is over at its countdown's 0 even before the next refresh.
+- Single Player's panel during a round or the reveal shows the message with only Stay; the leave that used to void a round was removed.
+- The Android back button on game screens opens that panel (`pusoy:back` from NativeShell) instead of navigating away.
+
+**Also fixed here:** a hand could be auto-submitted at the very start of a round. `useSecondsLeft` (performance pass) reported the previous value, 0, on the render where a new deadline arrived, which triggered the 0-second automatic submit. It now always computes the value for the current deadline, and the automatic submit also requires the deadline to have actually passed.
+
+Tests:
+- `tests/Feature/LeaveRulesTest.php` (new).
+- Updated: `BankerModesTest`, `GoldWalletTest`.
+- App: `MultiplayerTable.test.tsx` (Leave panel; no submit on a stale 0), `useTable.test.ts` (late deadline), `practice/page.test.tsx`.

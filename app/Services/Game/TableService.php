@@ -13,6 +13,7 @@ use App\Events\Game\TableEvent;
 use App\Exceptions\BusinessRuleException;
 use App\Models\GameInvitation;
 use App\Models\GamePlayer;
+use App\Models\GameSession;
 use App\Models\GameRoom;
 use App\Models\GameTable;
 use App\Models\User;
@@ -179,6 +180,12 @@ class TableService
     public function leave(User $user, GameTable $table): void
     {
         DB::transaction(function () use ($user, $table) {
+            // Lock the current round before the table (the order closeBetting / resolve use), so a
+            // leave and the end of betting can't interleave: one waits for the other, then the
+            // phase is checked again under the lock (assertCanLeave).
+            if ($sessionId = GameTable::query()->whereKey($table->id)->value('current_session_id')) {
+                GameSession::query()->whereKey($sessionId)->lockForUpdate()->first();
+            }
             $table = GameTable::query()->whereKey($table->id)->lockForUpdate()->firstOrFail();
 
             if ($table->hasBanker()) {
@@ -192,7 +199,7 @@ class TableService
                 $this->match->assertCanLeave($table, $user);
                 $player->delete();
                 event(new TableEvent($table->id, GameEvents::PLAYER_LEFT, ['user_id' => $user->id, 'reason' => 'left']));
-                $this->match->afterLeave($table);
+                $this->match->afterLeave($table, $user->id);
 
                 return;
             }

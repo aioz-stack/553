@@ -357,9 +357,9 @@ export default function Play() {
           </GlassCard>
         )}
 
-        {banker && inGame && me && !matchOver && (phase === 'COMPLETED' || phase === 'CANCELLED') && (
+        {banker && inGame && me && !matchOver && table.leave?.allowed && (
           <GameButton tone="red" size="md" className="mt-4 w-full" onClick={() => act(async () => { await api(`/tables/${table.id}/leave`, { method: 'POST' }); router.replace('/lobby/'); })}>
-            LEAVE BETWEEN ROUNDS
+            LEAVE TABLE
           </GameButton>
         )}
       </div>

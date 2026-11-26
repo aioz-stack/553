@@ -53,3 +53,13 @@ describe('useSecondsLeft', () => {
     expect(renders - start).toBeLessThanOrEqual(3);
   });
 });
+
+describe('useSecondsLeft — a deadline that arrives later', () => {
+  it('is reported for the new deadline on the very render it arrives (never a stale 0)', () => {
+    const later = new Date(Date.now() + 45_000).toISOString();
+    const { result, rerender } = renderHook(({ d }: { d: string | null }) => useSecondsLeft(d, 0), { initialProps: { d: null as string | null } });
+    expect(result.current).toBe(0);
+    rerender({ d: later });
+    expect(result.current).toBeGreaterThanOrEqual(44);
+  });
+});

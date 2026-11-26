@@ -20,7 +20,7 @@ import { BOT_AVATARS } from '@/lib/avatars';
 import { Screen } from '@/components/ui';
 import { api, ApiError, errorText, idempotencyKey } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { OUT_OF_GOLD_URL, leaveMatch, type GoldWallet } from '@/lib/gold';
+import { OUT_OF_GOLD_URL, type GoldWallet } from '@/lib/gold';
 import { PICKER_URL, saveSelection, selectionFromUrl, type PracticeTier } from '@/lib/singlePlayer';
 import { savePrefs } from '@/lib/prefs';
 import { play, useSound } from '@/lib/sound';
@@ -400,21 +400,6 @@ export default function Practice() {
     }
   };
 
-  // ---- Leave: the server ends the match (an unsubmitted round is void, its Gold reserve returned) ----
-  const leaveTable = async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    try {
-      if (match && match.status === 'active') await leaveMatch(match.id);
-    } catch {
-      // still leave the screen; the match stays resumable on the server
-    } finally {
-      inFlight.current = false;
-    }
-    window.dispatchEvent(new Event('pusoy:wallet'));
-    router.replace(PICKER_URL);
-  };
-
   // ---- Declared Luck ----
   const declareLuck = async (rows?: Rows) => {
     if (!round || declaring || round.status !== 'arranging') return;
@@ -534,14 +519,23 @@ export default function Practice() {
     }
   };
 
+  // Leave only in the Betting Phase (no round dealt, the reveal finished) — the server refuses otherwise.
+  // The Android back button asks the same (NativeShell → pusoy:back).
+  useEffect(() => {
+    const onBack = () => leaveRef.current();
+    window.addEventListener('pusoy:back', onBack);
+    return () => window.removeEventListener('pusoy:back', onBack);
+  }, []);
   const leave = () => {
-    if (phase === 'arranging') {
+    if (phase === 'arranging' || revealing) {
       setPanel('leave');
       return;
     }
     play('tap');
     router.replace(PICKER_URL);
   };
+  const leaveRef = useRef(leave);
+  leaveRef.current = leave;
 
   // ---- drag and drop on the stage: a real-feeling lifted card (useCardDrag), dropped into a row or the hand ----
   const zoneOf = (card: string): Zone => LANES.find((l) => rows[l].includes(card)) ?? 'hand';
@@ -1061,13 +1055,10 @@ export default function Practice() {
                 {panel === 'leave' && (
                   <div className="space-y-6 text-center">
                     <h2 className="font-display text-[40px] font-black">Leave the table?</h2>
-                    <p className="text-[24px] text-white/85">Leaving ends this match. A round you have not submitted is cancelled and its reserved Gold goes back to your wallet.</p>
+                    <p role="alert" className="text-[24px] text-white/85">You cannot leave the game once the betting phase has ended. Please wait until the round is complete.</p>
                     <div className="flex justify-center gap-4">
                       <button type="button" onClick={() => setPanel(null)} className="h-[72px] rounded-full border-4 border-white/60 bg-black/30 px-8 font-display text-[28px] font-black">
                         Stay
-                      </button>
-                      <button type="button" onClick={leaveTable} className="h-[72px] rounded-full border-4 border-[#fff3a0] bg-gradient-to-b from-[#ffd13a] to-[#e08a00] px-8 font-display text-[28px] font-black text-[#4a1d00]">
-                        Leave
                       </button>
                     </div>
                   </div>

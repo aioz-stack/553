@@ -39,6 +39,11 @@ export default function NativeShell() {
       await SplashScreen.hide().catch(() => undefined);
 
       App.addListener('backButton', ({ canGoBack }) => {
+        // In a game (Multiplayer table, Single Player): the screen's own Leave rules decide.
+        if (/^\/(play|practice)\//.test(window.location.pathname)) {
+          window.dispatchEvent(new Event('pusoy:back'));
+          return;
+        }
         if (canGoBack) {
           window.history.back();
         } else {

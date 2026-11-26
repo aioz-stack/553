@@ -221,6 +221,8 @@ export interface TableState {
   creator_user_id?: number | null;
   next_round_at?: string | null;
   end_reason?: string | null;
+  /** Leave Game, from the server's round state: only in the Betting Phase (null when not seated). */
+  leave?: { allowed: boolean; reason: string | null } | null;
   /** Round Bank waiting for an eligible banker (6× the maximum bet); null while playing. */
   paused?: { reason: string; since: string; message: string } | null;
   min_players?: number;

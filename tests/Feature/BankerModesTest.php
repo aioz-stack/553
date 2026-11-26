@@ -166,9 +166,16 @@ test('banker mode: the creator banks every round; leaving hands it to the highes
     $session = playRound($table);
     expect($session->banker_user_id)->toBe($creator->id);
 
-    // Between rounds the banker leaves; the next round goes to the richest eligible player.
+    // Between rounds nobody can leave (results / pause before the next round).
+    expect(fn () => $this->tables->leave($creator, $table->fresh()))->toThrow(BusinessRuleException::class, 'betting phase has ended');
+
+    // In the next Betting Phase, before any bet, the banker may leave: that round is void (nothing
+    // was held) and a new round starts at once with the richest eligible player banking.
+    $voided = nextRound($table);
+    expect($voided->banker_user_id)->toBe($creator->id);
     $this->tables->leave($creator, $table->fresh());
-    $next = nextRound($table);
+    expect($voided->fresh()->status->value)->toBe('CANCELLED')->and($voided->fresh()->cancel_reason)->toBe('banker_left');
+    $next = currentRound($table);
 
     expect($next->banker_user_id)->toBe($richer->id)
         ->and(GameResult::query()->where('user_id', $creator->id)->count())->toBe(2); // earlier rounds untouched
@@ -265,16 +272,22 @@ test('lucky hand: validated against the dealt cards; valid pays 2× bet, a false
         ->and((int) WalletTransaction::query()->where('type', TransactionType::LuckyBonus->value)->where('game_session_id', $session->id)->sum('amount'))->toBe(4_000 + 4_000);
 });
 
-test('you cannot leave mid-round but can leave between rounds', function () {
+test('leaving only in the Betting Phase: not with a bet placed, not after betting, not between rounds', function () {
     $room = bankerRoom(GameMode::RoundBank);
     [$table, $players] = startMatch($room, 3);
     $session = currentRound($table);
     $bettor = User::find($session->config['participants'][0]);
     $this->match->placeBet($bettor, $session, 1_000);
 
-    expect(fn () => $this->tables->leave($bettor, $table->fresh()))->toThrow(BusinessRuleException::class, 'Finish this round');
+    // Betting, but Chips are at stake: stays for the round (no refund on leaving).
+    expect(fn () => $this->tables->leave($bettor, $table->fresh()))->toThrow(BusinessRuleException::class, 'placed a bet');
 
     playRound($table);
+    // Results / the pause before the next round: nobody leaves yet.
+    expect(fn () => $this->tables->leave($bettor, $table->fresh()))->toThrow(BusinessRuleException::class, 'betting phase has ended');
+
+    // The next Betting Phase, no bet yet: leaving works.
+    nextRound($table); // as a player, or as the banker before any bet (that round is then re-dealt)
     $this->tables->leave($bettor, $table->fresh());
 
     expect($table->fresh()->players()->where('user_id', $bettor->id)->exists())->toBeFalse()
@@ -285,8 +298,9 @@ test('the match ends when fewer than two players remain', function () {
     $room = bankerRoom(GameMode::RoundBank);
     [$table, [$a, $b]] = startMatch($room, 2);
     playRound($table);
+    $next = nextRound($table); // leave in the next Betting Phase (as banker before any bet, or as a player)
 
-    $this->tables->leave($a, $table->fresh());
+    $this->tables->leave($next->banker_user_id === $a->id ? $a : $b, $table->fresh());
 
     expect($table->fresh()->status)->toBe(TableStatus::Closed)
         ->and($table->fresh()->end_reason)->toBe('not_enough_players');

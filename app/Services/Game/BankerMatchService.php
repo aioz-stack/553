@@ -959,30 +959,88 @@ class BankerMatchService
      * round you are in (bet placed, dealt in, or banking) is running you must
      * finish it so the round can be settled first.
      */
-    public function assertCanLeave(GameTable $table, User $user): void
+    /** Shown whenever a leave is refused because the round is past its Betting Phase. */
+    public const LEAVE_BLOCKED = 'You cannot leave the game once the betting phase has ended. Please wait until the round is complete.';
+
+    /**
+     * Leave a match only in the Betting Phase: CanLeaveGame = (current round is BETTING), from the
+     * authoritative round state. Null = you may leave now; otherwise why not.
+     *
+     *  - Betting (deadline not passed): yes — unless you already have Chips in this round (you placed a
+     *    bet, or you bank it and a bet is covered). Bets are never cancelled or refunded on leaving (no
+     *    such rule exists): you stay until the round is complete and can leave in the next Betting Phase.
+     *    A banker leaving before any bet voids that round (nothing was held) and the next round starts
+     *    with another banker (afterLeave).
+     *  - Dealing, arranging, submitted, reveal, scoring, results and the pause before the next round:
+     *    no, for everyone seated.
+     *  - Not in a round: before the match starts (lobby), a match paused for lack of an eligible
+     *    banker (no round is being played), or a closed table — the existing rules apply.
+     */
+    public function leaveBlock(GameTable $table, User $user, bool $lock = false): ?string
     {
         if ($table->status !== TableStatus::InGame || ! $table->current_session_id) {
-            return;
+            return null;
         }
 
-        $session = GameSession::query()->find($table->current_session_id);
+        $query = GameSession::query()->whereKey($table->current_session_id);
+        $session = ($lock ? $query->lockForUpdate() : $query)->first();
 
-        if ($session === null || $session->status->isFinal()) {
-            return;
+        if ($session === null) {
+            return null;
         }
 
-        $involved = $session->banker_user_id === $user->id
-            || GameBet::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->exists()
-            || GameCard::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->exists();
+        if ($session->status === GameStatus::Betting) {
+            // Past the deadline the betting is over even if the auto-bets / deal have not run yet.
+            if ($session->betting_deadline?->isPast()) {
+                return self::LEAVE_BLOCKED;
+            }
+            // The banker has Chips at stake only once a bet is covered; before that the round is simply
+            // re-dealt with another banker (afterLeave).
+            if ($session->banker_user_id === $user->id && GameBet::query()->where('game_session_id', $session->id)->exists()) {
+                return 'You are the banker this round and bets are already covered. You can leave once the round is complete.';
+            }
+            if (GameBet::query()->where('game_session_id', $session->id)->where('user_id', $user->id)->exists()) {
+                return 'You have placed a bet this round. You can leave once the round is complete.';
+            }
 
-        if ($involved) {
-            throw new BusinessRuleException('Finish this round first — you can leave between rounds.', 409, 'round_in_progress');
+            return null;
+        }
+
+        // A paused match (no eligible banker) is not playing a round.
+        if ($session->status->isFinal() && $table->paused_at !== null) {
+            return null;
+        }
+
+        return self::LEAVE_BLOCKED;
+    }
+
+    /** Throws unless leaveBlock() allows it (call inside the transaction that removes the seat). */
+    public function assertCanLeave(GameTable $table, User $user): void
+    {
+        if ($why = $this->leaveBlock($table, $user, lock: true)) {
+            throw new BusinessRuleException($why, 409, 'leave_not_allowed');
         }
     }
 
-    public function afterLeave(GameTable $table): void
+    public function afterLeave(GameTable $table, ?int $leftUserId = null): void
     {
         $remaining = GamePlayer::query()->where('game_table_id', $table->id)->orderBy('seat')->get();
+
+        // The banker left during Betting before any bet (leaveBlock allows only that): nothing is held,
+        // so this round is void (not counted) and the next one starts now with another banker.
+        if ($leftUserId !== null && $table->status === TableStatus::InGame && $table->current_session_id) {
+            $session = GameSession::query()->whereKey($table->current_session_id)->lockForUpdate()->first();
+            if ($session?->status === GameStatus::Betting && $session->banker_user_id === $leftUserId
+                && ! GameBet::query()->where('game_session_id', $session->id)->exists()) {
+                $session->forceFill(['status' => GameStatus::Cancelled, 'cancelled_at' => now(), 'cancel_reason' => 'banker_left'])->save();
+                event(new TableEvent($table->id, GameEvents::GAME_CANCELLED, ['session_id' => $session->id, 'reason' => 'banker_left']));
+                if ($remaining->count() >= 2) {
+                    $this->startRound($table);
+
+                    return;
+                }
+            }
+        }
 
         // Someone left during a lobby's pre-match countdown: stop it and withdraw everyone's Start.
         if ($table->countdown_ends_at) {

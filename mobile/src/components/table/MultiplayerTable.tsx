@@ -293,7 +293,9 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
   useEffect(() => {
     if (!arranging || !session) return;
     if (arrangeSecondsLeft <= 1) flushDraft();
-    if (arrangeSecondsLeft <= 0 && autoSubmitted.current !== session.id && dealing !== session.id) {
+    // Only for a real deadline that has passed (never on a value from before this round's deadline arrived).
+    const deadlinePassed = !!session.arrangement_deadline && new Date(session.arrangement_deadline).getTime() <= Date.now() + 1000;
+    if (arrangeSecondsLeft <= 0 && deadlinePassed && autoSubmitted.current !== session.id && dealing !== session.id) {
       autoSubmitted.current = session.id;
       const rows = lastRows.current?.id === session.id ? lastRows.current.rows : (session.my_draft ?? dealtRows(session.my_cards!));
       setToast({ ok: true, text: "Time's up — your cards were submitted as they are." });
@@ -369,7 +371,17 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
       setToast({ ok: false, text: `Time expired — no automatic bet: ${session.my_auto_bet_skipped}` });
     }
   }, [session]);
-  const leaveAllowed = !session || ['COMPLETED', 'CANCELLED'].includes(phase) || matchOver;
+  // Leave Game only in the Betting Phase — the server decides (table.leave, the same check a leave request
+  // runs). Locally the betting is over at its deadline already, before the next refresh says so.
+  const LEAVE_BLOCKED = 'You cannot leave the game once the betting phase has ended. Please wait until the round is complete.';
+  const leaveAllowed = matchOver || (table.leave?.allowed === true && !(phase === 'BETTING' && betSecondsLeft <= 0));
+  const leaveReason = leaveAllowed ? null : table.leave?.reason ?? LEAVE_BLOCKED;
+  // Android back button / browser back on this screen: the same Leave panel, never a silent exit.
+  useEffect(() => {
+    const onBack = () => setPanel('leave');
+    window.addEventListener('pusoy:back', onBack);
+    return () => window.removeEventListener('pusoy:back', onBack);
+  }, []);
   const bankerName = banker ? (banker.is_you ? 'You' : banker.name) : '…';
 
   return (
@@ -695,7 +707,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
               {panel === 'leave' && (
                 <div className="space-y-6 text-center">
                   <h2 className="font-display text-[40px] font-black">Leave the table?</h2>
-                  <p className="text-[24px] text-white/85">{leaveAllowed ? 'You can leave between rounds. The match continues for the others.' : 'You can leave only between rounds — finish this round first.'}</p>
+                  <p role={leaveAllowed ? undefined : 'alert'} className="text-[24px] text-white/85">{leaveAllowed ? (matchOver ? 'The match is over.' : 'You can leave now, during betting. The match continues for the others.') : leaveReason}</p>
                   <div className="flex justify-center gap-4">
                     <button type="button" onClick={() => setPanel(null)} className="h-[72px] rounded-full border-4 border-white/60 bg-black/30 px-8 font-display text-[28px] font-black">
                       Stay

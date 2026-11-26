@@ -382,7 +382,7 @@ describe('Single Player — Round Bank table', () => {
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/practice/9/submit', expect.anything()));
   });
 
-  it('Back asks before leaving a round in progress; Settings and Help open panels', async () => {
+  it('Back during a dealt round: leaving is not possible (only Stay); Settings and Help open panels', async () => {
     await dealToPopup();
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByRole('dialog', { name: 'Settings' })).not.toHaveTextContent('Autoplay');
@@ -391,11 +391,18 @@ describe('Single Player — Round Bank table', () => {
     expect(screen.getByRole('dialog', { name: 'How to play' })).toHaveTextContent('swap');
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('dialog', { name: 'Leave table' })).toHaveTextContent('reserved Gold goes back to your wallet');
-    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
-    // Leaving ends the match on the server (the open round is void, its Gold returned), then goes to the picker.
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/practice/matches/3/leave', { method: 'POST' }));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home/?single=1'));
+    const dialog = screen.getByRole('dialog', { name: 'Leave table' });
+    expect(dialog).toHaveTextContent('You cannot leave the game once the betting phase has ended. Please wait until the round is complete.');
+    // Only Stay: no Leave button, no leave request, no navigation.
+    expect(within(dialog).queryByRole('button', { name: 'Leave' })).toBeNull();
+    // The Android back button asks the same.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Stay' }));
+    act(() => {
+      window.dispatchEvent(new Event('pusoy:back'));
+    });
+    expect(screen.getByRole('dialog', { name: 'Leave table' })).toBeInTheDocument();
+    expect(apiMock).not.toHaveBeenCalledWith('/practice/matches/3/leave', expect.anything());
+    expect(replace).not.toHaveBeenCalledWith('/home/?single=1');
   });
 
   it('opens the difficulty picker when no level was chosen', async () => {

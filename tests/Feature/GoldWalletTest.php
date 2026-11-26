@@ -156,19 +156,33 @@ test('claiming the free 1,000 Gold: only when Out of Gold, credited straight to 
     expect(WalletTransaction::query()->where('type', TransactionType::OutOfGoldReward->value)->count())->toBe(2);
 });
 
-test('leaving Single Player mid-round voids the round: both reserves come back in full, exactly once', function () {
+test('Single Player: leaving only in the Betting Phase — refused mid-round (nothing moves), then once after the round', function () {
     $me = gwPlayer(5_000);
     $match = $this->actingAs($me, 'sanctum')->postJson('/api/v1/practice/matches', ['tier' => 'beginner'])->json('data.id');
     $deal = $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/deal", [])->assertCreated();
-    expect(balance($me, Currency::GD))->toBe((5_000 - $deal->json('data.reserved')) * 100);
+    $held = balance($me, Currency::GD);
+    expect($held)->toBe((5_000 - $deal->json('data.reserved')) * 100);
 
-    $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/leave")->assertOk()
-        ->assertJsonPath('data.status', 'abandoned')->assertJsonPath('data.gold_wallet.total', '5000.00');
+    // Cards dealt: leaving is refused; the round, the match and the Gold are untouched.
     $count = WalletTransaction::query()->count();
+    $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/leave")->assertStatus(409)
+        ->assertJsonPath('error', 'leave_not_allowed')
+        ->assertJsonPath('message', 'You cannot leave the game once the betting phase has ended. Please wait until the round is complete.');
+    expect(WalletTransaction::query()->count())->toBe($count)
+        ->and(balance($me, Currency::GD))->toBe($held)
+        ->and(PracticeGame::query()->find($deal->json('data.id'))->status)->toBe('arranging')
+        ->and(PracticeMatch::query()->find($match)->status)->toBe('active');
+
+    // The round is played out; back in the Betting Phase, leaving ends the match (once).
+    $a = \App\Game\AutoArranger::arrange($deal->json('data.cards'));
+    $this->actingAs($me, 'sanctum')->postJson('/api/v1/practice/'.$deal->json('data.id').'/submit', ['front' => $a->front, 'middle' => $a->middle, 'back' => $a->back])->assertSuccessful();
+    $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/leave")->assertOk()->assertJsonPath('data.status', 'abandoned');
+    $count = WalletTransaction::query()->count();
+    $after = balance($me, Currency::GD);
     $this->actingAs($me, 'sanctum')->postJson("/api/v1/practice/matches/{$match}/leave")->assertOk();
     expect(WalletTransaction::query()->count())->toBe($count)
-        ->and(balance($me, Currency::GD))->toBe(5_000_00)
-        ->and(PracticeGame::query()->find($deal->json('data.id'))->status)->toBe('abandoned')
+        ->and(balance($me, Currency::GD))->toBe($after)
+        ->and(PracticeGame::query()->find($deal->json('data.id'))->status)->toBe('completed')
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 
     // Someone else's match: not found.
