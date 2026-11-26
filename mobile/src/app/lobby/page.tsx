@@ -13,7 +13,7 @@ import { CandyButton, EyeButton, ChipMark, Lock, Modal, People, TypeBadge, input
 import AvatarPicker from '@/components/AvatarPicker';
 import SettingsPanel from '@/components/SettingsPanel';
 import { LanternRoom } from '@/components/table/TableArt';
-import { Avatar } from '@/components/game';
+import { Avatar, KeyIcon } from '@/components/game';
 import { Screen } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -328,6 +328,16 @@ export default function MultiplayerLobby() {
             {/* Display only: no (+), no tap action. */}
             <span className="flex-1 cursor-default select-none pr-[58px] text-center font-display text-[38px] font-black text-white" aria-label="Chips balance">
               {balance !== undefined ? fmtChips(Math.floor(balance)) : '…'}
+            </span>
+          </div>
+        </div>
+
+        {/* Keys wallet, beside Chips. Display only, like Chips (Keys are bought in the Shop). */}
+        <div className="lx-gold absolute left-[1060px] top-[22px] z-10 h-[78px] w-[290px] rounded-full p-[5px] shadow-[0_6px_0_#7a3e00]" role="group" aria-label={`Keys wallet: ${keyCount !== undefined ? Math.floor(keyCount) : '…'}`}>
+          <div className="flex h-full items-center gap-3 rounded-full bg-gradient-to-b from-[#5a1a9a] to-[#24074a] pl-4 pr-2">
+            <KeyIcon size={52} />
+            <span className="flex-1 cursor-default select-none pr-[20px] text-center font-display text-[38px] font-black text-white" aria-label="Keys balance">
+              {keyCount !== undefined ? fmtChips(Math.floor(keyCount)) : '…'}
             </span>
           </div>
         </div>

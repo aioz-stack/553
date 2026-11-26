@@ -9,7 +9,7 @@ vi.mock('@/lib/api', () => ({
   ApiError: class extends Error {},
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: { id: 5, name: 'Pat Player', username: 'player', level: { level: 1 } } }) }));
-vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ gold: '0.00', chips: '2055.00' }) }));
+vi.mock('@/lib/useBalance', () => ({ useBalance: () => ({ gold: '0.00', chips: '2055.00', keys: '7.00' }) }));
 vi.mock('@/lib/useLandscapeLock', () => ({ useLandscapeLock: () => undefined }));
 vi.mock('@/lib/sound', () => ({ play: vi.fn(), useSound: () => [true, vi.fn()] }));
 vi.mock('@/lib/echo', () => ({ getEcho: async () => null }));
@@ -168,12 +168,17 @@ describe('Multiplayer Lobby — top bar', () => {
     expect(screen.getByRole('button', { name: /^Sound/ })).toBeInTheDocument();
   });
 
-  it('Chips is display only; no Ranking or Rewards; Shop sits right below Friends and opens the Shop', async () => {
+  it('Chips and Keys are display only; no Ranking or Rewards; Shop sits right below Friends and opens the Shop', async () => {
     routes({ '/lobbies': LIST([]) });
     const { container } = render(<Lobby />);
     await screen.findByText('No open lobbies yet.');
     expect(screen.getByLabelText('Chips balance')).toHaveTextContent('2,055');
     expect(screen.queryByRole('link', { name: 'Chips wallet' })).toBeNull();
+    // The Keys wallet sits beside Chips: your Keys, display only (no button, no link).
+    const keysWallet = screen.getByRole('group', { name: 'Keys wallet: 7' });
+    expect(within(keysWallet).getByLabelText('Keys balance')).toHaveTextContent('7');
+    expect(within(keysWallet).queryByRole('button')).toBeNull();
+    expect(within(keysWallet).queryByRole('link')).toBeNull();
     expect(container.querySelector('a[href="/wallet/"]')).toBeNull();
     expect(container.querySelector('a[href="/leaderboard/"]')).toBeNull();
     const menu = screen.getByRole('navigation', { name: 'Lobby menu' });

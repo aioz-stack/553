@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./api', () => ({ api: vi.fn(async () => ({})) }));
 vi.mock('./music', () => ({ setMusicEnabled: vi.fn() }));
 vi.mock('./sound', () => ({ setSoundEnabled: vi.fn(), soundEnabled: () => true }));
 
-import { quality, qualityChosen, setQuality, weakDevice } from './motion';
+import { quality, qualityChosen, setQuality } from './motion';
 import { MOTION_BOOT_SCRIPT } from './motionBoot';
 import { applyPrefs } from './prefs';
 
@@ -14,6 +14,11 @@ function device(memory: number | undefined, cores: number) {
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: cores, configurable: true });
 }
 
+/** The device asks for reduced motion (or not). */
+function reducedMotion(on: boolean) {
+  window.matchMedia = ((q: string) => ({ matches: on, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+}
+
 /** What the inline boot script (run before first paint) decides on this device. */
 function boot(): string | undefined {
   delete document.documentElement.dataset.quality;
@@ -21,61 +26,47 @@ function boot(): string | undefined {
   return document.documentElement.dataset.quality;
 }
 
-describe('Motion Effects default: Medium on weak phones until the player picks a level', () => {
+describe('Motion Effects default: High until the player picks a level', () => {
   beforeEach(() => {
     localStorage.clear();
-    window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
-  });
-  afterEach(() => {
+    reducedMotion(false);
     device(undefined, 8);
   });
 
-  it('weak = 4 GB or less, or 4 cores or fewer', () => {
-    device(8, 8);
-    expect(weakDevice()).toBe(false);
-    device(4, 8);
-    expect(weakDevice()).toBe(true);
-    device(undefined, 4);
-    expect(weakDevice()).toBe(true);
-    device(undefined, 6); // e.g. iOS: no deviceMemory, 6 cores
-    expect(weakDevice()).toBe(false);
-  });
-
-  it('a weak phone starts on Medium, a strong one on High — and the boot script agrees', () => {
-    device(3, 8);
-    expect(quality()).toBe('medium');
-    expect(boot()).toBe('medium');
-    device(8, 8);
-    expect(quality()).toBe('high');
-    expect(boot()).toBe('high');
+  it('High on every device — weak phones and reduced-motion devices included — and the boot script agrees', () => {
+    for (const [memory, cores, reduce] of [[8, 8, false], [2, 4, false], [3, 8, false], [8, 8, true]] as const) {
+      device(memory, cores);
+      reducedMotion(reduce);
+      expect(quality()).toBe('high');
+      expect(boot()).toBe('high');
+    }
     expect(qualityChosen()).toBe(false);
   });
 
-  it("the player's choice always wins, High included", () => {
-    device(2, 4);
-    setQuality('high');
-    expect(quality()).toBe('high');
-    expect(boot()).toBe('high');
+  it("the player's choice always wins", () => {
+    setQuality('low');
+    expect(quality()).toBe('low');
+    expect(boot()).toBe('low');
+    setQuality('medium');
+    expect(quality()).toBe('medium');
+    expect(boot()).toBe('medium');
     expect(qualityChosen()).toBe(true);
   });
 
-  it("reduced motion on the device still means Low", () => {
-    device(2, 4);
-    window.matchMedia = ((q: string) => ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  it('the older explicit "motion off" choice still means Low', () => {
+    localStorage.setItem('pusoy.motion', 'off');
     expect(quality()).toBe('low');
     expect(boot()).toBe('low');
   });
 
-  it('account settings: a level never chosen does not override the device (and an old copied High is dropped)', () => {
-    device(3, 8);
-    localStorage.setItem('pusoy.quality', 'high'); // written by older versions from the account default
+  it('account settings: a level never chosen leaves the default High; a chosen one follows the account', () => {
+    localStorage.setItem('pusoy.quality', 'medium'); // e.g. copied by an older app version
     applyPrefs({ bgm: true, sfx: true, motion: 'high', motion_chosen: false });
     expect(qualityChosen()).toBe(false);
-    expect(quality()).toBe('medium');
-    expect(document.documentElement.dataset.quality).toBe('medium');
-
-    // A level the player picked (on any device) follows the account.
-    applyPrefs({ bgm: true, sfx: true, motion: 'high', motion_chosen: true });
     expect(quality()).toBe('high');
+    expect(document.documentElement.dataset.quality).toBe('high');
+
+    applyPrefs({ bgm: true, sfx: true, motion: 'low', motion_chosen: true });
+    expect(quality()).toBe('low');
   });
 });

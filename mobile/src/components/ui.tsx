@@ -1,23 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useOnline } from '@/lib/hooks';
-import { springStyle } from '@/lib/spring';
 import { useBalance } from '@/lib/useBalance';
 import { Avatar, CoinPill, GameButton, GlassCard } from './game';
-import { IconBack, IconBell, IconHome, IconSpade, IconUser, IconWallet } from './icons';
+import { IconBack, IconBell, IconSpade } from './icons';
 
 const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(' ');
-
-const TABS = [
-  { href: '/home/', label: 'Home', Icon: IconHome },
-  { href: '/wallet/', label: 'Wallet', Icon: IconWallet },
-  { href: '/lobby/', label: 'Play', Icon: IconSpade, primary: true },
-  { href: '/profile/', label: 'Me', Icon: IconUser },
-];
 
 /** Player's own balances for the HUD (never other players' balances). */
 function useHudBalances(enabled: boolean, userId?: number) {
@@ -26,13 +18,11 @@ function useHudBalances(enabled: boolean, userId?: number) {
 
 /**
  * Authenticated mobile screen: game backdrop, HUD (avatar + coin pills) or a
- * back/title bar, offline banner and the bottom tab bar with a raised Play
- * button. Redirects to /login when there is no session.
+ * back/title bar and offline banner (no bottom tab bar). Redirects to /login when there is no session.
  */
-export function Screen({ title, children, back, tabs = true, action, hud = true, bare, immersive }: { title: string; children: ReactNode; back?: boolean; tabs?: boolean; action?: ReactNode; hud?: boolean; bare?: boolean; immersive?: boolean }) {
+export function Screen({ title, children, back, action, hud = true, bare, immersive }: { title: string; children: ReactNode; back?: boolean; action?: ReactNode; hud?: boolean; bare?: boolean; immersive?: boolean }) {
   const { user, ready } = useAuth();
   const router = useRouter();
-  const path = usePathname();
   const online = useOnline();
   const balances = useHudBalances(!!user && hud && !back && !immersive, user?.id);
 
@@ -68,7 +58,7 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
         <div className="flex h-16 items-center gap-3 px-4">
           {back ? (
             <>
-              <button onClick={() => router.back()} className="glass -ml-1 flex h-10 w-10 items-center justify-center rounded-2xl" aria-label="Back">
+              <button onClick={() => (window.history.length > 1 ? router.back() : router.replace('/home/'))} className="glass -ml-1 flex h-10 w-10 items-center justify-center rounded-2xl" aria-label="Back">
                 <IconBack className="h-5 w-5" />
               </button>
               <h1 className="flex-1 truncate font-display text-xl font-extrabold">{title}</h1>
@@ -76,13 +66,13 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
             </>
           ) : (
             <>
-              <Link href="/profile/" className="flex min-w-0 items-center gap-2" aria-label="Profile">
+              <span className="flex min-w-0 items-center gap-2">
                 <Avatar name={name} size={42} avatar={user?.avatar} userId={user?.id} />
                 <span className="min-w-0">
                   <span className="block truncate font-display text-sm font-extrabold leading-tight">{name}</span>
                   <span className="block truncate text-[11px] text-white/60">{title}</span>
                 </span>
-              </Link>
+              </span>
               <span className="ml-auto flex items-center gap-1.5">
                 {hud && <CoinPill amount={balances.chips} currency="CH" compact />}
                 {action ?? (
@@ -97,39 +87,8 @@ export function Screen({ title, children, back, tabs = true, action, hud = true,
         {!online && <div className="bg-warning-500 px-4 py-1 text-center text-xs font-bold text-white">Offline — reconnecting when the network returns</div>}
       </header>
 
-      <main className={cx('suit-pattern flex-1', !bare && 'px-4 py-4', tabs && 'pb-28')}>{children}</main>
+      <main className={cx('suit-pattern flex-1', !bare && 'px-4 py-4')}>{children}</main>
 
-      {tabs && (
-        <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-gradient-to-b from-night-800/95 to-night-950/95 backdrop-blur">
-          <ul className="grid h-16 grid-cols-4 items-end">
-            {TABS.map(({ href, label, Icon, primary }) => {
-              const active = !!path?.startsWith(href.replace(/\/$/, ''));
-
-              if (primary) {
-                return (
-                  <li key={href} className="flex justify-center">
-                    <Link href={href} aria-label={label} className="-mt-7 flex flex-col items-center">
-                      <span className="btn-3d lx-gloss lx-spring relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-b from-gold-300 via-gold-400 to-gold-600 text-night-900" style={{ ...springStyle('play-tab', 2.8, 0.6), ['--lip' as string]: '#9a5b03' }}>
-                        <IconSpade className="h-8 w-8" />
-                      </span>
-                      <span className={cx('mt-0.5 font-display text-[11px] font-extrabold', active ? 'text-gold-300' : 'text-white/70')}>{label}</span>
-                    </Link>
-                  </li>
-                );
-              }
-
-              return (
-                <li key={href}>
-                  <Link href={href} className={cx('flex h-16 flex-col items-center justify-center gap-0.5 font-display text-[11px] font-extrabold', active ? 'text-gold-300' : 'text-white/55')}>
-                    <Icon className={cx('h-6 w-6 transition', active && 'scale-110 drop-shadow-[0_0_8px_rgb(255_204_61/0.6)]')} />
-                    {label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-      )}
     </div>
   );
 }

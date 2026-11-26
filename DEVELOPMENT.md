@@ -2166,4 +2166,14 @@ The mobile app's Devices screen (`/settings/devices`: connection status and the 
 
 ## Mobile: Ranks (Leaderboard) removed
 
-The Ranks tab in the bottom bar, the Ranks shortcut on the Me screen and the Leaderboard screen (`/leaderboard`) are removed from the mobile app. The bar is now Home · Wallet · Play · Me (4 columns). The server's leaderboard endpoint and the web app's leaderboard are unchanged.
+The Ranks tab in the bottom bar, the Ranks shortcut on the Me screen and the Leaderboard screen (`/leaderboard`) are removed from the mobile app. The Wallet tab was removed too (Game Home already shows the Gold, Chips and Keys wallet), and then the **whole bottom tab bar** (Home · Play · Me): `Screen` no longer draws one (its `tabs` prop is gone). Screens that had no back button (Me, Wallet) now have one. Back goes to the previous screen, or to Game Home when there is none (e.g. opened from a notification). The Wallet screen (`/wallet`, with Transaction History) stays, opened from the balances on the Me screen and from wallet notifications; Multiplayer is reached from Game Home. Test: `components/Screen.test.tsx`. The server's leaderboard endpoint and the web app's leaderboard are unchanged.
+
+**Me screen removed too.** The mobile Me screen (`/profile`: avatar, balances, stats, edit name, History and Settings shortcuts) is removed. The header avatar is no longer a link. Avatar and nickname are still changed from Game Home and the Lobby (AvatarPicker); the server's profile endpoints are unchanged. The Wallet screen (balances and Transaction History) is now opened only from wallet notifications. Game Home shows the Gold, Chips and Keys badges (display-only), and a separate Wallet tile there was tried and removed as redundant.
+
+### Motion Effects default: High on every device (supersedes the automatic Medium above)
+
+Until a player picks a level in Settings → Motion Effects, the level is **High** on every device. Weak phones no longer start on Medium, and a device asking for reduced motion no longer starts on Low (`quality()` in `lib/motion.ts` and the boot script in `lib/motionBoot.ts`). A level the player picks still wins and follows the account (`motion_chosen` on the server is unchanged). Only the older explicit "motion off" choice still means Low. The Settings note "Set automatically for this device" is removed. Test: `mobile/src/lib/motion.test.ts`.
+
+## Multiplayer Lobby: Keys wallet beside Chips
+
+The Multiplayer Lobby top bar shows a Keys wallet beside the Chips wallet: the same gold-framed pill with a purple inside and the Keys icon used on Game Home (`KeyIcon`). It shows your Keys balance, live from `useBalance` like Chips. It is display only, like the lobby's Chips pill; Keys are bought from the Shop button under Friends. Test: `app/lobby/page.test.tsx`.

@@ -95,7 +95,7 @@ export default function Play() {
 
   if (removed) {
     return (
-      <Screen title="Table" tabs={false} hud={false}>
+      <Screen title="Table" hud={false}>
         <div className="pt-24 text-center" role="status">
           <p className="font-display text-xl font-black">You are no longer seated at this table.</p>
           <p className="mt-2 text-sm text-white/70">Your finished rounds are settled. Returning to the Multiplayer Lobby…</p>
@@ -106,7 +106,7 @@ export default function Play() {
 
   if (terminated) {
     return (
-      <Screen title="Table" tabs={false} hud={false}>
+      <Screen title="Table" hud={false}>
         <div className="pt-24 text-center" role="status" aria-label="Game ended">
           <p className="font-display text-xl font-black">This game was ended by the administrator.</p>
           <p className="mt-2 text-sm text-white/70">Any Chips held for the round are back in your wallet. Returning to Game Home…</p>
@@ -117,7 +117,7 @@ export default function Play() {
 
   if (!table) {
     return (
-      <Screen title="Table" back tabs={false} hud={false}>
+      <Screen title="Table" back hud={false}>
         {error ? <Notice>{error}</Notice> : <div className="pt-24"><Spinner /></div>}
       </Screen>
     );
@@ -177,7 +177,7 @@ export default function Play() {
     <Screen
       title={table.room.name}
       back
-      tabs={false}
+     
       hud={false}
       action={
         <span className="flex items-center gap-1.5">

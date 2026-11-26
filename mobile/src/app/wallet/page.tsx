@@ -33,7 +33,7 @@ export default function WalletScreen() {
   }, [reload]);
 
   return (
-    <Screen title="Your wallet">
+    <Screen title="Your wallet" back>
       <Ribbon tone="gold" className="mb-3">Wallet</Ribbon>
 
       {wallets.map((w) => {

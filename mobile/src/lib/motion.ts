@@ -8,7 +8,7 @@ import { MOTION_KEY, QUALITY_KEY } from './motionBoot';
  *  - low:    no animations (deal / reveal shows skipped, every CSS animation off) — same as reduced motion
  *  - medium: game animations play, lighter: no travelling card shadows, fewer explosion particles,
  *            no screen shake, ambient sparkles / shine loops off
- *  - high:   everything (default; Medium on a weak phone until the player picks a level — see weakDevice)
+ *  - high:   everything — the default until the player picks a level (any device)
  *
  * Written to <html data-quality="low|medium|high"> and <html data-motion="reduce|full"> (low = reduce);
  * globals.css switches effects off from those. Changes apply immediately (listeners re-render).
@@ -36,33 +36,20 @@ export function motionPref(): MotionPref {
   return v === 'on' || v === 'off' ? v : 'auto';
 }
 
-const deviceReduced = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/**
- * A phone too slow for the full effects: 4 GB of memory or less, or 4 CPU cores or fewer (as the
- * browser reports them). Profiled at 4× slower CPU: Home runs ~15 fps on High, ~26 on Medium.
- * Devices that report neither (e.g. iOS has no deviceMemory but reports cores) are judged by what they report.
- */
-export function weakDevice(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const cores = navigator.hardwareConcurrency;
-  return (typeof memory === 'number' && memory > 0 && memory <= 4) || (typeof cores === 'number' && cores > 0 && cores <= 4);
-}
-
-/** The player picked a level (Settings → Motion Effects); otherwise the device decides. */
+/** The player picked a level (Settings → Motion Effects); otherwise it is the default, High. */
 export function qualityChosen(): boolean {
   const q = read(QUALITY_KEY);
   return q === 'low' || q === 'medium' || q === 'high';
 }
 
-/** The quality level in effect now. */
+/**
+ * The quality level in effect now: the level the player picked, else High (on every device). Only
+ * the older explicit "motion off" choice still means Low.
+ */
 export function quality(): Quality {
   const q = read(QUALITY_KEY);
   if (q === 'low' || q === 'medium' || q === 'high') return q;
-  const p = motionPref();
-  if (p === 'off' || (p === 'auto' && deviceReduced())) return 'low';
-  return p === 'auto' && weakDevice() ? 'medium' : 'high';
+  return motionPref() === 'off' ? 'low' : 'high';
 }
 
 /** Forget a level this device stored without the player choosing it: the device decides again. */
