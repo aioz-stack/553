@@ -84,25 +84,23 @@ export default function Login() {
                 <p className="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">Sign in to your account to continue to the table.</p>
               </div>
 
-              <div className="mt-7 space-y-4">
-                {platformError && (
-                  <FormAlert tone="error" title="Mobile App Required">
-                    {platformError}
-                  </FormAlert>
-                )}
+              {(platformError || credentialsError || notice) && (
+                <div className="mt-7 space-y-4">
+                  {platformError && (
+                    <FormAlert tone="error" title="Mobile App Required">
+                      {platformError}
+                    </FormAlert>
+                  )}
 
-                {!platformError && credentialsError && (
-                  <FormAlert tone="error" title="Unable to sign in">
-                    {credentialsError}
-                  </FormAlert>
-                )}
+                  {!platformError && credentialsError && (
+                    <FormAlert tone="error" title="Unable to sign in">
+                      {credentialsError}
+                    </FormAlert>
+                  )}
 
-                {notice && (
-                  <FormAlert tone="success" title="Signed out">
-                    {notice}
-                  </FormAlert>
-                )}
-              </div>
+                  {notice && <FormAlert tone="success">{notice}</FormAlert>}
+                </div>
+              )}
 
               <form onSubmit={submit} className="mt-7 space-y-5" aria-label="Sign in">
                 <div>
@@ -294,11 +292,11 @@ const FEATURES = [
 ];
 
 const FAN: Array<{ code: string; x: number; y: number; rotate: number; z: number }> = [
-  { code: 'AS', x: -176, y: 20, rotate: -20, z: 1 },
-  { code: 'KS', x: -88, y: 2, rotate: -10, z: 2 },
+  { code: 'AS', x: -150, y: 18, rotate: -18, z: 1 },
+  { code: 'KS', x: -75, y: 2, rotate: -9, z: 2 },
   { code: 'QS', x: 0, y: -8, rotate: 0, z: 3 },
-  { code: 'JS', x: 88, y: 2, rotate: 10, z: 2 },
-  { code: 'TS', x: 176, y: 20, rotate: 20, z: 1 },
+  { code: 'JS', x: 75, y: 2, rotate: 9, z: 2 },
+  { code: 'TS', x: 150, y: 18, rotate: 18, z: 1 },
 ];
 
 function CardFan() {
@@ -326,7 +324,7 @@ function DisconnectedDialog({ message, onClose }: { message: string; onClose: ()
   const signedOut = message.startsWith('You were signed out');
 
   return (
-    <div className="fixed inset-0 z-1000 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm" role="presentation">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm" role="presentation">
       <div
         role="alertdialog"
         aria-modal="true"
@@ -356,7 +354,7 @@ function DisconnectedDialog({ message, onClose }: { message: string; onClose: ()
   );
 }
 
-function FormAlert({ tone, title, children }: { tone: 'error' | 'success'; title: string; children: ReactNode }) {
+function FormAlert({ tone, title, children }: { tone: 'error' | 'success'; title?: string; children: ReactNode }) {
   const error = tone === 'error';
 
   return (
@@ -372,8 +370,8 @@ function FormAlert({ tone, title, children }: { tone: 'error' | 'success'; title
         {error ? <WarningIcon /> : <CheckCircleIcon />}
       </span>
       <div>
-        <p className="font-semibold">{title}</p>
-        <p className="mt-0.5 leading-relaxed opacity-90">{children}</p>
+        {title && <p className="font-semibold">{title}</p>}
+        <p className={`leading-relaxed opacity-90 ${title ? 'mt-0.5' : ''}`}>{children}</p>
       </div>
     </div>
   );
