@@ -1,0 +1,16 @@
+{
+ "name": "crown-mark",
+ "width": 24,
+ "height": 18,
+ "scale": 8,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -15.2,
+   "y": -16.5,
+   "w": 30.4,
+   "h": 23.1
+  }
+ ]
+}

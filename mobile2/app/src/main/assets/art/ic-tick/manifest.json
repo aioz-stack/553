@@ -1,0 +1,16 @@
+{
+ "name": "ic-tick",
+ "width": 24,
+ "height": 24,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 1,
+   "y": 3,
+   "w": 22,
+   "h": 18
+  }
+ ]
+}

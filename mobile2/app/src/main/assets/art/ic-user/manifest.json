@@ -1,0 +1,16 @@
+{
+ "name": "ic-user",
+ "width": 24,
+ "height": 24,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -0.5,
+   "y": -0.5,
+   "w": 25,
+   "h": 25.5
+  }
+ ]
+}

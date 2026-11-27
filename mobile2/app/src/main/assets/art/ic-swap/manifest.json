@@ -1,0 +1,16 @@
+{
+ "name": "ic-swap",
+ "width": 30,
+ "height": 40,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -2,
+   "y": 0,
+   "w": 34,
+   "h": 40
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "name": "ic-friends",
+ "width": 24,
+ "height": 24,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -2,
+   "y": 0,
+   "w": 28,
+   "h": 24
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "name": "chips-553",
+ "width": 230,
+ "height": 170,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -6.87,
+   "y": 43.15,
+   "w": 232.82,
+   "h": 145.49
+  }
+ ]
+}

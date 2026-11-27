@@ -1,0 +1,16 @@
+{
+ "name": "ic-addfriend",
+ "width": 24,
+ "height": 24,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -3,
+   "y": 0,
+   "w": 30.5,
+   "h": 24
+  }
+ ]
+}

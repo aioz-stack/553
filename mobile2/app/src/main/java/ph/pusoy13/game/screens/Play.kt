@@ -2,12 +2,14 @@ package ph.pusoy13.game.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,29 +51,24 @@ import ph.pusoy13.game.core.data
 import ph.pusoy13.game.core.dealtRows
 import ph.pusoy13.game.core.errorText
 import ph.pusoy13.game.core.fmt
-import ph.pusoy13.game.core.fmtWhole
 import ph.pusoy13.game.core.json
 import ph.pusoy13.game.core.signed
 import ph.pusoy13.game.core.str
+import ph.pusoy13.game.ui.Art
 import ph.pusoy13.game.ui.Avatar
-import ph.pusoy13.game.ui.BetChip
 import ph.pusoy13.game.ui.C
 import ph.pusoy13.game.ui.CandyButton
-import ph.pusoy13.game.ui.ChipIcon
-import ph.pusoy13.game.ui.GoldFrame
 import ph.pusoy13.game.ui.Modal
-import ph.pusoy13.game.ui.Pill
-import ph.pusoy13.game.ui.RoundIcon
 import ph.pusoy13.game.ui.Scene
 import ph.pusoy13.game.ui.Stage
 import ph.pusoy13.game.ui.ToastHost
 import ph.pusoy13.game.ui.Toggle
 import ph.pusoy13.game.ui.Tone
 import ph.pusoy13.game.ui.Txt
-import ph.pusoy13.game.ui.WalletPill
 import ph.pusoy13.game.ui.at
+import ph.pusoy13.game.ui.goldRim
+import ph.pusoy13.game.ui.lip
 import ph.pusoy13.game.ui.rememberToast
-import ph.pusoy13.game.ui.tap
 import ph.pusoy13.game.ui.u
 
 private val TABLE_EVENTS = setOf(
@@ -88,15 +85,16 @@ private val END_REASON = mapOf(
     "no_eligible_banker" to "Nobody held enough Chips to be the banker (6× the maximum bet) in time",
 )
 
-/** Seconds a round's arrangement is still shown after the deal (the server added it to the deadline). */
 private val shownDeals = mutableSetOf<Int>()
 private val shownReveals = mutableSetOf<Int>()
+private val SPOT_ORDER = listOf(Spot.Left, Spot.Top, Spot.Right)
 
 /**
- * Multiplayer in-game table for lobby matches, driven entirely by the server: REST state, Reverb
- * events on `presence-table.{id}` (+ `cards.dealt` on your private channel) as signals to re-read
- * it, a heartbeat every 10 s and polling as a fallback — so reconnecting after a drop recovers
- * exactly like a fresh load. Nothing here decides a banker, a bet, a score or a payout.
+ * Multiplayer in-game table for lobby matches (table/MultiplayerTable.tsx) — the same table,
+ * arrangement popup and results screen as Single Player, driven entirely by the server: REST
+ * state, Reverb events on `presence-table.{id}` (+ `cards.dealt` on your private channel) as
+ * signals to re-read it, a heartbeat every 10 s and polling as a fallback, so a reconnect recovers
+ * like a fresh load. Nothing here decides a banker, a bet, a score or a payout.
  */
 @Composable
 fun PlayScreen(tableId: Int) {
@@ -118,6 +116,7 @@ fun PlayScreen(tableId: Int) {
     var autoSubmitted by remember { mutableStateOf<Int?>(null) }
     var autoNoticed by remember { mutableStateOf<Int?>(null) }
     var prevPhase by remember { mutableStateOf<String?>(null) }
+    var sortBy by remember { mutableStateOf("dealt") }
     val toast = rememberToast()
     val scope = rememberCoroutineScope()
 
@@ -146,10 +145,7 @@ fun PlayScreen(tableId: Int) {
         if (again) { again = false; refresh() }
     }
     var burst by remember { mutableStateOf<Job?>(null) }
-    val refreshSoon: () -> Unit = {
-        burst?.cancel()
-        burst = scope.launch { delay(120); refresh() }
-    }
+    val refreshSoon: () -> Unit = { burst?.cancel(); burst = scope.launch { delay(120); refresh() } }
     LaunchedEffect(tableId) { refresh() }
     DisposableEffect(tableId, user?.id) {
         val uid = user?.id
@@ -157,24 +153,12 @@ fun PlayScreen(tableId: Int) {
         val h2 = uid?.let { Echo.listen(Echo.private("user.$it"), "cards.dealt") { _, _ -> refreshSoon() } }
         onDispose { h1.remove(); h2?.remove() }
     }
-    // Heartbeat (right away, every 10 s, on resume) and polling (4 s without a socket, 30 s with one).
-    LaunchedEffect(tableId) {
-        while (true) {
-            runCatching { Api.post("/tables/$tableId/heartbeat") }
-            delay(10_000)
-        }
-    }
-    LaunchedEffect(tableId, connected) {
-        while (true) {
-            delay(if (connected) 30_000 else 4_000)
-            refresh()
-        }
-    }
+    LaunchedEffect(tableId) { while (true) { runCatching { Api.post("/tables/$tableId/heartbeat") }; delay(10_000) } }
+    LaunchedEffect(tableId, connected) { while (true) { delay(if (connected) 30_000 else 4_000); refresh() } }
     LaunchedEffect(Unit) { Session.resumed.collect { runCatching { Api.post("/tables/$tableId/heartbeat") }; refresh() } }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(250) } }
 
     val secondsLeft = { deadline: Long? -> if (deadline == null) 0 else maxOf(0, kotlin.math.ceil((deadline - (now + offset)) / 1000.0).toInt()) }
-
     val t = table
     val s = session
     val phase = s?.status ?: if (t?.status == "CLOSED") "CLOSED" else "STARTING"
@@ -182,32 +166,16 @@ fun PlayScreen(tableId: Int) {
     val arrangeLeft = secondsLeft(if (s?.status == "ARRANGING") s.arrangementDeadline else null)
     val nextIn = secondsLeft(t?.nextRoundAt)
 
-    // Entry, bets and settlements move Chips: reload every wallet display when the game moves on.
     LaunchedEffect(s?.status, s?.roundNumber, t?.status) { Session.reloadWallets() }
-    // Sound cues on phase changes.
-    LaunchedEffect(s?.id, s?.status) {
-        if (s == null) return@LaunchedEffect
-        when (s.status) {
-            "BETTING" -> Sound.play("start")
-            "ARRANGING" -> Sound.play("deal")
-        }
-    }
+    LaunchedEffect(s?.id, s?.status) { when (s?.status) { "BETTING" -> Sound.play("start"); "ARRANGING" -> Sound.play("deal") } }
     LaunchedEffect(arrangeLeft) { if (phase == "ARRANGING" && arrangeLeft in 1..5) Sound.play("tick") }
-    // No longer seated / ended by the administrator: say so, then leave.
     LaunchedEffect(removed) { if (removed) { delay(2500); Nav.replace(Route.Lobby) } }
     val terminated = t?.status == "CLOSED" && t.endReason == "terminated_by_admin"
     LaunchedEffect(terminated) { if (terminated) { Session.walletChanged(); delay(2500); Nav.reset(Route.Home()) } }
-
-    // Tell the player once per round what the betting timeout did.
     LaunchedEffect(s?.id, s?.myBetType, s?.myAutoBetSkipped) {
         if (s == null || autoNoticed == s.id) return@LaunchedEffect
-        if (s.myBetType == "AUTO" && s.myBet != null) {
-            autoNoticed = s.id
-            toast.show(true, "Time expired — minimum bet of ${fmt(s.myBet)} chips automatically placed.")
-        } else if (s.myAutoBetSkipped != null) {
-            autoNoticed = s.id
-            toast.show(false, "Time expired — no automatic bet: ${s.myAutoBetSkipped}")
-        }
+        if (s.myBetType == "AUTO" && s.myBet != null) { autoNoticed = s.id; toast.show(true, "Time expired — minimum bet of ${fmt(s.myBet)} chips automatically placed.") }
+        else if (s.myAutoBetSkipped != null) { autoNoticed = s.id; toast.show(false, "Time expired — no automatic bet: ${s.myAutoBetSkipped}") }
     }
 
     // ---- seats seen from you: you at the bottom, then left, top, right (clockwise) ----
@@ -235,12 +203,11 @@ fun PlayScreen(tableId: Int) {
     val seatOf = { id: Int? -> t?.players?.find { it.userId == id }?.seat ?: players.find { it.userId == id }?.seat ?: mySeat }
     val bankerView = viewSeat(seatOf(bankerId))
     val arranging = phase == "ARRANGING" && s?.myCards != null && s.mySubmission == null
+    val bankerName = banker?.let { if (it.isYou) "You" else it.name } ?: "…"
 
-    // 1. Deal animation once per round, before the arrangement opens.
     LaunchedEffect(s?.id, phase) {
         if (s != null && phase == "ARRANGING" && s.myCards != null && s.mySubmission == null && shownDeals.add(s.id) && Session.motion.value != "low") dealing = s.id
     }
-    // 2. The reveal show when the round you just played is judged (once per round).
     LaunchedEffect(phase, s?.id, revealed) {
         val was = prevPhase
         prevPhase = phase
@@ -261,7 +228,7 @@ fun PlayScreen(tableId: Int) {
     }
     val nowShow = revealClock(if (revealing) reveal?.second else null, revealDone)
 
-    // ---- actions ----
+    // ---- actions (the Multiplayer adapter of the shared arrangement) ----
     val bet: (Double) -> Unit = { amount ->
         if (s != null && !busy) {
             busy = true
@@ -271,10 +238,7 @@ fun PlayScreen(tableId: Int) {
                     Api.post("/games/${s.id}/bet", Api.body("amount" to "%.2f".format(java.util.Locale.US, amount)))
                     Session.walletChanged()
                     refresh()
-                } catch (e: Exception) {
-                    Sound.play("lose")
-                    toast.show(false, errorText(e))
-                }
+                } catch (e: Exception) { Sound.play("lose"); toast.show(false, errorText(e)) }
                 busy = false
             }
         }
@@ -301,10 +265,7 @@ fun PlayScreen(tableId: Int) {
                     if (code == "timer_expired" || code == "already_submitted" || code == "invalid_state") {
                         if (!timedOut) toast.show(true, "Time's up — your cards were submitted as they are.")
                         refresh()
-                    } else {
-                        Sound.play("lose")
-                        toast.show(false, errorText(e))
-                    }
+                    } else { Sound.play("lose"); toast.show(false, errorText(e)) }
                 }
                 busy = false
             }
@@ -320,9 +281,7 @@ fun PlayScreen(tableId: Int) {
                     Sound.play(if (failed) "lose" else "lucky")
                     toast.show(!failed, r.str("message") ?: if (failed) "No Lucky Hand." else "Lucky Hand!")
                     refresh()
-                } catch (e: Exception) {
-                    toast.show(false, errorText(e))
-                }
+                } catch (e: Exception) { toast.show(false, errorText(e)) }
                 declaring = false
             }
         }
@@ -330,6 +289,7 @@ fun PlayScreen(tableId: Int) {
     // Time's up: submit the rows on screen exactly as they are (once per round).
     LaunchedEffect(arranging, arrangeLeft, s?.id) {
         if (!arranging || s == null) return@LaunchedEffect
+        if (arrangeLeft <= 1) draftJob?.let { if (it.isActive) { it.cancel(); lastRows?.let { (id, rows) -> runCatching { Api.put("/games/$id/draft", rows.json()) } } } }
         val passed = s.arrangementDeadline != null && s.arrangementDeadline <= System.currentTimeMillis() + offset + 1000
         if (arrangeLeft <= 0 && passed && autoSubmitted != s.id && dealing != s.id) {
             autoSubmitted = s.id
@@ -339,117 +299,107 @@ fun PlayScreen(tableId: Int) {
         }
     }
 
-    // Leave Game only in the Betting Phase (the server decides: table.leave).
     val leaveAllowed = matchOver || (t?.leaveAllowed == true && !(phase == "BETTING" && betLeft <= 0))
     val leaveReason = if (leaveAllowed) null else t?.leaveReason ?: "You cannot leave the game once the betting phase has ended. Please wait until the round is complete."
     BackHandler { panel = "leave" }
-    val bankerName = banker?.let { if (it.isYou) "You" else it.name } ?: "…"
 
     Stage(background = { Scene("lantern") }) {
-        ph.pusoy13.game.ui.Art("table", Modifier.fillMaxSize())
+        Art("table", Modifier.fillMaxSize())
         when {
             removed -> Centered("You are no longer seated at this table.\nYour finished rounds are settled. Returning to the Multiplayer Lobby…")
             terminated -> Centered("This game was ended by the administrator.\nAny Chips held for the round are back in your wallet. Returning to Game Home…")
             t == null -> Centered(error ?: "Joining the table…")
             else -> {
-                // Top-left controls
-                Row(Modifier.at(20, 12), horizontalArrangement = Arrangement.spacedBy(10.u)) {
-                    RoundIcon("Back", Modifier, onClick = { panel = "leave" }) { Txt("←", 40, color = C.Gold) }
-                    RoundIcon("Settings", Modifier, onClick = { panel = "settings" }) { Txt("⚙", 42, color = C.Gold) }
-                    RoundIcon("How to play", Modifier, onClick = { panel = "help" }) { Txt("?", 42, color = C.Gold) }
-                }
-                ph.pusoy13.game.ui.Art("mini-crest", Modifier.at(290, 4, 240, 140))
-                WalletPill({ ChipIcon(50) }, balances.chips?.let(::fmtWhole) ?: "…", Modifier.at(905, 12, 330, 76), label = "TOTAL CHIPS")
-                GoldFrame(Modifier.at(1250, 14, 330, 76), radius = 24, rim = 5, fill = Brush.verticalGradient(listOf(Color(0xFFB3141B), Color(0xFF5A0609)))) {
-                    Row(Modifier.fillMaxSize().padding(horizontal = 12.u), verticalAlignment = Alignment.CenterVertically) {
-                        ChipIcon(46)
-                        Txt(
-                            if (iBank) (if (covering > 0) "Covering ${fmt(covering)}" else "Banker · no bet") else s?.myBet?.let { "Bet: ${fmt(it)} Chips${if (s.myBetType == "AUTO") " (auto)" else ""}" } ?: "Bet: —",
-                            24, modifier = Modifier.weight(1f), align = TextAlign.Center, maxLines = 1,
-                        )
-                    }
-                }
-                Column(Modifier.at(1080, 98).width(500.u), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.u)) {
-                    Pill("Round ${minOf(round, total)} / $total · ${if (bankerName == "You") "You bank" else "$bankerName banks"}", size = 22, color = C.Gold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(14.u).clip(CircleShape).background(if (connected) Color(0xFF45E0A5) else C.Gold))
-                        Pill("${t.roomName} · Min Entry ${fmt(t.minEntry)} · ${if (t.gameMode == "banker") "Banker Mode" else "Round Bank"}", size = 17)
-                    }
-                }
-                t.pausedMessage?.takeIf { t.status == "IN_GAME" }?.let {
-                    GoldFrame(Modifier.at(390, 190, 820, 130), radius = 26, rim = 4, fill = Brush.verticalGradient(listOf(Color(0xF22A1402), Color(0xF21A0A00)))) {
-                        Column(Modifier.fillMaxSize().padding(14.u), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Txt("Game paused — no eligible banker", 30, color = C.Gold)
-                            Txt(it, 20, align = TextAlign.Center)
+                TableControls(onBack = { panel = "leave" }, onSettings = { panel = "settings" }, onHelp = { panel = "help" })
+                WalletHud(Modifier.at(905, 12), "Total Chips", balances.chips, "icon-chips")
+                BetPill(if (iBank) (if (covering > 0) "Covering ${fmt(covering)}" else "Banker · no bet") else s?.myBet?.let { "Bet: ${fmt(it)} Chips${if (s.myBetType == "AUTO") " (auto)" else ""}" } ?: "Bet: —", "icon-chips")
+                InfoPills(
+                    { Runs(22, "Round ${minOf(round, total)} / $total · " to Color.White, (if (bankerName == "You") "You bank" else "$bankerName banks") to C.Gold) },
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.u)) {
+                            Box(Modifier.size(12.u).clip(CircleShape).background(if (connected) Color(0xFF45E0A5) else Color(0xFFFFD34D)))
+                            Txt("${t.roomName} · Min Entry ${fmt(t.minEntry)} · ${if (t.gameMode == "banker") "Banker Mode" else "Round Bank"}", 18, color = Color(0xE6FFFFFF), maxLines = 1)
                         }
+                    },
+                )
+                t.pausedMessage?.takeIf { t.status == "IN_GAME" }?.let {
+                    Column(Modifier.at(390, 190).width(820.u).clip(RoundedCornerShape(26.u)).background(Color(0xF22A1402)).border(4.u, Color(0xFFFFD34D), RoundedCornerShape(26.u)).padding(horizontal = 32.u, vertical = 16.u), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Txt("Game paused — no eligible banker", 32, color = C.Gold)
+                        Txt(it, 21, color = Color(0xD9FFFFFF), align = TextAlign.Center)
                     }
                 }
 
-                // The other three seats, clockwise from you: left, top, right.
-                listOf(Spot.Left, Spot.Top, Spot.Right).forEachIndexed { i, spot ->
-                    val p = around[i]
+                TableCrest(round, total, if (revealing) null else ({
+                    StatusPill(
+                        when {
+                            phase == "STARTING" -> "Get ready — seating players and shuffling…"
+                            phase == "BETTING" -> "${if (iBank) "You are the banker" else "$bankerName is the banker"} · ${if (betLeft <= 0) "betting closed" else if (s?.canBet == true) "place your bet" else if (iBank) "you cover the bets" else if (s?.myBet != null) "bet placed" else "you sit out"} · ${maxOf(0, betLeft)}s"
+                            phase == "ARRANGING" || phase == "SUBMITTED" -> "${if (s?.mySubmission != null) "Hand locked in" else if (s?.myCards != null) "Arrange your hand" else "Dealt in next round"} · ${players.count { it.hasSubmitted }} / ${players.size} ready · ${arrangeLeft}s"
+                            phase == "CANCELLED" -> "Round cancelled (${s?.cancelReason?.replace('_', ' ')}) — reserved Chips returned"
+                            revealed && !matchOver && phase == "COMPLETED" -> if (round >= total) "Final round played" else if (nextIn > 0) "Next round in ${nextIn}s" else "Dealing the next round…"
+                            matchOver -> "Match over"
+                            else -> "Every lane vs the banker · 3-0 pays 2× · 2-1 pays 1×"
+                        },
+                    )
+                }))
+                // The other three seats, clockwise from you.
+                around.forEachIndexed { i, p ->
+                    val spot = SPOT_ORDER[i]
                     if (p == null) {
-                        HandPanel(spot, "Empty seat", null, status = "Empty seat", statusColor = C.White.copy(alpha = 0.5f))
+                        HandPanel(spot, "Empty seat", { Box(Modifier.size(116.u).background(Color(0x4D000000)), contentAlignment = Alignment.Center) { Txt("Empty", 18, color = Color(0x99FFFFFF)) } }, cards = PanelCards.Empty)
                     } else {
                         val a = if (revealed) arrangementOf(p.userId) else null
                         val r = resultOf(p.userId)
                         val dealt = (phase == "ARRANGING" || phase == "SUBMITTED") && dealing != s?.id && (p.userId == bankerId || p.bet > 0)
-                        val (status, color) = seatStatus(p, s, phase, revealed, revealing, bankerId, r?.net, standingOf(p.userId)?.net)
+                        val (st, col) = seatStatus(p, s, phase, revealed, revealing, bankerId, r?.net, standingOf(p.userId)?.net)
                         HandPanel(
-                            spot, p.name, { Avatar(p.avatar, p.userId, 116, square = true, offline = !p.isConnected) },
-                            status = status + if (p.userId in cantBank) " · Can't bank (low Chips)" else "", statusColor = color,
+                            spot, p.name, { Avatar(p.avatar, p.userId, 116, square = true) },
+                            status = {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Txt(st, 17, color = col, maxLines = 1)
+                                    if (p.userId in cantBank) Box(Modifier.clip(RoundedCornerShape(999.u)).background(Color(0x8C000000)).padding(horizontal = 8.u)) { Txt("Can't bank · low Chips", 13, color = Color(0xBFFFFFFF)) }
+                                }
+                            },
                             banker = p.userId == bankerId, offline = !p.isConnected, glow = revealed && !revealing && (r?.net ?: 0.0) > 0,
                             cards = when {
-                                a != null -> SeatCards.Shown(a.rows, a.labels, r?.lanes,
+                                a != null -> PanelCards.Shown(a.rows, a.labels, r?.lanes,
                                     up = if (revealing) { l, idx -> reveal!!.second.isUp(nowShow, viewSeat(p.seat), l, idx) } else null,
                                     laneShown = if (revealing) { l -> reveal!!.second.laneShown(nowShow, l) } else null)
-                                dealt -> SeatCards.Backs
-                                else -> SeatCards.Empty
+                                dealt -> PanelCards.Backs
+                                else -> PanelCards.Empty
                             },
-                            badges = a?.let { handBadges(it.luckyType?.let { k -> LUCKY_LABELS[k] ?: k }, it.isFoul, it.luckyFailed) } ?: emptyList(),
+                            extra = a?.let { { HandBadges(it.luckyType?.let { k -> LUCKY_LABELS[k] ?: k }, it.isFoul, it.luckyFailed) } },
                         )
                     }
                 }
 
-                TableCrest(
-                    round, total,
-                    if (revealing) null else when {
-                        phase == "STARTING" -> "Get ready — seating players and shuffling…"
-                        phase == "BETTING" -> "${if (iBank) "You are the banker" else "$bankerName is the banker"} · ${if (betLeft <= 0) "betting closed" else if (s?.canBet == true) "place your bet" else if (iBank) "you cover the bets" else if (s?.myBet != null) "bet placed" else "you sit out"} · ${betLeft}s"
-                        phase == "ARRANGING" || phase == "SUBMITTED" -> "${if (s?.mySubmission != null) "Hand locked in" else if (s?.myCards != null) "Arrange your hand" else "Dealt in next round"} · ${players.count { it.hasSubmitted }} / ${players.size} ready · ${arrangeLeft}s"
-                        phase == "CANCELLED" -> "Round cancelled (${s?.cancelReason?.replace('_', ' ')}) — reserved Chips returned"
-                        revealed && !matchOver && phase == "COMPLETED" -> if (round >= total) "Final round played" else if (nextIn > 0) "Next round in ${nextIn}s" else "Dealing the next round…"
-                        matchOver -> "Match over"
-                        else -> "Every lane vs the banker · 3-0 pays 2× · 2-1 pays 1×"
-                    },
-                )
                 if (iBank && !matchOver) BankerRibbon()
 
-                // Your seat
+                // Your seat: your hand after the reveal, or the bet chips / your status.
                 val mine = if (revealed && user != null) arrangementOf(user!!.id) else null
                 HandPanel(
-                    Spot.Bottom, me?.name ?: "You", { Avatar(me?.avatar ?: user?.avatar, user?.id, 110, square = true) },
-                    status = if (revealed && !revealing) myResult?.let { "${signed(it.net)} Chips" } ?: "—" else null,
-                    statusColor = toneColor(myResult?.net ?: 0.0),
+                    Spot.Bottom, me?.name ?: "You", { Avatar(me?.avatar ?: user?.avatar, user?.id, 140, square = true) },
+                    status = if (revealed && !revealing) ({ Txt(myResult?.let { "${signed(it.net)} Chips" } ?: "—", 16, color = toneColor(myResult?.net ?: 0.0)) }) else null,
                     banker = iBank, glow = revealed && !revealing && (myResult?.net ?: 0.0) > 0,
                     cards = mine?.let {
-                        SeatCards.Shown(it.rows, it.labels, myResult?.lanes,
+                        PanelCards.Shown(it.rows, it.labels, myResult?.lanes,
                             up = if (revealing) { l, idx -> reveal!!.second.isUp(nowShow, viewSeat(mySeat), l, idx) } else null,
                             laneShown = if (revealing) { l -> reveal!!.second.laneShown(nowShow, l) } else null)
-                    } ?: SeatCards.Empty,
-                    badges = mine?.let { handBadges(it.luckyType?.let { k -> LUCKY_LABELS[k] ?: k }, it.isFoul, it.luckyFailed) } ?: emptyList(),
-                    extra = {
-                        if (phase == "BETTING" && s?.canBet == true && betLeft > 0) {
+                    },
+                    extra = mine?.let { { HandBadges(it.luckyType?.let { k -> LUCKY_LABELS[k] ?: k }, it.isFoul, it.luckyFailed) } },
+                ) {
+                    if (phase == "BETTING" && s?.canBet == true && betLeft > 0) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.u)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(16.u), verticalAlignment = Alignment.CenterVertically) {
-                                chipsList.forEachIndexed { i, c ->
-                                    BetChip(fmt(c), i, 96, Modifier.alpha(if (canCover(c)) 1f else 0.4f).tap(enabled = !busy && canCover(c), sound = null, label = "Bet ${fmt(c)}") { bet(c) })
-                                }
-                                Txt(
-                                    if (busy) "Placing bet…" else if (chipsList.none(canCover)) "You need ${fmt((chipsList.minOrNull() ?: 0.0) * 2)} Chips (2× the smallest bet) to bet" else "Tap a chip to bet (hold 2× your bet) · ${betLeft}s",
-                                    19, color = C.White.copy(alpha = 0.85f), modifier = Modifier.weight(1f),
-                                )
+                                chipsList.forEachIndexed { i, c -> BetChipButton(fmt(c), i, 100, s.myBet == c, !busy && canCover(c)) { bet(c) } }
                             }
-                        } else if (mine == null) {
+                            Txt(
+                                if (busy) "Placing bet…" else if (chipsList.none(canCover)) "You need ${fmt((chipsList.minOrNull() ?: 0.0) * 2)} Chips (2× the smallest bet) to bet" else "Tap a chip to bet (hold 2× your bet) · ${betLeft}s",
+                                20, color = Color(0xD9FFFFFF),
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.u)) {
                             Txt(
                                 when {
                                     matchOver -> "Match over"
@@ -459,25 +409,28 @@ fun PlayScreen(tableId: Int) {
                                     s?.myCards != null -> if (dealing == s.id) "Shuffling and dealing…" else "Arrange your 13 cards: Front 3 · Middle 5 · Back 5"
                                     else -> "Waiting…"
                                 },
-                                21, color = C.White.copy(alpha = 0.85f),
+                                22, color = Color(0xD9FFFFFF),
                             )
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.u)) { chipsList.forEachIndexed { i, c -> Box(Modifier.padding(0.u)) { Chip(fmt(c), CHIP_COLORS[i % 3], 60, Modifier.alpha(0.7f)) } } }
                         }
-                    },
-                )
+                    }
+                }
+
+                SortButton(sortBy, arranging) { sortBy = when (sortBy) { "dealt" -> "rank"; "rank" -> "suit"; else -> "dealt" }; Sound.play("tap") }
 
                 if (s != null && dealing == s.id && phase == "ARRANGING" && s.myCards != null) {
-                    DealAnimation(s.id, bankerView, players.map { viewSeat(it.seat) }) { dealing = null }
+                    DealAnimation(s.id, bankerView, s.myCards, mapOf(1 to "You", 2 to (around[0]?.name ?: "Seat"), 3 to (around[1]?.name ?: "Seat"), 4 to (around[2]?.name ?: "Seat")), players.map { viewSeat(it.seat) }) { dealing = null }
                 }
                 if (revealing) RevealBanner(reveal!!.second, nowShow, revealDone)
                 if (arranging && s != null && dealing != s.id) {
                     ArrangePopup(
-                        s.id, s.myCards!!, s.myDraft,
+                        s.id, s.myCards!!, s.myDraft ?: sortedRows(dealtRows(s.myCards), sortBy).takeIf { sortBy != "dealt" },
                         "${t.roomName} · R$round/$total · ${if (bankerName == "You") "You bank" else "$bankerName banks"} · ${arrangeLeft}s",
                         if (iBank) "Covering ${fmt(covering)}" else "Bet: ${fmt(s.myBet ?: 0.0)} Chips${if (s.myBetType == "AUTO") " (auto)" else ""}",
-                        "/games/${s.id}/preview", (around[0]?.name ?: "") to (around[2]?.name ?: ""), declaring, busy,
+                        "/games/${s.id}/preview", declaring, busy,
                         onDeclare = declare, onSubmit = { submit(it, false) }, onRowsChange = saveDraft,
                     ) {
-                        WalletPill({ ChipIcon(48) }, balances.chips?.let(::fmtWhole) ?: "…", Modifier.at(1080, 690, 330, 76), label = "TOTAL CHIPS")
+                        WalletHud(Modifier.at(1080, 668), "Total Chips", balances.chips, "icon-chips")
                     }
                 }
 
@@ -487,17 +440,14 @@ fun PlayScreen(tableId: Int) {
                     val mineS = ranked.find { it.userId == user?.id }
                     Modal(if (mineS?.rank == 1) "YOU WIN THE MATCH!" else mineS?.let { "#${it.rank} PLACE" } ?: "MATCH OVER", null, width = 900) {
                         mineS?.let { Txt("${signed(it.net)} Chips", 40, color = toneColor(it.net)) }
-                        Txt("${t.roundsPlayed} / $total rounds · ${END_REASON[t.endReason ?: ""] ?: (t.endReason ?: "").replace('_', ' ')}", 18, color = C.White.copy(alpha = 0.65f), align = TextAlign.Center)
+                        Txt("${t.roundsPlayed} / $total rounds · ${END_REASON[t.endReason ?: ""] ?: (t.endReason ?: "").replace('_', ' ')}", 18, color = Color(0xA6FFFFFF), align = TextAlign.Center)
                         Column(Modifier.padding(top = 12.u).width(640.u), verticalArrangement = Arrangement.spacedBy(6.u)) {
                             ranked.forEach { st ->
-                                Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.u)).background(if (st.userId == user?.id) Color(0x40FFD13A) else Color(0x4D000000)).padding(horizontal = 16.u, vertical = 6.u),
-                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.u),
-                                ) {
+                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.u)).background(if (st.userId == user?.id) Color(0x40FFD13A) else Color(0x4D000000)).padding(horizontal = 16.u, vertical = 6.u), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.u)) {
                                     Txt(if (st.rank == 1) "👑" else "${st.rank}", 24, color = C.Gold, modifier = Modifier.width(40.u))
                                     Avatar(st.avatar, st.userId, 40)
                                     Txt(st.name, 24, modifier = Modifier.weight(1f), maxLines = 1)
-                                    Txt("banked ${st.bankerRounds}", 18, color = C.White.copy(alpha = 0.6f))
+                                    Txt("banked ${st.bankerRounds}", 18, color = Color(0x99FFFFFF))
                                     Txt(signed(st.net), 24, color = toneColor(st.net))
                                 }
                             }
@@ -521,7 +471,6 @@ fun PlayScreen(tableId: Int) {
                             "Four players, 12 rounds. ${if (t.gameMode == "banker") "The lobby creator banks while they can cover the table." else "The banker turn passes clockwise each round."} To bank you need at least ${fmt(t.bankerReserve)} Chips (6× the biggest bet); anyone below that is skipped.",
                             "Bets are the table's chips only: ${chipsList.joinToString(" / ") { fmt(it) }} Chips (from the ${fmt(t.minEntry)}-Chip Minimum Entry). The banker places no bet and covers everyone else's.",
                             "Arrange your 13 cards into Front (3), Middle (5) and Back (5). Each lane is compared with the banker's: win all 3 = 2× bet, win 2 = 1×; lose 2 = −1×, lose all 3 = −2×. An identical lane goes to the banker.",
-                            "A Lucky Hand (3-Flushes, 3-Straight, No Faces, 6 Pairs) pays 2× the bet when declared; a false declaration or a misarranged hand costs 2× the bet.",
                         ).forEach { Txt(it, 22, modifier = Modifier.fillMaxWidth().padding(vertical = 4.u)) }
                     }
                     "leave" -> Modal("Leave the table?", { panel = null }, width = 820) {
@@ -532,14 +481,7 @@ fun PlayScreen(tableId: Int) {
                                 CandyButton("Leave", Modifier.size(260.u, 78.u), Tone.Red, size = 30, enabled = !busy) {
                                     busy = true
                                     scope.launch {
-                                        try {
-                                            if (!matchOver) Api.post("/tables/$tableId/leave")
-                                            Session.walletChanged()
-                                            Nav.replace(Route.Lobby)
-                                        } catch (e: Exception) {
-                                            toast.show(false, errorText(e))
-                                            panel = null
-                                        }
+                                        try { if (!matchOver) Api.post("/tables/$tableId/leave"); Session.walletChanged(); Nav.replace(Route.Lobby) } catch (e: Exception) { toast.show(false, errorText(e)); panel = null }
                                         busy = false
                                     }
                                 }
@@ -550,7 +492,6 @@ fun PlayScreen(tableId: Int) {
                                 CandyButton("Keep Playing", Modifier.size(300.u, 78.u), size = 30) { panel = null }
                                 CandyButton("Game Home", Modifier.size(280.u, 78.u), Tone.Dark, size = 28) { Nav.reset(Route.Home()) }
                             }
-                            Txt("Game Home keeps your seat — you can come back to this table.", 18, color = C.White.copy(alpha = 0.6f), modifier = Modifier.padding(top = 10.u))
                         }
                     }
                 }
@@ -560,13 +501,12 @@ fun PlayScreen(tableId: Int) {
     }
 }
 
-fun toneColor(n: Double) = if (n > 0) C.Mint else if (n < 0) C.Pink else C.White
 
 private fun seatStatus(p: SeatPlayer, s: SessionState?, phase: String, revealed: Boolean, revealing: Boolean, bankerId: Int?, net: Double?, matchNet: Double?): Pair<String, Color> = when {
     s == null -> (matchNet?.let { signed(it) } ?: "") to toneColor(matchNet ?: 0.0)
-    revealed && revealing -> "Revealing…" to C.White.copy(alpha = 0.8f)
+    revealed && revealing -> "Submitted ✓" to C.Mint
     revealed -> (net?.let { signed(it) } ?: "") to toneColor(net ?: 0.0)
-    phase == "BETTING" -> if (p.userId == bankerId) "Covering bets" to Color(0xFF9FE0FF) else if (p.bet > 0) "Bet ${fmt(p.bet)}${if (p.betType == "AUTO") " (auto)" else ""}" to C.Mint else "Betting…" to C.White.copy(alpha = 0.8f)
-    phase == "ARRANGING" || phase == "SUBMITTED" -> if (p.hasSubmitted) "✓ Ready" to C.Mint else "Arranging…" to C.White.copy(alpha = 0.8f)
+    phase == "BETTING" -> if (p.userId == bankerId) "Covering bets" to Color(0xFF9FE0FF) else if (p.bet > 0) "Bet ${fmt(p.bet)}${if (p.betType == "AUTO") " (auto)" else ""}" to C.Mint else "Betting…" to Color(0xCCFFFFFF)
+    phase == "ARRANGING" || phase == "SUBMITTED" -> if (p.hasSubmitted) "Submitted ✓" to C.Mint else "Arranging…" to Color(0xCCFFFFFF)
     else -> (matchNet?.let { signed(it) } ?: "") to toneColor(matchNet ?: 0.0)
 }

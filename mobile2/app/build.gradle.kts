@@ -21,7 +21,7 @@ val env = Properties().apply {
     }
 }
 fun envOr(key: String, fallback: String) = env.getProperty(key)?.takeIf { it.isNotBlank() } ?: fallback
-val apiUrl = envOr("API_URL", "http://10.0.2.2:8000").trimEnd('/')
+val apiUrl = ((findProperty("apiUrl") as String?) ?: envOr("API_URL", "http://10.0.2.2:8000")).trimEnd('/')
 
 /** Optional release signing: mobile2/keystore.properties (storeFile, storePassword, keyAlias, keyPassword). */
 val keystore = Properties().apply {
@@ -41,7 +41,7 @@ android {
         versionName = "2.0.0"
 
         buildConfigField("String", "API_URL", "\"$apiUrl\"")
-        buildConfigField("String", "REVERB_KEY", "\"${envOr("REVERB_APP_KEY", "")}\"")
+        buildConfigField("String", "REVERB_KEY", "\"${(findProperty("reverbKey") as String?) ?: envOr("REVERB_APP_KEY", "")}\"")
         buildConfigField("String", "REVERB_HOST", "\"${envOr("REVERB_HOST", "10.0.2.2")}\"")
         buildConfigField("int", "REVERB_PORT", envOr("REVERB_PORT", "8080"))
         buildConfigField("String", "REVERB_SCHEME", "\"${envOr("REVERB_SCHEME", "http")}\"")

@@ -72,6 +72,8 @@ object C {
     val Purple = Color(0xFF5A14B8)
     val White = Color.White
     val Dim = Color(0x99000000)
+    val MintTop = Color(0xFF45E0A5)
+    val MintBottom = Color(0xFF0FA36E)
 }
 
 val Display = FontFamily(Font(R.font.baloo_extrabold, FontWeight.ExtraBold), Font(R.font.baloo_bold, FontWeight.Bold))

@@ -1,0 +1,16 @@
+{
+ "name": "ic-check",
+ "width": 24,
+ "height": 24,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -0.3,
+   "y": 2.4,
+   "w": 24.6,
+   "h": 20.4
+  }
+ ]
+}
