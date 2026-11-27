@@ -294,11 +294,11 @@ const FEATURES = [
 ];
 
 const FAN: Array<{ code: string; x: number; y: number; rotate: number; z: number }> = [
-  { code: 'AS', x: -118, y: 14, rotate: -16, z: 1 },
-  { code: 'KS', x: -59, y: 0, rotate: -8, z: 2 },
+  { code: 'AS', x: -176, y: 20, rotate: -20, z: 1 },
+  { code: 'KS', x: -88, y: 2, rotate: -10, z: 2 },
   { code: 'QS', x: 0, y: -8, rotate: 0, z: 3 },
-  { code: 'JS', x: 59, y: 0, rotate: 8, z: 2 },
-  { code: 'TS', x: 118, y: 14, rotate: 16, z: 1 },
+  { code: 'JS', x: 88, y: 2, rotate: 10, z: 2 },
+  { code: 'TS', x: 176, y: 20, rotate: 20, z: 1 },
 ];
 
 function CardFan() {
