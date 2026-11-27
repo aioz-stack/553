@@ -116,23 +116,32 @@ that makes the WebView load a page itself must not depend on the served HTML:
   screens). Native start-up is portrait.
 Icons/splash: edit `mobile/assets/*.svg`, re-render the PNGs, then `npm run assets`.
 
-### Mobile app — React Native rebuild (`mobile2/`, started 2026-11-27)
+### Mobile app — native Android rebuild (`mobile2/`, Kotlin + Jetpack Compose, 2026-11-28)
 
 The Capacitor app above drew its CSS/SVG-heavy design inside an Android WebView, which stuttered on
-real phones (GPU-layer and repaint limits) even after tuning. `mobile2/` is the replacement: an
-**Expo (React Native) app** using the same `/api/v1` API (Sanctum bearer token) and the same Reverb
-server, with no game or wallet logic of its own. Full setup and APK build steps: **`mobile2/README.md`**.
+real phones. `mobile2/` replaces it on Android with a **native Kotlin + Jetpack Compose app** built
+with Gradle / Android Studio (no Node.js, no C++ build). It uses the same `/api/v1` API (Sanctum
+bearer token) and the same Reverb server, with no game or wallet logic of its own. Setup and APK
+build: **`mobile2/README.md`** and **`mobile2/COMMANDS.md`**.
 
-- Native views; animations run on the UI thread (Reanimated) and only transform pre-rendered images.
-- The design is the web app's: scenes, tile art, labels, cards and table were exported from the web
-  components (`mobile2/scripts/art/`) as still layers + moving parts, and replayed natively with the
-  same keyframes. Screens use the same 1600×900 coordinates.
-- Backend for the build: `mobile2/.env` (`EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_REVERB_*`; match Laravel's
-  `REVERB_*`). Emulator → this PC: `10.0.2.2`.
-- App id `ph.pusoy13.native` (installs next to the Capacitor app until it replaces it).
-- Ported: auth, home, settings, Single Player, Multiplayer (lobbies, waiting room, table). Not yet:
-  Shop, Create Lobby, friend management, avatar change, sound, deal/reveal shows, Lucky Hand,
-  free-Gold claim, history screens, push, maintenance screen (see `mobile2/README.md` §10).
+(The first `mobile2` was an Expo / React Native app, commits `479e8ff`–`5d61b00`. On Windows its C++
+build only worked with Windows long paths enabled and CMake 3.31+; the native rebuild removes that.)
+
+- Same screens and flows as `/mobile`: auth (invitation registration), Home (wallets, friends, avatar
+  + nickname, settings, Shop), Multiplayer Lobby (tabs, search, Quick Join, Create / Join / Leave),
+  Choose Your Seat (seat, bet, Start, server-timed countdown, kick, edit), the Multiplayer table
+  (betting, deal, arrangement with server-saved drafts and auto-submit, Declared Luck, reveal show,
+  standings), Single Player vs the three bots (Out of Gold claim), wallet / history / notifications,
+  maintenance screen and "account connected elsewhere".
+- Reverb: `core/Echo.kt` implements the Pusher protocol over an OkHttp WebSocket and authorises
+  private / presence channels at `/api/v1/broadcasting/auth`; events trigger a re-read of the API
+  state; heartbeat + polling cover reconnects.
+- Design: the web app's art (exported layered WebP + manifests) in `app/src/main/assets/art`, drawn
+  on a Canvas with the same keyframes, on the same 1600×900 stage. Sounds are synthesised in code.
+- Backend for the build: `mobile2/.env` (`API_URL`, `REVERB_*`; old `EXPO_PUBLIC_*` names accepted).
+  Emulator → this PC: `10.0.2.2`.
+- App id `ph.pusoy13.game` (installs next to the Capacitor app `ph.pusoy13.app`).
+- Not yet: push notifications (needs a Firebase `google-services.json`); iOS stays on `/mobile`.
 
 ### Tests
 
