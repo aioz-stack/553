@@ -1,0 +1,16 @@
+{
+ "name": "tile-shop-art",
+ "width": 120,
+ "height": 104,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": 18,
+   "y": 11,
+   "w": 84,
+   "h": 89
+  }
+ ]
+}

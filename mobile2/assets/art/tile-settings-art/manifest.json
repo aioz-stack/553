@@ -1,0 +1,32 @@
+{
+ "name": "tile-settings-art",
+ "width": 110,
+ "height": 100,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-anim.webp",
+   "kind": "anim",
+   "x": 3,
+   "y": -2,
+   "w": 104,
+   "h": 104,
+   "anim": "lx-spin",
+   "duration": 9,
+   "delay": 0,
+   "timing": "linear",
+   "pivotX": 55,
+   "pivotY": 50,
+   "unit": 1,
+   "flip": false
+  },
+  {
+   "file": "01-still.webp",
+   "kind": "still",
+   "x": 25,
+   "y": 23,
+   "w": 36,
+   "h": 22
+  }
+ ]
+}

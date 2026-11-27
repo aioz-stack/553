@@ -1,0 +1,16 @@
+{
+ "name": "icon-chips",
+ "width": 32,
+ "height": 32,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": -2,
+   "y": -2.5,
+   "w": 36,
+   "h": 37.5
+  }
+ ]
+}

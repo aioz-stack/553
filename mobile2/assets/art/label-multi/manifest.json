@@ -1,0 +1,16 @@
+{
+ "name": "label-multi",
+ "width": 490,
+ "height": 100,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": 35,
+   "y": -9.92,
+   "w": 420,
+   "h": 139.8
+  }
+ ]
+}

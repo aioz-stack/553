@@ -1,0 +1,16 @@
+{
+ "name": "icon-keys",
+ "width": 40,
+ "height": 40,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": -3,
+   "y": -3,
+   "w": 46,
+   "h": 46
+  }
+ ]
+}

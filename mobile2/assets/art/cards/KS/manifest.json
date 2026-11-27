@@ -1,0 +1,16 @@
+{
+ "name": "cards/KS",
+ "width": 100,
+ "height": 140,
+ "scale": 3,
+ "layers": [
+  {
+   "file": "KS",
+   "kind": "still",
+   "x": -2.4,
+   "y": -2.4,
+   "w": 104.8,
+   "h": 144.8
+  }
+ ]
+}

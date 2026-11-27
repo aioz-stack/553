@@ -1,0 +1,16 @@
+{
+ "name": "label-settings",
+ "width": 300,
+ "height": 64,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": 46.4,
+   "y": -9.28,
+   "w": 207.2,
+   "h": 98.2
+  }
+ ]
+}

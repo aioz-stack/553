@@ -1,0 +1,16 @@
+{
+ "name": "home-title",
+ "width": 560,
+ "height": 120,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": 84,
+   "y": -4.16,
+   "w": 392,
+   "h": 149.4
+  }
+ ]
+}

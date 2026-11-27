@@ -1,0 +1,32 @@
+{
+ "name": "tile-logout-art",
+ "width": 120,
+ "height": 100,
+ "scale": 2.2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": 14,
+   "y": 6,
+   "w": 60,
+   "h": 88
+  },
+  {
+   "file": "01-anim.webp",
+   "kind": "anim",
+   "x": 44,
+   "y": 22,
+   "w": 74,
+   "h": 56,
+   "anim": "lx-nudge",
+   "duration": 1.8,
+   "delay": 0,
+   "timing": "ease-in-out",
+   "pivotX": 0,
+   "pivotY": 0,
+   "unit": 1,
+   "flip": false
+  }
+ ]
+}

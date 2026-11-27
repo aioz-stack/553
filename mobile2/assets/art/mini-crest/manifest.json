@@ -1,0 +1,64 @@
+{
+ "name": "mini-crest",
+ "width": 240,
+ "height": 140,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-anim.webp",
+   "kind": "anim",
+   "x": -5.13,
+   "y": 32.03,
+   "w": 46.69,
+   "h": 100.46,
+   "anim": "lx-sway",
+   "duration": 4,
+   "delay": 0,
+   "timing": "ease-in-out",
+   "pivotX": 18.22,
+   "pivotY": 128.49,
+   "unit": 1,
+   "flip": true
+  },
+  {
+   "file": "01-anim.webp",
+   "kind": "anim",
+   "x": 174.87,
+   "y": 32.03,
+   "w": 46.69,
+   "h": 100.46,
+   "anim": "lx-sway",
+   "duration": 4,
+   "delay": 0,
+   "timing": "ease-in-out",
+   "pivotX": 198.22,
+   "pivotY": 128.49,
+   "unit": 1,
+   "flip": false
+  },
+  {
+   "file": "02-anim.webp",
+   "kind": "anim",
+   "x": 86,
+   "y": -4,
+   "w": 68,
+   "h": 38,
+   "anim": "lx-bob",
+   "duration": 3.2,
+   "delay": 0,
+   "timing": "ease-in-out",
+   "pivotX": 0,
+   "pivotY": 0,
+   "unit": 1,
+   "flip": false
+  },
+  {
+   "file": "03-still.webp",
+   "kind": "still",
+   "x": 48.4,
+   "y": 20.8,
+   "w": 143.2,
+   "h": 116.2
+  }
+ ]
+}

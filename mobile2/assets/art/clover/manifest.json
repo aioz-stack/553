@@ -1,0 +1,16 @@
+{
+ "name": "clover",
+ "width": 64,
+ "height": 64,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.webp",
+   "kind": "still",
+   "x": 3.56,
+   "y": 3.56,
+   "w": 56.87,
+   "h": 62.44
+  }
+ ]
+}
