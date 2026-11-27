@@ -1,0 +1,16 @@
+{
+ "name": "lobby-crest",
+ "width": 400,
+ "height": 160,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 63.94,
+   "y": -4,
+   "w": 272.12,
+   "h": 158
+  }
+ ]
+}

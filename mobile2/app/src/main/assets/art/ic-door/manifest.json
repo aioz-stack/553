@@ -1,0 +1,16 @@
+{
+ "name": "ic-door",
+ "width": 40,
+ "height": 40,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 4,
+   "y": 1,
+   "w": 37,
+   "h": 40
+  }
+ ]
+}

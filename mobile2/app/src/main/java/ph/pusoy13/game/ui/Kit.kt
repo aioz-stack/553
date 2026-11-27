@@ -75,8 +75,9 @@ fun Txt(
     maxLines: Int = Int.MAX_VALUE,
     stroke: Color? = null,
     strokeWidth: Number = 6,
+    italic: Boolean = false,
 ) {
-    val style = TextStyle(fontFamily = font, fontWeight = weight, fontSize = size.ts, lineHeight = (size.toFloat() * 1.12f).ts, color = color, textAlign = align)
+    val style = TextStyle(fontFamily = font, fontWeight = weight, fontStyle = if (italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal, fontSize = size.ts, lineHeight = (size.toFloat() * 1.12f).ts, color = color, textAlign = align)
     if (stroke == null) {
         BasicText(text, modifier, style = style, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
     } else {
@@ -125,15 +126,17 @@ fun GoldFrame(
     }
 }
 
-enum class Tone(val top: Color, val bottom: Color, val text: Color, val edge: Color) {
-    Gold(Color(0xFFFFE46A), Color(0xFFE08A00), Color(0xFF4A1D00), Color(0xFFFFF3A0)),
-    Purple(Color(0xFFA24DFF), Color(0xFF4A0F9A), Color.White, Color(0xFFD8B4FF)),
-    Green(Color(0xFF5EF08A), Color(0xFF0F7A34), Color.White, Color(0xFFB9FFCB)),
-    Blue(Color(0xFF6FD4FF), Color(0xFF1560D0), Color.White, Color(0xFFC7ECFF)),
-    Red(Color(0xFFFF6B5C), Color(0xFFB3121A), Color.White, Color(0xFFFFC2C2)),
-    Dark(Color(0xFF6A1218), Color(0xFF33060A), Color(0xFFFFE9B0), Color(0xFFD9A441)),
+/** The 553 Lobby candy-button tones (lobby/LobbyUI.tsx): gradient, text, border and lip colours. */
+enum class Tone(val fill: List<Color>, val text: Color, val edge: Color, val lip: Color, val lipDy: Int = 7) {
+    Gold(listOf(Color(0xFFFFE46A), Color(0xFFFFC531), Color(0xFFE08A00)), Color(0xFF4A1D00), Color(0xFFFFF3A0), Color(0xFF8A4A00)),
+    Purple(listOf(Color(0xFFC47CFF), Color(0xFF8F2FF0), Color(0xFF5A12B0)), Color.White, Color(0xFFFFD34D), Color(0xFF36086E)),
+    Green(listOf(Color(0xFF5EF08A), Color(0xFF13A344)), Color.White, Color(0xFFC8FFD8), Color(0xFF0B6B2A)),
+    Blue(listOf(Color(0xFF3A8AFF), Color(0xFF0D3FB0)), Color.White, Color(0xFF9AD4FF), Color(0xFF082A78)),
+    Red(listOf(Color(0xFFFF6B5C), Color(0xFFB3121A)), Color.White, Color(0xFFFFC2C2), Color(0xFF6B0606)),
+    Dark(listOf(Color(0xFF6A1218), Color(0xFF33060A)), Color(0xFFFFE9B0), Color(0xFFD9A441), Color(0xFF1A0204), 6),
 }
 
+/** A glossy candy button (LobbyUI `CandyButton`): pill, 4-unit border, solid lip, gloss sweep. */
 @Composable
 fun CandyButton(
     text: String,
@@ -147,11 +150,12 @@ fun CandyButton(
     val shape = RoundedCornerShape(999.u)
     Box(
         modifier
-            .alpha(if (enabled) 1f else 0.5f)
+            .alpha(if (enabled) 1f else 0.55f)
             .tap(enabled, sound, text, onClick)
-            .shadow(6.u, shape)
+            .lip(tone.lipDy, tone.lip, 999)
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(tone.top, tone.bottom)))
+            .background(Brush.verticalGradient(tone.fill))
+            .gloss(dome = false)
             .border(4.u, tone.edge, shape),
         contentAlignment = Alignment.Center,
     ) {
@@ -179,32 +183,75 @@ fun Pill(text: String, modifier: Modifier = Modifier, bg: Color = Color(0x8C0000
 
 // ---------------------------------------------------------------- popups and toasts
 
-/** A centred popup over a dimmed stage. Tapping outside closes it (when `onClose` is set). */
+/**
+ * The 553 popup (LobbyUI `Modal`): dark overlay, a crimson panel in a 10-unit gold frame, the title on
+ * a purple ribbon across the top edge and a round red close button on the corner. Tapping outside
+ * closes it (when `onClose` is set); the content scrolls when it is taller than the screen.
+ */
 @Composable
-fun Modal(title: String?, onClose: (() -> Unit)?, width: Number = 900, height: Number? = null, content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xA6000000)).clickable(remember { MutableInteractionSource() }, null) { onClose?.invoke() }, contentAlignment = Alignment.Center) {
-        GoldFrame(
-            Modifier.width(width.u).then(if (height != null) Modifier.height(height.u) else Modifier.heightIn(max = 860.u)).clickable(remember { MutableInteractionSource() }, null) {},
-            radius = 40, rim = 10,
-        ) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 36.u, vertical = 28.u), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (title != null) {
-                    Txt(title, 42, align = TextAlign.Center, stroke = Color(0xFF3A0204))
-                    Spacer(Modifier.height(14.u))
-                }
-                content()
+fun Modal(title: String?, onClose: (() -> Unit)?, width: Number = 920, height: Number? = null, content: @Composable ColumnScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable(remember { MutableInteractionSource() }, null) { onClose?.invoke() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.padding(top = if (title != null) 42.u else 0.u).popIn(title ?: "modal")) {
+            Box(
+                Modifier.width(width.u).then(if (height != null) Modifier.height(height.u) else Modifier.heightIn(max = 800.u))
+                    .clickable(remember { MutableInteractionSource() }, null) {}
+                    .lip(14, Color(0xFF5A2A00), 46).goldRim(46, 10).padding(10.u),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(38.u)).background(Brush.verticalGradient(listOf(Color(0xFF7A0F16), Color(0xFF55070C), Color(0xFF2E0306))))
+                        .verticalScroll(rememberScrollState()).padding(start = 48.u, end = 48.u, top = if (title != null) 56.u else 36.u, bottom = 36.u),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) { content() }
+            }
+            if (title != null) {
+                Box(
+                    Modifier.align(Alignment.TopCenter).offset(y = (-42).u).lip(7, Color(0xFF36086E), 30).clip(RoundedCornerShape(30.u))
+                        .background(Brush.verticalGradient(listOf(Color(0xFFC47CFF), Color(0xFF8F2FF0), Color(0xFF5A12B0)))).border(5.u, Color(0xFFFFD34D), RoundedCornerShape(30.u)).padding(horizontal = 40.u, vertical = 8.u),
+                ) { Txt(title, 44, stroke = Color(0xFF2A0660), strokeWidth = 4, maxLines = 1) }
             }
             if (onClose != null) {
                 Box(
-                    Modifier.align(Alignment.TopEnd).padding(16.u).size(62.u).tap(label = "Close", onClick = onClose).clip(CircleShape)
-                        .background(Brush.verticalGradient(listOf(Color(0xFFFF6B6B), Color(0xFFC0101A)))).border(4.u, C.GoldEdge, CircleShape),
+                    Modifier.align(Alignment.TopEnd).offset(x = 26.u, y = (-26).u).size(84.u).tap(label = "Close", onClick = onClose).lip(6, Color(0xFF6B0606), 999).clip(CircleShape)
+                        .background(Brush.verticalGradient(listOf(Color(0xFFFF6B5C), Color(0xFFC0101A)))).border(5.u, Color(0xFFFFD34D), CircleShape),
                     contentAlignment = Alignment.Center,
-                ) { Txt("✕", 30) }
+                ) { Txt("✕", 38) }
             }
         }
     }
 }
 
+/**
+ * The compact popup (LobbyUI `Modal compact`): smaller padding and frame, at most `maxHeight` tall;
+ * the content scrolls inside it while `footer` (the action buttons) stays visible.
+ */
+@Composable
+fun CompactModal(title: String, onClose: () -> Unit, width: Number = 820, maxHeight: Number = 780, footer: (@Composable ColumnScope.() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable(remember { MutableInteractionSource() }, null) { onClose() }.padding(top = 36.u), contentAlignment = Alignment.Center) {
+        Box(Modifier.popIn(title)) {
+            Box(
+                Modifier.width(width.u).heightIn(max = maxHeight.u).clickable(remember { MutableInteractionSource() }, null) {}
+                    .lip(10, Color(0xFF5A2A00), 36).goldRim(36, 8).padding(8.u),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(30.u)).background(Brush.verticalGradient(listOf(Color(0xFF7A0F16), Color(0xFF55070C), Color(0xFF2E0306))))
+                        .padding(start = 32.u, end = 32.u, top = 36.u, bottom = 20.u),
+                ) {
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(end = 4.u)) { content() }
+                    if (footer != null) Column(Modifier.fillMaxWidth().padding(top = 12.u), horizontalAlignment = Alignment.CenterHorizontally) { footer() }
+                }
+            }
+            Box(
+                Modifier.align(Alignment.TopCenter).offset(y = (-34).u).lip(6, Color(0xFF36086E), 26).clip(RoundedCornerShape(26.u))
+                    .background(Brush.verticalGradient(listOf(Color(0xFFC47CFF), Color(0xFF8F2FF0), Color(0xFF5A12B0)))).border(4.u, Color(0xFFFFD34D), RoundedCornerShape(26.u)).padding(horizontal = 32.u, vertical = 4.u),
+            ) { Txt(title, 36, maxLines = 1) }
+            Box(
+                Modifier.align(Alignment.TopEnd).offset(x = 20.u, y = (-20).u).size(66.u).tap(label = "Close", onClick = onClose).lip(5, Color(0xFF6B0606), 999).clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(Color(0xFFFF6B5C), Color(0xFFC0101A)))).border(4.u, Color(0xFFFFD34D), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Txt("✕", 30) }
+        }
+    }
+}
 
 class ToastState {
     var message by mutableStateOf<Pair<Boolean, String>?>(null)

@@ -1,0 +1,16 @@
+{
+ "name": "shop-key",
+ "width": 60,
+ "height": 60,
+ "scale": 6,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -0.87,
+   "y": -0.87,
+   "w": 58.91,
+   "h": 58.91
+  }
+ ]
+}

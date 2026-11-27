@@ -1,0 +1,16 @@
+{
+ "name": "sp-name-intermediate",
+ "width": 256,
+ "height": 60,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 8.8,
+   "y": -1.12,
+   "w": 238.4,
+   "h": 75.8
+  }
+ ]
+}

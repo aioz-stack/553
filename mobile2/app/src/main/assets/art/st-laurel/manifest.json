@@ -1,0 +1,16 @@
+{
+ "name": "st-laurel",
+ "width": 60,
+ "height": 80,
+ "scale": 3,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 6.72,
+   "y": -1.96,
+   "w": 47.28,
+   "h": 81.96
+  }
+ ]
+}

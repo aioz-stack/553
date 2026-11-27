@@ -1,0 +1,16 @@
+{
+ "name": "ic-crown-row",
+ "width": 40,
+ "height": 30,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -3,
+   "y": -2,
+   "w": 46,
+   "h": 32
+  }
+ ]
+}

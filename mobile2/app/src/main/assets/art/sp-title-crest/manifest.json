@@ -1,0 +1,16 @@
+{
+ "name": "sp-title-crest",
+ "width": 740,
+ "height": 210,
+ "scale": 1.5,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 36,
+   "y": -8.86,
+   "w": 668,
+   "h": 198.86
+  }
+ ]
+}

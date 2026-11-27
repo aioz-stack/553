@@ -1,0 +1,16 @@
+{
+ "name": "ic-people",
+ "width": 44,
+ "height": 32,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -1,
+   "y": 0,
+   "w": 46,
+   "h": 34
+  }
+ ]
+}

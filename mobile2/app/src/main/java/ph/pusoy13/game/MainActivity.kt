@@ -39,7 +39,8 @@ class MainActivity : ComponentActivity() {
         immersive()
         setContent {
             // Composed first, so a screen's own BackHandler (composed later) takes priority.
-            BackHandler(enabled = Nav.stack.size > 1) { Nav.back() }
+            // Like /mobile's NativeShell: go back, or minimize (not close) the app on the first screen.
+            BackHandler { if (Nav.stack.size > 1) Nav.back() else moveTaskToBack(true) }
             PusoyRoot()
         }
     }

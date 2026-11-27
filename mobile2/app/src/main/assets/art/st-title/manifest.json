@@ -1,0 +1,16 @@
+{
+ "name": "st-title",
+ "width": 330,
+ "height": 86,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 14.6,
+   "y": -8.44,
+   "w": 300.8,
+   "h": 120.6
+  }
+ ]
+}

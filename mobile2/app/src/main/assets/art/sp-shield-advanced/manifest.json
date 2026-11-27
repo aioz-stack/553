@@ -1,0 +1,16 @@
+{
+ "name": "sp-shield-advanced",
+ "width": 210,
+ "height": 128,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -99.65,
+   "y": -48,
+   "w": 155.65,
+   "h": 110
+  }
+ ]
+}

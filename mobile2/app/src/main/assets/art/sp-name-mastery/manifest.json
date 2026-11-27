@@ -1,0 +1,16 @@
+{
+ "name": "sp-name-mastery",
+ "width": 256,
+ "height": 60,
+ "scale": 2,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": 36.4,
+   "y": -7.04,
+   "w": 183.2,
+   "h": 88.6
+  }
+ ]
+}

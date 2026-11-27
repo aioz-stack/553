@@ -1,0 +1,16 @@
+{
+ "name": "st-gear",
+ "width": 40,
+ "height": 40,
+ "scale": 4,
+ "layers": [
+  {
+   "file": "00-still.png",
+   "kind": "still",
+   "x": -2,
+   "y": -2,
+   "w": 44,
+   "h": 44
+  }
+ ]
+}
