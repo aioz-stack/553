@@ -116,6 +116,24 @@ that makes the WebView load a page itself must not depend on the served HTML:
   screens). Native start-up is portrait.
 Icons/splash: edit `mobile/assets/*.svg`, re-render the PNGs, then `npm run assets`.
 
+### Mobile app — React Native rebuild (`mobile2/`, started 2026-11-27)
+
+The Capacitor app above drew its CSS/SVG-heavy design inside an Android WebView, which stuttered on
+real phones (GPU-layer and repaint limits) even after tuning. `mobile2/` is the replacement: an
+**Expo (React Native) app** using the same `/api/v1` API (Sanctum bearer token) and the same Reverb
+server, with no game or wallet logic of its own. Full setup and APK build steps: **`mobile2/README.md`**.
+
+- Native views; animations run on the UI thread (Reanimated) and only transform pre-rendered images.
+- The design is the web app's: scenes, tile art, labels, cards and table were exported from the web
+  components (`mobile2/scripts/art/`) as still layers + moving parts, and replayed natively with the
+  same keyframes. Screens use the same 1600×900 coordinates.
+- Backend for the build: `mobile2/.env` (`EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_REVERB_*`; match Laravel's
+  `REVERB_*`). Emulator → this PC: `10.0.2.2`.
+- App id `ph.pusoy13.native` (installs next to the Capacitor app until it replaces it).
+- Ported: auth, home, settings, Single Player, Multiplayer (lobbies, waiting room, table). Not yet:
+  Shop, Create Lobby, friend management, avatar change, sound, deal/reveal shows, Lucky Hand,
+  free-Gold claim, history screens, push, maintenance screen (see `mobile2/README.md` §10).
+
 ### Tests
 
 ```bash
@@ -1109,26 +1127,34 @@ Not done / not verified:
   `tests/Feature/PlatformAccessTest.php` turns it on and tests every role on both platforms, token reuse, session
   reuse, maintenance and the player switch.
 
-### 2026-11-24 — New login screens (Web App and Mobile Game)
+### 2026-11-24 — Login screens (Web App redesigned 2026-11-27; Mobile Game artwork)
 
-- Both login screens are the Pusoy553 login artwork with a working form laid over the fields drawn in it:
-  Username, Password, show / hide password, LOG IN — nothing else (no Forgot Password, Create Account or register links).
-  - Web App: `resources/js/Pages/Auth/Login.tsx` + `Components/LoginArt.tsx`, artwork `public/images/login-art.webp`.
-  - Mobile Game: `mobile/src/app/login/page.tsx` + `mobile/src/components/LoginArt.tsx`, artwork `mobile/public/login-art.webp`,
-    landscape lock (a portrait browser rotates the stage).
-- Full screen, never cropped: the stage box has the artwork's aspect ratio (1672 × 941) and the largest size that fits
-  the screen inside the safe areas (`min(100cqw, 100cqh × ratio)` — scaled by the tighter dimension; the image is
-  `object-contain`). Spare space (screens of another shape) is filled edge to edge by mirrored copies of the artwork's
-  own edges, seamless at the border and fading out (sides and floor ~20 %, top only a sliver so the logo never repeats),
-  over a soft ambient copy. When there is spare height, the stage moves up so the login panel sits at the screen's
-  centre, never further than the spare space. Input text is at least 12 px.
+- **Web App** (`resources/js/Pages/Auth/Login.tsx`): rebuilt on Baseplate's split-screen login — a form column on the
+  left using the template's input / button / alert tokens (leading field icons, show / hide password, Caps Lock hint,
+  submit disabled until both fields are filled, loading state) and a Pusoy 13 brand panel on the right
+  (`bg-brand-950`, Baseplate grid shapes, royal-flush card fan from `Components/CardArt.tsx`, feature list, live
+  multiplayer badge, theme toggle). Below `lg` the brand panel is hidden and the form column keeps the logo, a
+  `Web App` badge and the footer. Server messages are shown as Baseplate alerts; the one-session error opens a
+  Baseplate alert dialog ("Account already connected" / "Signed out"). The old artwork overlay
+  (`Components/LoginArt.tsx`) was removed; `public/images/login-art.webp` is no longer used by the web app.
+  Tests: `resources/js/Pages/Auth/Login.test.tsx` (form gating, password reveal, credential / platform errors,
+  session dialog, flash notices) and `tests/Feature/AuthAndCrudTest.php`.
+- **Mobile Game** (`mobile/src/app/login/page.tsx` + `mobile/src/components/LoginArt.tsx`): unchanged Pusoy553 login
+  artwork with a working form laid over the fields drawn in it — Username, Password, show / hide password, LOG IN.
+  Artwork `mobile/public/login-art.webp`, landscape lock (a portrait browser rotates the stage).
+- Mobile artwork layout: full screen, never cropped — the stage box has the artwork's aspect ratio (1672 × 941) and the
+  largest size that fits the screen inside the safe areas (`min(100cqw, 100cqh × ratio)` — scaled by the tighter
+  dimension; the image is `object-contain`). Spare space (screens of another shape) is filled edge to edge by mirrored
+  copies of the artwork's own edges, seamless at the border and fading out (sides and floor ~20 %, top only a sliver so
+  the logo never repeats), over a soft ambient copy. When there is spare height, the stage moves up so the login panel
+  sits at the screen's centre, never further than the spare space. Input text is at least 12 px.
   The root uses `overflow: clip` so focusing a field can never scroll the artwork. Controls are positioned in artwork
-  pixels (measured from the images, see `WEB_LOGIN_ART` / `LOGIN_ART`) and text uses container units, so they stay on
-  the drawn fields at any size. While a field is focused or filled, its fill colour covers the drawn label.
-- Behaviour is unchanged: same endpoints (`POST /login`, `POST /api/v1/auth/login`), loading state ("SIGNING IN…"),
-  the server's messages (wrong credentials, pending / suspended / banned, platform rules, maintenance) under the button.
-- The register / forgot-password pages still exist for registration links and password resets but are no longer linked
-  from the login screens. Tests: `mobile/src/app/login/page.test.tsx`; the web login is covered by AuthAndCrudTest.
+  pixels (measured from the image, see `LOGIN_ART`) and text uses container units, so they stay on the drawn fields at
+  any size. While a field is focused or filled, its fill colour covers the drawn label.
+- Both: same endpoints (`POST /login`, `POST /api/v1/auth/login`) and the same server messages (wrong credentials,
+  pending / suspended / banned, platform rules, maintenance). The register / forgot-password pages still exist for
+  registration links and password resets but are not linked from either login screen. Mobile test:
+  `mobile/src/app/login/page.test.tsx`.
 
 ## Account type name: Agent → Incorporator
 
