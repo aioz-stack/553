@@ -54,6 +54,7 @@ export default function LandscapeStage({ background, children }: { background: R
       >
         <div className="absolute inset-0">{background}</div>
         <div
+          data-stage
           className="absolute left-1/2 top-1/2"
           style={{ width: STAGE_W, height: STAGE_H, transform: `translate(-50%, -50%) scale(${scale})` }}
         >

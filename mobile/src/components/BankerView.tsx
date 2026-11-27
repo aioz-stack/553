@@ -118,7 +118,7 @@ export function BankerRoundSheet({ session, userId, nextIn, onClose }: { session
   const net = Number(mine?.net ?? 0);
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end bg-black/70 backdrop-blur-sm" role="dialog" aria-label="Round results">
+    <div className="fixed inset-0 overlay-bleed z-30 flex items-end bg-black/70 backdrop-blur-sm" role="dialog" aria-label="Round results">
       {net > 0 && <Confetti />}
       <div className="safe-bottom animate-pop w-full rounded-t-[2rem] border-t-4 border-gold-400 bg-gradient-to-b from-night-700 to-night-950 px-5 pt-6">
         <div className="-mt-12 mb-2 text-center">
@@ -205,7 +205,7 @@ export function MatchOverSheet({ standings, userId, currency, reason, roundsPlay
   const iWon = top && top.user_id === userId && Number(top.net) > 0;
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end bg-black/75 backdrop-blur-sm" role="dialog" aria-label="Final results">
+    <div className="fixed inset-0 overlay-bleed z-30 flex items-end bg-black/75 backdrop-blur-sm" role="dialog" aria-label="Final results">
       {iWon && <Confetti count={40} />}
       <div className="safe-bottom animate-pop w-full rounded-t-[2rem] border-t-4 border-gold-400 bg-gradient-to-b from-night-700 to-night-950 px-5 pt-6">
         <div className="-mt-12 mb-2 text-center">

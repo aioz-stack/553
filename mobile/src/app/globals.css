@@ -591,3 +591,93 @@ body {
 @keyframes og-twinkle { 0%, 100% { opacity: .2; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.15); } }
 @keyframes og-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 [data-quality="low"] .og-rays, [data-motion="reduce"] .og-rays, [data-motion="reduce"] .og-float, [data-motion="reduce"] .og-twinkle, [data-motion="reduce"] .og-claim { animation: none; }
+
+/* ------------------------------------------------------------------
+ * Native app (Capacitor WebView) performance.
+ * <html data-native> is set before first paint by lib/nativeBoot.ts.
+ *
+ * A desktop browser has the GPU headroom to repaint the effects below on every frame; a phone
+ * WebView does not, which makes the APK stutter while `npm run dev` on localhost looks smooth.
+ * Only animations of transform / opacity run on the compositor; anything that animates a
+ * gradient angle (--lx-a), background-position, filter, text-shadow or box-shadow — and any
+ * animation *inside* an SVG — forces a main-thread repaint each frame. Here those are frozen on
+ * a good-looking frame or replaced with transform/opacity versions. Browsers are untouched.
+ * ------------------------------------------------------------------ */
+
+/* Fixed backgrounds repaint the whole screen on every scroll frame in mobile WebViews. */
+:root[data-native] .game-bg { background-attachment: scroll; }
+
+/* Backdrop blur re-blurs everything underneath on every frame; the tints alone look the same here. */
+:root[data-native] .glass,
+:root[data-native] [class*='backdrop-blur'] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Rotating conic rims (animated custom property) and sliding gold / text shimmers: hold still. */
+:root[data-native] .gold-rim,
+:root[data-native] .gold-rim::after,
+:root[data-native] .lx-gold,
+:root[data-native] .lx-gold::after,
+:root[data-native] .lx-rim,
+:root[data-native] .lx-text-shine { animation: none !important; }
+:root[data-native] .lx-gold,
+:root[data-native] .gold-rim { background-position: 30% 50%; }
+:root[data-native] .lx-rim { filter: none; }
+
+/* Glitter (components/Sparkles.tsx): dozens of separately animated flecks. Each becomes its own GPU
+   layer and pushes everything painted above it onto layers too — measured on the Android home
+   screen: 200 layers / 43 Mpx at ~8 fps with them, 24 layers at ~58 fps without. Same as Medium. */
+:root[data-native] .lx-fleck,
+:root[data-native] .lx-dot { display: none !important; }
+
+/* Pulsing glows animated through filter / text-shadow / box-shadow → opacity / transform. */
+:root[data-native] .lx-glow { animation: none; filter: drop-shadow(0 0 10px rgb(255 210 80 / 0.7)); }
+:root[data-native] .lx-glint { animation: nx-glint 3.5s ease-in-out infinite; }
+:root[data-native] .lx-twinkle-soft { animation: nx-pulse 2.4s ease-in-out infinite; }
+:root[data-native] .cs-start-glow { animation: nx-pulse 1.4s ease-in-out infinite; filter: drop-shadow(0 0 14px rgb(255 225 77 / 0.7)); }
+:root[data-native] .lx-text-glow { animation: none; text-shadow: 0 3px 0 rgb(0 0 0 / 0.45), 0 0 10px rgb(255 214 90 / 0.6); }
+:root[data-native] .lx-pulse-dot { animation: none; box-shadow: 0 0 0 3px rgb(47 209 79 / 0.35); }
+@keyframes nx-glint { 0%, 100% { transform: rotate(-6deg) scale(1); } 50% { transform: rotate(6deg) scale(1.08); } }
+@keyframes nx-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+
+/* Short scene transitions: same motion without the per-frame blur. */
+:root[data-native] .cs-enter { animation-name: nx-cs-enter; }
+:root[data-native] .cs-exit { animation-name: nx-cs-exit; }
+:root[data-native] .cs-count { animation-name: nx-cs-count; }
+@keyframes nx-cs-enter { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+@keyframes nx-cs-exit { to { opacity: 0; transform: scale(1.12); } }
+@keyframes nx-cs-count { 0% { opacity: 0; transform: scale(2.6) rotateX(50deg); } 30% { opacity: 1; transform: scale(1) rotateX(0); } 80% { opacity: 1; transform: scale(.94); } 100% { opacity: 0; transform: scale(.6); } }
+
+/* Dragged card: lift with transform only; the deeper shadow is applied once, not animated. */
+:root[data-native] .cd-lift { animation: nx-lift .14s ease-out both; filter: drop-shadow(0 12px 10px rgb(0 0 0 / .4)); }
+@keyframes nx-lift { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+
+/* Full-screen SVG backdrops (table room, beach): on their own GPU layer, so the scene's own motion
+   (waves, clouds, palms, lantern, stars, petals) repaints only the scene and cards / UI animating
+   over it never force it to re-rasterise. The motion plays at High, as in the browser; at Medium
+   (picked, or set by lib/perfGuard.ts on a phone that drops frames) the native Medium rule below
+   holds it still and hides the petals. */
+:root[data-native] .scene-bg { transform: translateZ(0); }
+
+/* Native app at Medium (picked in Settings, or set automatically by lib/perfGuard.ts when the phone
+   drops frames): also hold the idle decoration loops — the motion inside SVG artwork (redrawn on
+   the CPU each frame) and the idle spring bounce. Traced on the Android home screen this cuts the
+   per-frame layerize work ~5x and draw work ~4x. Game animations (deal, reveal, drag) still play. */
+:root[data-native][data-quality='medium'] svg [class*='lx-'],
+:root[data-native][data-quality='medium'] svg [class*='tb-'],
+:root[data-native][data-quality='medium'] .lx-spring,
+:root[data-native][data-quality='medium'] .lx-spring-icon,
+:root[data-native][data-quality='medium'] .lx-spring-soft,
+:root[data-native][data-quality='medium'] .lx-bob-slow { animation: none !important; }
+:root[data-native][data-quality='medium'] .lx-tile { will-change: auto; }
+
+/* Dialog backdrops on the fixed 16:9 stage (components/LandscapeStage.tsx). A phone that is wider
+   or taller than 16:9 (e.g. 20:9) shows margins around the stage, and a backdrop sized to the stage
+   left them undimmed — a visible box edge around every dialog. The transparent border reaches the
+   screen edges (the background paints under it) while the dialog's content box stays exactly where
+   it was. Inside the stage, `fixed` is relative to the stage too (it is transformed), so both need it. */
+[data-stage] .overlay-bleed {
+  inset: -1600px;
+  border: 1600px solid transparent;
+}

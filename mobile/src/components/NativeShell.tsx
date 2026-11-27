@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useMotionSync } from '@/lib/motion';
 import { useMusicPlayer } from '@/lib/music';
+import { startPerfGuard } from '@/lib/perfGuard';
 import { initOrientation } from '@/lib/useLandscapeLock';
 
 /**
@@ -12,6 +13,8 @@ import { initOrientation } from '@/lib/useLandscapeLock';
 export default function NativeShell() {
   useMotionSync();
   useMusicPlayer();
+  // Phones that cannot draw every effect smoothly step Motion Effects down by themselves.
+  useEffect(() => startPerfGuard(), []);
   useEffect(() => {
     (async () => {
       const { Capacitor } = await import('@capacitor/core');

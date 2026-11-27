@@ -106,7 +106,7 @@ export default function AvatarPicker({ onClose, onSaved }: { onClose: () => void
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/65 p-3" onClick={onClose}>
+    <div className="fixed inset-0 overlay-bleed z-[200] flex items-center justify-center bg-black/65 p-3" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"

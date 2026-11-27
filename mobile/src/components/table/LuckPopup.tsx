@@ -210,7 +210,7 @@ export default function LuckPopup({
 
   return (
     <div className="absolute inset-0 z-40" role="dialog" aria-modal="true" aria-label="Declared Luck">
-      <div className="sp-fade absolute inset-0 bg-black/60" />
+      <div className="sp-fade absolute inset-0 overlay-bleed bg-black/60" />
       <div className="sp-pop absolute left-[60px] top-[24px] h-[852px] w-[1480px]">
         <div className="lx-gold absolute inset-0 rounded-[48px] shadow-[0_14px_0_#7a3e00,0_30px_60px_rgb(0_0_0/0.6)]" />
         <div className="absolute inset-[12px] overflow-hidden rounded-[38px] bg-[radial-gradient(90%_80%_at_50%_45%,#1fa046,#0e6a2a_70%,#09481c)]">

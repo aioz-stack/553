@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MOTION_KEY, QUALITY_KEY } from './motionBoot';
+import { AUTO_QUALITY_KEY, MOTION_KEY, QUALITY_KEY } from './motionBoot';
 
 /**
  * Motion effects quality (Settings → Motion Effects):
@@ -12,6 +12,9 @@ import { MOTION_KEY, QUALITY_KEY } from './motionBoot';
  *
  * Written to <html data-quality="low|medium|high"> and <html data-motion="reduce|full"> (low = reduce);
  * globals.css switches effects off from those. Changes apply immediately (listeners re-render).
+ *
+ * Without a chosen level, the native app may lower itself to Medium / Low after measuring that this
+ * device drops frames (lib/perfGuard.ts → AUTO_QUALITY_KEY). Picking a level in Settings overrides it.
  *
  * Before a level is chosen, the older auto/on/off choice decides (auto follows the device's
  * reduce-motion setting): off → low, on → high, auto → low on reduce-motion devices, else high.
@@ -42,14 +45,33 @@ export function qualityChosen(): boolean {
   return q === 'low' || q === 'medium' || q === 'high';
 }
 
+/** The level this device lowered itself to after measuring dropped frames, if any. */
+export function autoQuality(): Quality | null {
+  const a = read(AUTO_QUALITY_KEY);
+  return a === 'low' || a === 'medium' ? a : null;
+}
+
 /**
- * The quality level in effect now: the level the player picked, else High (on every device). Only
- * the older explicit "motion off" choice still means Low.
+ * The quality level in effect now: the level the player picked, else High — unless this device
+ * measured that it cannot keep up (autoQuality). Only the older explicit "motion off" choice still
+ * means Low.
  */
 export function quality(): Quality {
   const q = read(QUALITY_KEY);
   if (q === 'low' || q === 'medium' || q === 'high') return q;
-  return motionPref() === 'off' ? 'low' : 'high';
+  if (motionPref() === 'off') return 'low';
+  return autoQuality() ?? 'high';
+}
+
+/** Store the level the device measured it needs (not a player choice; Settings still overrides). */
+export function setAutoQuality(q: Quality): void {
+  try {
+    if (q === 'high') localStorage.removeItem(AUTO_QUALITY_KEY);
+    else localStorage.setItem(AUTO_QUALITY_KEY, q);
+  } catch {
+    // storage unavailable: applies for this session only
+  }
+  apply();
 }
 
 /** Forget a level this device stored without the player choosing it: the device decides again. */

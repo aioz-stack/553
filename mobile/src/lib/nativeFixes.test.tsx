@@ -94,6 +94,17 @@ describe('native deep-route guard', () => {
     new Function(NATIVE_ROUTE_BOOT_SCRIPT)();
     expect(sessionStorage.getItem(RESUME_KEY)).toBeNull();
   });
+
+  it('marks <html data-native> in the app only, so globals.css can use the lighter effects', () => {
+    delete document.documentElement.dataset.native;
+    new Function(NATIVE_ROUTE_BOOT_SCRIPT)();
+    expect(document.documentElement.dataset.native).toBeUndefined();
+
+    (window as unknown as { Capacitor: unknown }).Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android' };
+    new Function(NATIVE_ROUTE_BOOT_SCRIPT)();
+    expect(document.documentElement.dataset.native).toBe('android');
+    delete document.documentElement.dataset.native;
+  });
 });
 
 describe('fix-export', () => {

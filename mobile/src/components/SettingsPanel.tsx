@@ -191,7 +191,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex justify-center bg-black/55" onClick={onClose}>
+    <div className="absolute inset-0 overlay-bleed z-50 flex justify-center bg-black/55" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()} className="sp-pop relative mt-[30px] h-[858px] w-[1060px] rounded-[58px] bg-gradient-to-b from-[#f9b25a] via-[#e8822c] to-[#b14d12] p-[12px] shadow-[0_14px_0_#6a2a0c,0_20px_40px_rgb(0_0_0/0.45)]">
         {/* header ribbon */}
         <div className="absolute -top-[40px] left-1/2 z-20 flex -translate-x-1/2 items-end">
