@@ -473,24 +473,19 @@ fun PlayScreen(tableId: Int) {
                             "Arrange your 13 cards into Front (3), Middle (5) and Back (5). Each lane is compared with the banker's: win all 3 = 2× bet, win 2 = 1×; lose 2 = −1×, lose all 3 = −2×. An identical lane goes to the banker.",
                         ).forEach { Txt(it, 22, modifier = Modifier.fillMaxWidth().padding(vertical = 4.u)) }
                     }
+                    // Leave only in the Betting Phase (the server decides: `leave.allowed`, and refuses
+                    // the request otherwise). Outside it the button stays disabled and there is no
+                    // other way off the table here, as in /mobile.
                     "leave" -> Modal("Leave the table?", { panel = null }, width = 820) {
-                        if (leaveAllowed) {
-                            Txt(if (matchOver) "The match is over." else "You can leave during the Betting Phase. Your finished rounds stay settled.", 24, align = TextAlign.Center)
-                            Row(Modifier.padding(top = 22.u), horizontalArrangement = Arrangement.spacedBy(20.u)) {
-                                CandyButton("Stay", Modifier.size(240.u, 78.u), Tone.Dark, size = 30) { panel = null }
-                                CandyButton("Leave", Modifier.size(260.u, 78.u), Tone.Red, size = 30, enabled = !busy) {
-                                    busy = true
-                                    scope.launch {
-                                        try { if (!matchOver) Api.post("/tables/$tableId/leave"); Session.walletChanged(); Nav.replace(Route.Lobby) } catch (e: Exception) { toast.show(false, errorText(e)); panel = null }
-                                        busy = false
-                                    }
+                        Txt(if (leaveAllowed) (if (matchOver) "The match is over." else "You can leave now, during betting. The match continues for the others.") else leaveReason ?: "", 24, align = TextAlign.Center)
+                        Row(Modifier.padding(top = 22.u), horizontalArrangement = Arrangement.spacedBy(20.u)) {
+                            CandyButton("Stay", Modifier.size(240.u, 78.u), Tone.Dark, size = 30) { panel = null }
+                            CandyButton("Leave", Modifier.size(260.u, 78.u), Tone.Red, size = 30, enabled = leaveAllowed && !busy) {
+                                busy = true
+                                scope.launch {
+                                    try { if (!matchOver) Api.post("/tables/$tableId/leave"); Session.walletChanged(); Nav.replace(Route.Lobby) } catch (e: Exception) { toast.show(false, errorText(e)); panel = null }
+                                    busy = false
                                 }
-                            }
-                        } else {
-                            Txt(leaveReason ?: "", 24, align = TextAlign.Center)
-                            Row(Modifier.padding(top = 22.u), horizontalArrangement = Arrangement.spacedBy(20.u)) {
-                                CandyButton("Keep Playing", Modifier.size(300.u, 78.u), size = 30) { panel = null }
-                                CandyButton("Game Home", Modifier.size(280.u, 78.u), Tone.Dark, size = 28) { Nav.reset(Route.Home()) }
                             }
                         }
                     }

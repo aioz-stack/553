@@ -109,3 +109,51 @@ test('the banker may leave in Betting before any bet: that round is void (nothin
         ->and(WalletTransaction::query()->count())->toBe($before)
         ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
 });
+
+test('closing the app or refreshing mid-round is not a way out: the player stays seated, the round finishes, Leave returns in the next Betting Phase', function () {
+    [$table, $session, $banker, [$a, $b, $c]] = lrMatch($this);
+    $match = app(BankerMatchService::class);
+    foreach ([$a, $b, $c] as $u) {
+        $match->placeBet($u, $session->fresh(), $session->config['min_bet']);
+    }
+    $match->closeBetting($session->fresh(), true);
+    expect($session->fresh()->status->value)->toBe('ARRANGING');
+
+    // $a closes the app: no more heartbeats; the sweep marks them disconnected — still seated.
+    $this->travel((int) config('pusoy.game.disconnect_after_seconds') + 5)->seconds();
+    app(\App\Services\Game\TableService::class)->sweep();
+    $seat = GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $a->id)->first();
+    expect($seat)->not->toBeNull()->and($seat->is_connected)->toBeFalse();
+
+    // A refresh (or a scripted request) trying to leave is refused the same way.
+    $this->actingAs($a, 'sanctum')->postJson("/api/v1/tables/{$table->id}/leave")->assertStatus(409)
+        ->assertJsonPath('error', 'leave_not_allowed');
+
+    // Everyone else submits; the arrangement timer runs out; $a's hand is played for them.
+    foreach ([$b, $c, $banker] as $u) {
+        $cards = \App\Models\GameCard::query()->where('game_session_id', $session->id)->where('user_id', $u->id)->first();
+        $arr = \App\Game\AutoArranger::arrange($cards->cards);
+        app(\App\Services\Game\GameEngine::class)->submit($u, $session->fresh(), $arr->front, $arr->middle, $arr->back);
+    }
+    $this->travel(5)->minutes();
+    app(\App\Services\Game\GameEngine::class)->expire($session->fresh());
+    expect($session->fresh()->status->value)->toBe('COMPLETED')
+        ->and(\App\Models\GameResult::query()->where('game_session_id', $session->id)->where('user_id', $a->id)->exists())->toBeTrue()
+        ->and(GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $a->id)->exists())->toBeTrue()
+        ->and(app(WalletService::class)->reconcile()['ok'])->toBeTrue();
+
+    // Results / the pause before the next round: still no way out.
+    $this->actingAs($a, 'sanctum')->postJson("/api/v1/tables/{$table->id}/leave")->assertStatus(409);
+
+    // $a comes back for the next round's Betting Phase: Leave is enabled again and works.
+    foreach ([$a, $b, $c, $banker] as $u) {
+        $this->actingAs($u, 'sanctum')->postJson("/api/v1/tables/{$table->id}/heartbeat")->assertOk();
+    }
+    $this->travel(10)->seconds();
+    $match->startRound($table->fresh()); // no-op if the next round already started
+    $next = GameSession::query()->findOrFail($table->fresh()->current_session_id);
+    expect($next->round_number)->toBe(2)->and($next->status->value)->toBe('BETTING');
+    $this->actingAs($a, 'sanctum')->getJson("/api/v1/tables/{$table->id}")->assertJsonPath('data.leave.allowed', true);
+    $this->actingAs($a, 'sanctum')->postJson("/api/v1/tables/{$table->id}/leave")->assertOk();
+    expect(GamePlayer::query()->where('game_table_id', $table->id)->where('user_id', $a->id)->exists())->toBeFalse();
+});

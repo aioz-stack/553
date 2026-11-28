@@ -2225,3 +2225,12 @@ All seated players now move from the Waiting Room into the game together, on one
 - **Apps (`/mobile` `lib/lobby.ts`, mobile2 `screens/Room.kt`).** At 0 they look at the lobby straight away and then a few more times in quick succession (about 3 s in total) instead of once followed by the 1 s poll. mobile2 opens the table as soon as the lobby is `IN_GAME` (the 400 ms pause is removed). /mobile keeps its 650 ms exit animation, which is the same on every phone.
 - A queue worker is still needed for `StartLobbyMatch` and the round timers: `php artisan queue:work --sleep=1`. On the database queue, `--sleep=1` keeps a delayed job within about 1 s of its time.
 - Tests: `tests/Feature/LobbyStartSyncTest.php`.
+
+## Leave Game restriction: closing the app, and mobile2's Leave panel
+
+The Betting-Phase-only rule (see "Leave Game only in the Betting Phase") is enforced on the server. These checks and fixes complete it:
+
+- **Every way off a table goes through `assertCanLeave`:** `POST tables/{id}/leave`, the lobby owner's kick (before the match only), and the release of long-gone seats (lobby, before the match only). The inactive-player removal in `startRound` runs when a new round opens, at the start of its Betting Phase.
+- **Closing the app, refreshing, navigating away or losing the connection never removes a player.** The sweep marks them disconnected; they stay seated, their hand is auto-arranged when the timer runs out, and the round settles normally. A leave request in the meantime gets 409 `leave_not_allowed`. Leave works again in the next round's Betting Phase.
+- **mobile2:** the Leave panel now matches /mobile: Stay and Leave buttons in every phase, with Leave disabled outside the Betting Phase and the server's reason shown. The "Game Home" button that let a player walk away from the table mid-round is removed. The Android back button opens this panel.
+- Test: `LeaveRulesTest` "closing the app or refreshing mid-round is not a way out".
