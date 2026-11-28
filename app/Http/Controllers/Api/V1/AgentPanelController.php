@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AgentLevel;
 use App\Enums\Currency;
 use App\Enums\Role;
 use App\Enums\UserStatus;
@@ -14,6 +15,7 @@ use App\Models\AgentPlayer;
 use App\Models\ChipLoad;
 use App\Models\User;
 use App\Services\Agent\TeamService;
+use App\Services\Users\RegistrationReview;
 use App\Services\Wallet\WalletService;
 use App\Support\Points;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,9 +26,11 @@ use Illuminate\Http\Request;
  * The Agent Panel (Incorporators and Master Agents): the same screens as the Admin
  * Panel — Overview, Load Logs, Revenue Logs, Revenue Commission Withdrawal, Agents / Players —
  * served by the same code, limited to the signed-in agent and its own downline. Agents can
- * load Chips to their own players, request Chips and request commission withdrawals; every
- * approval, ban, archive, withdrawal of Chips and rate change stays with the Administrators
- * (those routes are not registered here and the services refuse them for agents).
+ * load Chips to their own players, request Chips and request commission withdrawals, and approve
+ * or reject the registrations made through their OWN links (RegistrationController /
+ * RegistrationReview: Incorporators → Master Agents and Players, Master Agents → Players).
+ * Bans, archive, withdrawal of Chips and rate changes stay with the Administrators (those routes
+ * are not registered here and the services refuse them for agents).
  */
 class AgentPanelController extends PanelController
 {
@@ -38,7 +42,7 @@ class AgentPanelController extends PanelController
         $agent = $this->agentOf($me);
         $team = $this->team();
         $wallets = app(WalletService::class);
-        $level = $agent->level ?? \App\Enums\AgentLevel::Agent; // older agents have no level: the top level
+        $level = $agent->level ?? AgentLevel::Agent; // older agents have no level: the top level
 
         $levels = $team['agents'] === [] ? collect() : Agent::query()->whereIn('agents.user_id', $team['agents'])
             ->join('users', 'users.id', '=', 'agents.user_id')->where('users.status', UserStatus::Active->value)
@@ -63,7 +67,8 @@ class AgentPanelController extends PanelController
             ],
             'active_players' => (clone $downline)->where('role', Role::Player->value)->where('status', UserStatus::Active->value)->count(),
             'my_players' => count($team['owned']),
-            'pending_users' => (clone $downline)->where('status', UserStatus::Pending->value)->count(),
+            // Registrations waiting for THIS agent's approval (its own links; RegistrationReview).
+            'pending_users' => RegistrationReview::scope(User::query(), $me)->where('users.status', UserStatus::Pending->value)->count(),
             'banned_users' => (clone $downline)->whereIn('status', [UserStatus::Banned->value, UserStatus::Suspended->value])->count(),
             'pending_chip_requests' => ChipLoad::query()->where('account_id', $me->id)->where('direction', ChipLoad::REQUEST)->where('status', ChipLoad::PENDING)->count(),
             // Kept for older clients of GET agent/panel.

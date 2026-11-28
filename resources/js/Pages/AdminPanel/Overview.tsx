@@ -233,7 +233,7 @@ export default function Overview() {
         />
       </div>
       <Note>
-        <b>Note:</b> Users who register using these links will be automatically assigned under your account once their registration is completed and approved{agent ? ' by the Administrator' : ''}.
+        <b>Note:</b> Users who register using these links will be automatically assigned under your account once you approve their registration in Registration Approvals.
       </Note>
 
       <Panel

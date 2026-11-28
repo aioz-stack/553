@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\AgentLevel;
 use App\Enums\Currency;
+use App\Enums\LoaderPermission;
 use App\Enums\Role;
 use App\Enums\UserStatus;
 use App\Enums\WalletType;
@@ -22,13 +23,18 @@ use App\Services\Agent\PayoutService;
 use App\Services\Audit\AuditLogger;
 use App\Services\Users\AccountStatusService;
 use App\Services\Users\ReferralService;
+use App\Services\Users\RegistrationReview;
 use App\Services\Wallet\AllocationService;
 use App\Services\Wallet\ChipLoadService;
 use App\Support\Points;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * The Admin Panel (Super Admin and Administrators): dashboard, Load Logs, Revenue Logs,
@@ -68,7 +74,8 @@ class PanelController extends Controller
                 'master' => (int) ($agents['master'] ?? 0),
             ],
             'active_players' => User::query()->where('role', Role::Player->value)->where('status', UserStatus::Active->value)->count(),
-            'pending_users' => User::query()->where('status', UserStatus::Pending->value)->count(),
+            // Only the registrations this account may approve (RegistrationReview): its own links' applicants.
+            'pending_users' => RegistrationReview::scope(User::query(), $me)->where('users.status', UserStatus::Pending->value)->count(),
             'banned_users' => User::query()->whereIn('status', [UserStatus::Banned->value, UserStatus::Suspended->value])->count(),
             'links' => $this->referrals->links($me),
             'recent' => [
@@ -270,7 +277,8 @@ class PanelController extends Controller
         match ($data['kind']) {
             'agents' => $query->where('role', Role::Agent->value)->whereIn('status', [UserStatus::Active->value, UserStatus::Suspended->value, UserStatus::Banned->value]),
             'players' => $query->where('role', Role::Player->value)->where('status', UserStatus::Active->value),
-            'pending' => $query->where('status', UserStatus::Pending->value),
+            // Pending registrations: only those this account may approve (its own links' applicants).
+            'pending' => RegistrationReview::scope($query, $request->user())->where('users.status', UserStatus::Pending->value),
             'banned' => $query->whereIn('status', [UserStatus::Banned->value, UserStatus::Suspended->value]),
             'archived' => $query->where('status', UserStatus::Archived->value),
             'all' => $query, // Reset Password search: every agent and player, any status.
@@ -422,21 +430,21 @@ class PanelController extends Controller
     {
         $actor = $request->user();
         // Admins, and Loader Accounts with the Reset Passwords permission.
-        abort_unless($actor->isSuperAdmin() || $actor->isAdministrator() || $actor->hasLoaderPermission(\App\Enums\LoaderPermission::Passwords), 403);
+        abort_unless($actor->isSuperAdmin() || $actor->isAdministrator() || $actor->hasLoaderPermission(LoaderPermission::Passwords), 403);
 
         if (! $user->isAgent() && ! $user->isPlayer()) {
             throw new BusinessRuleException('Only agent and player passwords can be reset here.', 403, 'forbidden');
         }
 
         $request->validate([
-            'password' => ['required', 'string', 'confirmed', \Illuminate\Validation\Rules\Password::min(8)->letters()->numbers(), 'max:72'],
+            'password' => ['required', 'string', 'confirmed', Password::min(8)->letters()->numbers(), 'max:72'],
         ]);
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($actor, $user, $request) {
-            $user->forceFill(['password' => $request->input('password'), 'remember_token' => \Illuminate\Support\Str::random(60)])->save();
+        DB::transaction(function () use ($actor, $user, $request) {
+            $user->forceFill(['password' => $request->input('password'), 'remember_token' => Str::random(60)])->save();
             $user->tokens()->delete();
             if (config('session.driver') === 'database') {
-                \Illuminate\Support\Facades\DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
+                DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
             }
             AuditLogger::log($actor, 'user.password_reset', $user, null, ['target' => $user->username, 'reset_by' => $actor->username]);
         });
@@ -613,7 +621,7 @@ class PanelController extends Controller
     }
 
     /**
-     * @param  \Illuminate\Contracts\Pagination\LengthAwarePaginator  $page
+     * @param  LengthAwarePaginator  $page
      * @param  array<string, mixed>  $meta
      */
     protected function paged($page, callable $map, array $meta = []): JsonResponse

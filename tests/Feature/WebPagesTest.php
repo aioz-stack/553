@@ -3,6 +3,7 @@
 use App\Enums\Ability;
 use App\Models\GameRoom;
 use App\Models\User;
+use App\Services\Users\ReferralService;
 use App\Services\Users\UserManagementService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,7 +36,7 @@ dataset('agent pages', [
     ['/agent/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals'],
     ['/agent/accounts/agents', 'AdminPanel/Accounts'],
     ['/agent/accounts/active-players', 'AdminPanel/Accounts'],
-    ['/agent/accounts/pending-users', 'AdminPanel/Accounts'],
+    ['/agent/accounts/pending-users', 'AdminPanel/Registrations'],
     ['/agent/change-password', 'AdminPanel/ChangePassword'],
 ]);
 
@@ -49,7 +50,7 @@ dataset('admin pages', [
     ['/admin/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals'],
     ['/admin/revenue-rates', 'AdminPanel/RevenueRates'],
     ['/admin/accounts/agents', 'AdminPanel/Accounts'],
-    ['/admin/accounts/pending-users', 'AdminPanel/Accounts'],
+    ['/admin/accounts/pending-users', 'AdminPanel/Registrations'],
     ['/admin/accounts/archive', 'AdminPanel/Accounts'],
     ['/admin/change-password', 'AdminPanel/ChangePassword'],
     ['/admin/administrators', 'Admin/Users'],
@@ -117,7 +118,7 @@ test('players can open the table page and staff cannot play', function () {
 
 test('web registration through an agent\'s Player Registration Link waits for approval, then links the player to the agent', function () {
     $agent = User::factory()->agent()->create();
-    $code = (object) ['code' => app(\App\Services\Users\ReferralService::class)->codeFor($agent)];
+    $code = (object) ['code' => app(ReferralService::class)->codeFor($agent)];
 
     $this->post('/register', [
         'name' => 'Web Player',
@@ -134,7 +135,7 @@ test('web registration through an agent\'s Player Registration Link waits for ap
         ->and($player->sponsor_id)->toBe($agent->id)
         ->and($player->agentLink)->toBeNull();
 
-    app(\App\Services\Users\ReferralService::class)->approve(superAdmin(), $player);
+    app(ReferralService::class)->approve(superAdmin(), $player);
     expect($player->fresh()->agentLink->agent_id)->toBe($agent->agent->id);
 });
 

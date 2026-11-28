@@ -12,6 +12,7 @@ use App\Models\AuditLog;
 use App\Models\ChipLoad;
 use App\Models\GameCard;
 use App\Models\GameRoom;
+use App\Models\Permission;
 use App\Models\User;
 use App\Services\Game\GameEngine;
 use App\Services\Game\TableService;
@@ -20,6 +21,8 @@ use App\Services\Users\UserManagementService;
 use App\Services\Wallet\WalletService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\Auth;
 
 uses(RefreshDatabase::class);
 
@@ -86,16 +89,16 @@ test('referrals are validated on the server: bad codes, players\' codes and agen
     // Players need a registration link too, and the retired per-agent referral codes no longer work.
     $this->postJson('/api/v1/auth/register', $base + ['username' => 'xfour'])->assertStatus(422)->assertJsonValidationErrors('referral_code');
     $agent = User::factory()->agent()->create();
-    $legacy = app(\App\Services\Users\UserManagementService::class)->createReferralCode($agent->agent);
+    $legacy = app(UserManagementService::class)->createReferralCode($agent->agent);
     $this->postJson('/api/v1/auth/register', $base + ['username' => 'xfive', 'referral_code' => $legacy->code])->assertStatus(422)->assertJsonPath('error', 'invalid_referral');
-    $this->postJson('/api/v1/auth/register', $base + ['username' => 'xsix', 'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor($agent)])->assertCreated();
+    $this->postJson('/api/v1/auth/register', $base + ['username' => 'xsix', 'referral_code' => app(ReferralService::class)->codeFor($agent)])->assertCreated();
     expect(User::query()->whereIn('username', ['xfour', 'xfive'])->count())->toBe(0)
         ->and(User::query()->where('username', 'xsix')->first()->status)->toBe(UserStatus::Pending);
 });
 
 test('pending users cannot sign in or use anything until approved; approval and deletion are once only', function () {
     $admin = superAdmin();
-    $link = app(\App\Services\Users\ReferralService::class)->codeFor($admin);
+    $link = app(ReferralService::class)->codeFor($admin);
     $this->postJson('/api/v1/auth/register', ['name' => 'Pen', 'username' => 'penny', 'email' => 'p@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $link, 'account_type' => 'agent'])->assertCreated();
     $penny = User::query()->where('username', 'penny')->firstOrFail();
 
@@ -277,18 +280,22 @@ test('ban, suspend, reactivate, archive and restore: blocked accounts are signed
     $this->actingAs($admin)->postJson("/api/v1/admin/panel/accounts/{$admin->id}/status", ['action' => 'ban', 'reason' => 'x'])->assertForbidden();
 });
 
-test('administrators need the matching ability for account actions', function () {
+test('an ability never lets an Administrator approve a registration made through someone else\'s link', function () {
     $admin = User::factory()->create(['role' => Role::Administrator]);
-    $this->postJson('/api/v1/auth/register', ['name' => 'Q', 'username' => 'queued', 'email' => 'q@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => app(\App\Services\Users\ReferralService::class)->codeFor(User::factory()->agent()->create())])->assertCreated();
+    $owner = User::factory()->agent()->create();
+    $this->postJson('/api/v1/auth/register', ['name' => 'Q', 'username' => 'queued', 'email' => 'q@t.test', 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => app(ReferralService::class)->codeFor($owner)])->assertCreated();
     $queued = User::query()->where('username', 'queued')->firstOrFail();
 
     $this->actingAs($admin)->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertForbidden();
-    $admin->permissions()->attach(\App\Models\Permission::query()->where('key', Ability::ManagePlayers->value)->pluck('id'));
-    $this->actingAs($admin->fresh())->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertOk();
+    $admin->permissions()->attach(Permission::query()->where('key', Ability::ManagePlayers->value)->pluck('id'));
+    $this->actingAs($admin->fresh())->postJson("/api/v1/admin/panel/accounts/{$queued->id}/approve")->assertForbidden();
+
+    // The link owner (the agent) approves it.
+    $this->actingAs($owner)->postJson("/api/v1/agent/panel/registrations/{$queued->id}/approve")->assertOk()->assertJsonPath('data.registration_status', 'approved');
 });
 
 test('Admin Overview Player Registration Link: permanent, registers pending players under the Admin, counted', function () {
-    $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
+    $this->withoutMiddleware(ThrottleRequests::class);
     $admin = User::factory()->create(['role' => Role::Administrator]);
     $links = $this->actingAs($admin)->getJson('/api/v1/admin/panel/overview')->assertOk()->json('data.links');
     $code = $admin->fresh()->referral_code;
@@ -302,7 +309,7 @@ test('Admin Overview Player Registration Link: permanent, registers pending play
 
     // The public lookup accepts it for players; registration is pending until approved.
     $this->getJson("/api/v1/auth/referral/{$code}?type=player")->assertOk();
-    \Illuminate\Support\Facades\Auth::forgetGuards();
+    Auth::forgetGuards();
     foreach (['lnkone', 'lnktwo'] as $u) {
         $this->postJson('/api/v1/auth/register', ['name' => $u, 'username' => $u, 'email' => "{$u}@t.test", 'password' => 'secret123', 'password_confirmation' => 'secret123', 'referral_code' => $code, 'account_type' => 'player'])->assertCreated();
     }

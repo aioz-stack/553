@@ -4,7 +4,10 @@ namespace App\Enums;
 
 /**
  * Account lifecycle. Only Active accounts can sign in, play or move Chips.
- *  - Pending: registered, waiting for an administrator's approval (sign-in refused with account_pending).
+ *  - Pending: registered through a registration link, waiting for the link owner's approval
+ *    (sign-in refused with account_pending). See App\Services\Users\RegistrationReview.
+ *  - Rejected: the approver turned the registration down (reason recorded). Final: the account
+ *    never signs in, plays or moves Chips, and its username/email stay taken.
  *  - Suspended / Banned: blocked by staff (reason + date recorded); Reactivate restores Active.
  *  - Archived: retired account kept with its full history and referral links; Restore makes it Active.
  */
@@ -12,6 +15,7 @@ enum UserStatus: string
 {
     case Active = 'active';
     case Pending = 'pending';
+    case Rejected = 'rejected';
     case Suspended = 'suspended';
     case Banned = 'banned';
     case Archived = 'archived';
@@ -25,7 +29,8 @@ enum UserStatus: string
     public function blockedMessage(): string
     {
         return match ($this) {
-            self::Pending => 'Your account is waiting for administrator approval.',
+            self::Pending => 'Your account is waiting for approval.',
+            self::Rejected => 'Your registration was not approved.',
             self::Suspended => 'This account is suspended.',
             self::Banned => 'This account is banned.',
             self::Archived => 'This account has been archived.',
@@ -33,9 +38,13 @@ enum UserStatus: string
         };
     }
 
-    /** Error code for the API (account_pending, suspended, banned, archived). */
+    /** Error code for the API (account_pending, account_rejected, suspended, banned, archived). */
     public function blockedCode(): string
     {
-        return $this === self::Pending ? 'account_pending' : $this->value;
+        return match ($this) {
+            self::Pending => 'account_pending',
+            self::Rejected => 'account_rejected',
+            default => $this->value,
+        };
     }
 }

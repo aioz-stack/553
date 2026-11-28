@@ -94,7 +94,7 @@ export default function AdminPanelLayout({ title, subtitle, children }: { title:
   const people: NavItem[] = panel.isLoader ? [] : [
     ...(panel.level === 'master' ? [] : [{ label: panel.isAgent ? 'My Agents' : 'Agents', href: `${b}/accounts/agents`, icon: <I.user className="h-[18px] w-[18px]" /> }]),
     { label: panel.isAgent ? 'My Players' : 'Active Players', href: `${b}/accounts/active-players`, icon: <I.users className="h-[18px] w-[18px]" /> },
-    { label: 'Pending Users', href: `${b}/accounts/pending-users`, icon: <I.clock className="h-[18px] w-[18px]" />, badge: counts.data?.data.pending_users },
+    { label: 'Registration Approvals', href: `${b}/accounts/pending-users`, icon: <I.clock className="h-[18px] w-[18px]" />, badge: counts.data?.data.pending_users },
     ...(panel.isAgent ? [] : [{ label: 'Ban Users', href: '/admin/accounts/ban-users', icon: <I.ban className="h-[18px] w-[18px]" />, badge: counts.data?.data.banned_users }]),
   ];
   // The Platform panel is the Administrators' only: agents have no Platform group (the pages

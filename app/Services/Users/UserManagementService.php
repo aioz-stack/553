@@ -3,6 +3,7 @@
 namespace App\Services\Users;
 
 use App\Enums\Ability;
+use App\Enums\AgentLevel;
 use App\Enums\Role;
 use App\Enums\UserStatus;
 use App\Exceptions\BusinessRuleException;
@@ -57,7 +58,7 @@ class UserManagementService
                 Agent::create([
                     'user_id' => $user->id,
                     'code' => $this->uniqueAgentCode(),
-                    'level' => ($level ?? \App\Enums\AgentLevel::Agent)->value,
+                    'level' => ($level ?? AgentLevel::Agent)->value,
                     'parent_agent_id' => $actor?->isAgent() ? $actor->agent?->id : null,
                     'status' => 'active',
                     'created_by' => $actor?->id,
@@ -86,6 +87,12 @@ class UserManagementService
 
         if (! $player->isPlayer()) {
             throw new BusinessRuleException('Only players can be assigned to agents.');
+        }
+
+        // A registration waiting for (or refused) approval belongs to its link owner's queue:
+        // moving it would hand the approval to someone else.
+        if (in_array($player->status, [UserStatus::Pending, UserStatus::Rejected], true)) {
+            throw new BusinessRuleException('Registrations waiting for approval cannot be re-assigned.', 409, 'sponsor_locked');
         }
 
         // The referral relationship is permanent: a player with an agent (or a sponsor agent) keeps it.
@@ -154,7 +161,7 @@ class UserManagementService
      * The hierarchy rule (plus the staff ability for Administrators creating Agents). Returns
      * the level a new agent gets.
      */
-    public function authorizeCreate(?User $actor, Role $role): ?\App\Enums\AgentLevel
+    public function authorizeCreate(?User $actor, Role $role): ?AgentLevel
     {
         $level = Hierarchy::assertCanCreate($actor, $role);
         Hierarchy::assertStaffAbility($actor, $role);

@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
-use App\Support\Avatars;
 use App\Enums\Ability;
 use App\Enums\Currency;
+use App\Enums\LoaderPermission;
 use App\Enums\Role;
 use App\Enums\UserStatus;
 use App\Enums\WalletType;
+use App\Support\Avatars;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -64,6 +65,7 @@ class User extends Authenticatable
             'approved_at' => 'datetime',
             'status_changed_at' => 'datetime',
             'archived_at' => 'datetime',
+            'rejected_at' => 'datetime',
         ];
     }
 
@@ -159,6 +161,18 @@ class User extends Authenticatable
         return $this->belongsTo(self::class, 'sponsor_id');
     }
 
+    /** Who approved this registration (the link owner, or a Super Admin). */
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'approved_by');
+    }
+
+    /** Who rejected this registration. */
+    public function rejecter(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'rejected_by');
+    }
+
     /**
      * The account type shown in the Admin Panel: admin, agent (Incorporator), master or player.
      */
@@ -209,7 +223,7 @@ class User extends Authenticatable
     }
 
     /** A Loader Account's own permission (never granted to anyone else). */
-    public function hasLoaderPermission(\App\Enums\LoaderPermission $permission): bool
+    public function hasLoaderPermission(LoaderPermission $permission): bool
     {
         if (! $this->isLoader() || ! $this->isActive()) {
             return false;

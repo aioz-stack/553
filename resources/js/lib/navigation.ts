@@ -60,7 +60,7 @@ const agent: NavGroup[] = [
       { key: 'agent-revenue-logs', label: 'REVENUE LOGS', href: '/agent/revenue-logs', icon: IconTrophy },
       { key: 'agent-revenue-withdrawals', label: 'REVENUE COMMISSION WITHDRAWAL', href: '/agent/revenue-withdrawals', icon: IconWallet },
       { key: 'agent-players', label: 'MY PLAYERS', href: '/agent/accounts/active-players', icon: IconUsers },
-      { key: 'agent-pending', label: 'PENDING USERS', href: '/agent/accounts/pending-users', icon: IconUser },
+      { key: 'agent-pending', label: 'REGISTRATION APPROVALS', href: '/agent/accounts/pending-users', icon: IconUser },
       { key: 'profile', label: 'PROFILE', href: '/profile', icon: IconUser },
     ],
   },

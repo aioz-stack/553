@@ -1,26 +1,30 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\CommissionController as AdminCommissionController;
+use App\Http\Controllers\Api\V1\Admin\EmployeeController;
 use App\Http\Controllers\Api\V1\Admin\GameController as AdminGameController;
+use App\Http\Controllers\Api\V1\Admin\PanelController;
 use App\Http\Controllers\Api\V1\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Api\V1\Admin\RoomController as AdminRoomController;
+use App\Http\Controllers\Api\V1\Admin\ShopSharesController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\Admin\WalletController as AdminWalletController;
+use App\Http\Controllers\Api\V1\AgentPanelController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\FriendController;
 use App\Http\Controllers\Api\V1\GameController;
-use App\Http\Controllers\Api\V1\LobbyController;
-use App\Http\Controllers\Api\V1\AgentPanelController;
-use App\Http\Controllers\Api\V1\Admin\PanelController;
-use App\Http\Controllers\Api\V1\PayoutController;
-use App\Http\Controllers\Api\V1\Admin\EmployeeController;
 use App\Http\Controllers\Api\V1\LoaderPanelController;
+use App\Http\Controllers\Api\V1\LobbyController;
 use App\Http\Controllers\Api\V1\MaintenanceController;
-use App\Http\Controllers\Api\V1\TeamController;
+use App\Http\Controllers\Api\V1\PayoutController;
 use App\Http\Controllers\Api\V1\PlayerController;
 use App\Http\Controllers\Api\V1\PracticeController;
+use App\Http\Controllers\Api\V1\RegistrationController;
+use App\Http\Controllers\Api\V1\RevenueConversionController;
 use App\Http\Controllers\Api\V1\RoomController;
+use App\Http\Controllers\Api\V1\ShopController;
 use App\Http\Controllers\Api\V1\TableController;
+use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\WalletController;
 use Illuminate\Support\Facades\Route;
 
@@ -70,8 +74,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Own wallet
         Route::get('wallet', [WalletController::class, 'balances']);
         // Shop: Keys → Gold exchange (players; server-validated, idempotent, final).
-        Route::get('shop', [\App\Http\Controllers\Api\V1\ShopController::class, 'index']);
-        Route::post('shop/key-exchanges', [\App\Http\Controllers\Api\V1\ShopController::class, 'exchange'])->middleware('throttle:wallet-actions');
+        Route::get('shop', [ShopController::class, 'index']);
+        Route::post('shop/key-exchanges', [ShopController::class, 'exchange'])->middleware('throttle:wallet-actions');
         Route::get('wallet/transactions', [WalletController::class, 'transactions']);
 
         // Commission wallet (read only) + Team Overview (Administrators and every agent level).
@@ -80,8 +84,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::get('commission/wallet', [TeamController::class, 'commission']);
             Route::get('team/overview', [TeamController::class, 'overview']);
             // Self Convert Revenue to Chips: the whole Revenue wallet into the account's own Chips.
-            Route::get('revenue', [\App\Http\Controllers\Api\V1\RevenueConversionController::class, 'show']);
-            Route::post('revenue/convert', [\App\Http\Controllers\Api\V1\RevenueConversionController::class, 'convert'])->middleware('throttle:wallet-actions');
+            Route::get('revenue', [RevenueConversionController::class, 'show']);
+            Route::post('revenue/convert', [RevenueConversionController::class, 'convert'])->middleware('throttle:wallet-actions');
         });
 
         // Allocation (Super Admin / Administrator / Agent; rules in AllocationService)
@@ -170,6 +174,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::get('accounts/{user}', [AgentPanelController::class, 'account']);
                 Route::post('accounts/{user}/load', [AgentPanelController::class, 'load'])->middleware('throttle:wallet-actions');
                 Route::post('accounts/{user}/withdraw', [AgentPanelController::class, 'withdraw'])->middleware('throttle:wallet-actions');
+                // Registration approvals: Players (and, for Incorporators, Master Agents) who registered
+                // through this agent's own links. Scope enforced by RegistrationReview.
+                Route::get('registrations', [RegistrationController::class, 'index']);
+                Route::post('registrations/{user}/approve', [RegistrationController::class, 'approve'])->middleware('throttle:wallet-actions');
+                Route::post('registrations/{user}/reject', [RegistrationController::class, 'reject'])->middleware('throttle:wallet-actions');
             });
             Route::post('chip-requests', [AgentPanelController::class, 'requestChips'])->middleware('throttle:wallet-actions');
         });
@@ -265,8 +274,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::get('revenue-conversions', [PanelController::class, 'revenueConversions']);
                 Route::put('commission-rates', [PanelController::class, 'setRates']);
                 // Shop revenue-sharing rates (key purchases): Administrator only (checked in the service too).
-                Route::get('shop-shares', [\App\Http\Controllers\Api\V1\Admin\ShopSharesController::class, 'show']);
-                Route::put('shop-shares', [\App\Http\Controllers\Api\V1\Admin\ShopSharesController::class, 'update'])->middleware('throttle:wallet-actions');
+                Route::get('shop-shares', [ShopSharesController::class, 'show']);
+                Route::put('shop-shares', [ShopSharesController::class, 'update'])->middleware('throttle:wallet-actions');
                 Route::get('withdrawals', [PanelController::class, 'withdrawals']);
                 Route::post('withdrawals/{payout}/approve', [PanelController::class, 'approveWithdrawal'])->middleware('throttle:wallet-actions');
                 Route::post('withdrawals/{payout}/reject', [PanelController::class, 'rejectWithdrawal']);
@@ -277,6 +286,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 Route::post('accounts/{user}/withdraw-commission', [PanelController::class, 'withdrawCommission'])->middleware('throttle:wallet-actions');
                 Route::put('accounts/{user}/commission-rate', [PanelController::class, 'setAccountRate']);
                 Route::post('accounts/{user}/approve', [PanelController::class, 'approve']);
+                // Registration approvals: Incorporators and Players who registered through this Admin's
+                // own links (Super Admin: every registration). Scope enforced by RegistrationReview.
+                Route::get('registrations', [RegistrationController::class, 'index']);
+                Route::post('registrations/{user}/approve', [RegistrationController::class, 'approve'])->middleware('throttle:wallet-actions');
+                Route::post('registrations/{user}/reject', [RegistrationController::class, 'reject'])->middleware('throttle:wallet-actions');
                 Route::delete('accounts/{user}', [PanelController::class, 'destroy']);
                 Route::post('accounts/{user}/status', [PanelController::class, 'setStatus']);
                 Route::put('accounts/{user}/password', [PanelController::class, 'resetPassword'])->middleware('throttle:wallet-actions');

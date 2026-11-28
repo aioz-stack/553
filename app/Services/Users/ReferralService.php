@@ -142,11 +142,16 @@ class ReferralService
             $resolved = $this->resolve($code, $type);
 
             $user = new User($data);
+            // Everything that decides who approves this registration is fixed here, on the server,
+            // from the link alone (never from the request body) and never changed afterwards.
             $user->forceFill([
                 'role' => $type === 'agent' ? Role::Agent : Role::Player,
                 'status' => UserStatus::Pending,
-                'sponsor_id' => $resolved['sponsor']->id ?? null,
+                'sponsor_id' => $resolved['sponsor']->id,
                 'registered_as' => $type,
+                'registration_code' => $resolved['sponsor']->referral_code,
+                'applicant_type' => $type === 'agent' ? $resolved['level']->value : 'player',
+                'registration_status' => 'pending',
                 'referral_code' => self::newCode($data['username']),
             ])->save();
 
@@ -168,14 +173,21 @@ class ReferralService
 
     // ------------------------------------------------------------------ approval
 
-    /** Approve a pending registration: activate it and attach it to its sponsor. */
+    /**
+     * Approve a pending registration: activate it and attach it to its sponsor. Only the owner of
+     * the registration link (or a Super Admin) may, for what its role may approve — see
+     * RegistrationReview. Once only: the row is locked and must still be pending.
+     */
     public function approve(User $actor, User $user): User
     {
-        $this->authorizeReview($actor, $user);
+        RegistrationReview::assertCanReview($actor, $user);
 
         return DB::transaction(function () use ($actor, $user) {
             /** @var User $user */
             $user = User::query()->lockForUpdate()->findOrFail($user->id);
+
+            // Checked again on the locked row: nothing may have changed since the request started.
+            RegistrationReview::assertCanReview($actor, $user);
 
             if ($user->status !== UserStatus::Pending) {
                 throw new BusinessRuleException('Only pending registrations can be approved.', 409, 'invalid_state');
@@ -193,6 +205,11 @@ class ReferralService
                 $level = $this->recruitLevel($sponsor);
                 if ($level === null) {
                     throw new BusinessRuleException('The sponsor can no longer register agents.', 409, 'invalid_state');
+                }
+                // The level the applicant registered for must still be the one the sponsor creates:
+                // approval never grants a different (higher) role than the link offered.
+                if ($user->applicant_type !== null && $user->applicant_type !== $level->value) {
+                    throw new BusinessRuleException('The sponsor can no longer register this agent level.', 409, 'invalid_state');
                 }
 
                 Agent::query()->firstOrCreate(['user_id' => $user->id], [
@@ -214,13 +231,75 @@ class ReferralService
 
             $user->forceFill([
                 'status' => UserStatus::Active,
+                'registration_status' => 'approved',
                 'approved_at' => now(),
                 'approved_by' => $actor->id,
                 'status_changed_at' => now(),
                 'status_changed_by' => $actor->id,
             ])->save();
 
-            AuditLogger::log($actor, 'user.approved', $user, ['status' => 'pending'], ['status' => 'active', 'sponsor_id' => $user->sponsor_id]);
+            AuditLogger::log($actor, 'user.approved', $user, ['status' => 'pending', 'registration_status' => 'pending'], [
+                'status' => 'active',
+                'registration_status' => 'approved',
+                'applicant' => $user->username,
+                'applicant_type' => RegistrationReview::applicantType($user),
+                'sponsor_id' => $user->sponsor_id,
+                'registration_code' => $user->registration_code,
+                'approver' => $actor->username,
+                'approver_role' => $actor->accountType(),
+            ]);
+
+            return $user->fresh(['agent', 'sponsor']);
+        });
+    }
+
+    /**
+     * Reject a pending registration: the account stays inactive for good (status rejected), so it
+     * can never sign in, play or reach any management feature. Same authority as approve().
+     */
+    public function reject(User $actor, User $user, string $reason): User
+    {
+        RegistrationReview::assertCanReview($actor, $user);
+
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new BusinessRuleException('Give a reason for the rejection.', 422, 'reason_required');
+        }
+
+        return DB::transaction(function () use ($actor, $user, $reason) {
+            /** @var User $user */
+            $user = User::query()->lockForUpdate()->findOrFail($user->id);
+            RegistrationReview::assertCanReview($actor, $user);
+
+            if ($user->status !== UserStatus::Pending) {
+                throw new BusinessRuleException('Only pending registrations can be rejected.', 409, 'invalid_state');
+            }
+
+            $user->forceFill([
+                'status' => UserStatus::Rejected,
+                'registration_status' => 'rejected',
+                'rejected_at' => now(),
+                'rejected_by' => $actor->id,
+                'rejection_reason' => mb_substr($reason, 0, 255),
+                'status_reason' => mb_substr($reason, 0, 255),
+                'status_changed_at' => now(),
+                'status_changed_by' => $actor->id,
+            ])->save();
+
+            // Nothing should exist, but a rejected account never keeps a way in.
+            $user->tokens()->delete();
+
+            AuditLogger::log($actor, 'user.rejected', $user, ['status' => 'pending', 'registration_status' => 'pending'], [
+                'status' => 'rejected',
+                'registration_status' => 'rejected',
+                'reason' => $reason,
+                'applicant' => $user->username,
+                'applicant_type' => RegistrationReview::applicantType($user),
+                'sponsor_id' => $user->sponsor_id,
+                'registration_code' => $user->registration_code,
+                'approver' => $actor->username,
+                'approver_role' => $actor->accountType(),
+            ]);
 
             return $user->fresh(['agent', 'sponsor']);
         });
@@ -229,7 +308,7 @@ class ReferralService
     /** Delete a pending registration that never became active (no ledger history can exist). */
     public function deletePending(User $actor, User $user): void
     {
-        $this->authorizeReview($actor, $user);
+        $this->authorizeDelete($actor, $user);
 
         DB::transaction(function () use ($actor, $user) {
             /** @var User $user */
@@ -254,11 +333,15 @@ class ReferralService
         });
     }
 
-    private function authorizeReview(User $actor, User $user): void
+    /**
+     * Deleting a pending registration (Admin Panel only): the Admin must be its reviewer
+     * (RegistrationReview) and hold the ability for the account type. Agents reject instead.
+     */
+    private function authorizeDelete(User $actor, User $user): void
     {
         $ability = $user->isAgent() ? Ability::ManageAgents : Ability::ManagePlayers;
 
-        if (! $actor->isSuperAdmin() && ! ($actor->isAdministrator() && $actor->hasAbility($ability))) {
+        if (! RegistrationReview::canReview($actor, $user) || ! ($actor->isSuperAdmin() || ($actor->isAdministrator() && $actor->hasAbility($ability)))) {
             throw new BusinessRuleException('You are not allowed to review this registration.', 403, 'forbidden');
         }
     }

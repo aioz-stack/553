@@ -60,9 +60,11 @@ Route::middleware('auth')->group(function () {
         // Commission Logs / Commission Withdrawal were removed from the Agent Panel.
         Route::inertia('/revenue-logs', 'AdminPanel/RevenueLogs')->name('revenue-logs');
         Route::inertia('/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals')->name('revenue-withdrawals');
-        foreach (['agents' => 'agents', 'active-players' => 'players', 'pending-users' => 'pending'] as $path => $kind) {
+        foreach (['agents' => 'agents', 'active-players' => 'players'] as $path => $kind) {
             Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
         }
+        // Registration approvals: applicants of this agent's own links (pending / approved / rejected).
+        Route::inertia('/accounts/pending-users', 'AdminPanel/Registrations')->name('accounts.pending');
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
     });
 
@@ -86,9 +88,11 @@ Route::middleware('auth')->group(function () {
         Route::inertia('/revenue-logs', 'AdminPanel/RevenueLogs')->name('revenue-logs');
         Route::inertia('/revenue-withdrawals', 'AdminPanel/RevenueWithdrawals')->name('revenue-withdrawals');
         Route::inertia('/revenue-rates', 'AdminPanel/RevenueRates')->name('revenue-rates');
-        foreach (['agents' => 'agents', 'active-players' => 'players', 'pending-users' => 'pending', 'ban-users' => 'banned', 'archive' => 'archived'] as $path => $kind) {
+        foreach (['agents' => 'agents', 'active-players' => 'players', 'ban-users' => 'banned', 'archive' => 'archived'] as $path => $kind) {
             Route::inertia("/accounts/{$path}", 'AdminPanel/Accounts', ['kind' => $kind])->name("accounts.{$kind}");
         }
+        // Registration approvals: applicants of this Admin's own links (Super Admin: all).
+        Route::inertia('/accounts/pending-users', 'AdminPanel/Registrations')->name('accounts.pending');
         Route::inertia('/change-password', 'AdminPanel/ChangePassword')->name('password');
         Route::inertia('/reset-password', 'AdminPanel/ResetPassword')->name('reset-password');
         Route::inertia('/maintenance', 'AdminPanel/Maintenance')->name('maintenance');

@@ -2212,3 +2212,31 @@ Until a player picks a level in Settings → Motion Effects, the level is **High
 ## Multiplayer Lobby: Keys wallet beside Chips
 
 The Multiplayer Lobby top bar shows a Keys wallet beside the Chips wallet: the same gold-framed pill with a purple inside and the Keys icon used on Game Home (`KeyIcon`). It shows your Keys balance, live from `useBalance` like Chips. It is display only, like the lobby's Chips pill; Keys are bought from the Shop button under Friends. Test: `app/lobby/page.test.tsx`.
+
+## Registration approvals by the registration-link owner
+
+Each registration is now approved or rejected by **the owner of the registration link it was made through**, and only for what that owner's role may approve. Administrators no longer approve every pending registration on the platform. This supersedes "approval stays with the Administrators" and "Pending Users (read-only)" in the Agent Panel notes above.
+
+| Link owner | Approves (own links only) |
+|---|---|
+| Administrator | Incorporators (Agent link) and Players (Player link) |
+| Incorporator | Master Agents (Agent link) and Players (Player link) |
+| Master Agent | Players (Player link) |
+| Super Admin | its own links, and every other registration (platform authority) |
+
+So an Administrator never sees or approves another Administrator's applicants, or the Master Agents and Players who registered through an Incorporator's link. An Incorporator never sees another Incorporator's applicants, or those of its Master Agents. A Master Agent sees only the Players of its own link.
+
+- **One rule:** `App\Services\Users\RegistrationReview` (`canReview`, `assertCanReview`, `scope`, `reviewableTypes`). Every list, count, approval, rejection and pending-deletion goes through it: `RegistrationController`, the Admin/Agent Panel overview `pending_users`, `accounts?kind=pending`, the older `admin/panel/accounts/{user}/approve` route, and `ReferralService::approve|reject|deletePending`. The check runs before the transaction and again on the row locked with `lockForUpdate`.
+- **Snapshot at registration** (`2026_12_02_100000_registration_approvals`; existing rows backfilled). `users.registration_code` stores the code used. `applicant_type` stores player | agent (Incorporator) | master, derived from the link. `registration_status` is pending → approved | rejected, plus `rejected_at`, `rejected_by` and `rejection_reason`. With the permanent `sponsor_id`, these are set only by the server from the link, never from the request body (extra fields such as `sponsor_id`, `role` or `applicant_type` are ignored), and are never changed afterwards. `UserManagementService::assignPlayer` refuses pending and rejected applicants, so a registration cannot be moved to another approver.
+- **Approve:** activates the account and builds the hierarchy as before (agent row with its level and upline, or the player's agent link). It refuses if the link owner can no longer create that level (e.g. an Incorporator turned Master Agent cannot approve its pending Master Agent registration). It also refuses if the owner is no longer active (the account would join under it). In that case the owner cannot review at all, and only a Super Admin can reject.
+- **Reject:** a reason is required (3–255 chars). The new `UserStatus::Rejected` is final: login and API answer `403 account_rejected`, and staff Reactivate / Restore refuse it (409). The username and email stay taken.
+- **Once only:** approving or rejecting anything that is not pending answers 409.
+- **Audit:** `user.approved` / `user.rejected` record actor, applicant, applicant type, sponsor, registration code, approver role and (for rejections) the reason, timestamped.
+- **API** (same controller and rules for both panels):
+  - `GET {admin|agent}/panel/registrations?status=pending|approved|rejected&type=player|agent|master&q=&from=&to=&tz=&per_page=` returns rows plus `meta.counts` per status and `meta.reviewable_types`.
+  - `POST .../registrations/{user}/approve`
+  - `POST .../registrations/{user}/reject {reason}`
+
+  A registration outside the caller's scope answers 404. Players and Loaders cannot reach these routes (403).
+- **Web:** `/admin/accounts/pending-users` and `/agent/accounts/pending-users` (sidebar **Registration Approvals**, with the pending badge) render `AdminPanel/Registrations.tsx`. It has Pending / Approved / Rejected tabs with counts, search, From/To dates, an applicant-role filter and pagination. Columns: applicant name and username, applicant role, registration date and time, registration link (owner, link type, code), approver or rejecter with date and rejection reason, and status. Approve / Reject buttons show only where `can_review` is true; the server checks again on every action.
+- **Tests:** `tests/Feature/RegistrationApprovalTest.php` covers every role's scope, cross-admin, cross-incorporator and cross-master refusals, Players and Loaders, Super Admin, rejection (reason, final, login blocked, audit), duplicate approval, request-body tampering, re-assignment, level-change escalation, an inactive link owner, scoped counts, and filters and pagination. Updated: `AdminPanelTest.php` (an ability no longer lets an Administrator approve another owner's registration) and `WebPagesTest.php`.
