@@ -681,8 +681,8 @@ Home → Multiplayer opens `/lobby/` (mobile, 1600×900 stage). Built on the exi
 - **Live:** every lobby change (and table join/leave/ready/start/end at a lobby) broadcasts
   `lobby.updated` on the public `lobbies` channel (`LobbyEvent`, public info only); the Lobby polls every
   5 s without a socket (20 s with one), the Waiting Room listens on `table.{id}` and polls every 3 s, with
-  a 10 s heartbeat. Broadcasts are queued: run `php artisan queue:work` (and Reverb) for instant updates
-  and for the match timers (betting close, arrangement timeout) to advance.
+  a 10 s heartbeat. Game broadcasts are sent immediately (see "synchronized match start"); run Reverb for live updates and `php artisan queue:work`
+  for the match timers (betting close, arrangement timeout) to advance.
 - **UI:** `app/lobby/page.tsx` (top bar, sidebar Friends / Ranking / Rewards / Daily Spin, Quick Join,
   Create Lobby, tabs with counts, search, table — Lobby Name + ID, Game Type (the mode the creator chose:
   Round Bank / Banker Mode, same label as the lobby details), Bet, Min. Entry, Prep, Players, Mode, Status —
@@ -2212,3 +2212,16 @@ Until a player picks a level in Settings → Motion Effects, the level is **High
 ## Multiplayer Lobby: Keys wallet beside Chips
 
 The Multiplayer Lobby top bar shows a Keys wallet beside the Chips wallet: the same gold-framed pill with a purple inside and the Keys icon used on Game Home (`KeyIcon`). It shows your Keys balance, live from `useBalance` like Chips. It is display only, like the lobby's Chips pill; Keys are bought from the Shop button under Friends. Test: `app/lobby/page.test.tsx`.
+
+## Multiplayer: synchronized match start
+
+All seated players now move from the Waiting Room into the game together, on one server signal.
+
+- **The server starts the match at 0.** When everyone seated has pressed Start, `LobbyService::pressStart` starts the 3 s countdown and queues `StartLobbyMatch` (`app/Jobs`) delayed to `countdown_ends_at`. At 0 the job runs `LobbyService::tick()`, which starts the match (row-locked and idempotent). Before, the match started only when a player's app next asked for the lobby, or when the per-minute `pusoy:sweep` ran. The players' own lobby requests at 0 and the sweep still work as safety nets, and only the first of them starts the match.
+- **Game events are sent at once, to everyone.** `GameBroadcast` (every table and lobby event) is now `ShouldBroadcastNow`, so events go to Reverb in the same request, not through the queue. With `afterCommit` queued broadcasts each player got `match.started`, `cards.dealt` and the phase changes whenever a worker picked them up (up to the worker's sleep, about 3 s each). It is also:
+  - `ShouldDispatchAfterCommit`: sent only after the transaction commits, never for a rolled-back change.
+  - `ShouldRescue`: if Reverb is down the failure is reported and the request still succeeds, because the state is saved and the apps also poll.
+  - Other broadcasts (`PanelUpdated`) are still queued.
+- **Apps (`/mobile` `lib/lobby.ts`, mobile2 `screens/Room.kt`).** At 0 they look at the lobby straight away and then a few more times in quick succession (about 3 s in total) instead of once followed by the 1 s poll. mobile2 opens the table as soon as the lobby is `IN_GAME` (the 400 ms pause is removed). /mobile keeps its 650 ms exit animation, which is the same on every phone.
+- A queue worker is still needed for `StartLobbyMatch` and the round timers: `php artisan queue:work --sleep=1`. On the database queue, `--sleep=1` keeps a delayed job within about 1 s of its time.
+- Tests: `tests/Feature/LobbyStartSyncTest.php`.

@@ -160,8 +160,14 @@ fun RoomScreen(roomId: Int) {
                 lastShown = left
             }
             if (left == 0L) {
-                delay(150)
-                load()
+                // The server starts the match at 0 (and tells everyone with match.started); look
+                // straight away, then a few more times in quick succession until the table is in
+                // game, so no phone sits on "Get ready…" for a whole poll interval.
+                for (wait in listOf(60L, 300L, 400L, 500L, 750L, 1_000L)) {
+                    delay(wait)
+                    load()
+                    if (lobby?.tableStatus == "IN_GAME" || lobby?.countdownEndsAt == null) break
+                }
                 break
             }
             delay(100)
@@ -172,8 +178,7 @@ fun RoomScreen(roomId: Int) {
     // The match started: into the game table.
     LaunchedEffect(l?.isSeated, l?.tableStatus) {
         if (l != null && l.isSeated && l.tableStatus == "IN_GAME" && l.tableId != null) {
-            delay(400)
-            Nav.replace(Route.Play(l.tableId))
+            Nav.replace(Route.Play(l.tableId)) // straight in: every phone moves on the same server signal
         }
     }
 

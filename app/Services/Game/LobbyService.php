@@ -12,6 +12,7 @@ use App\Events\Game\LobbyEvent;
 use App\Events\Game\TableEvent;
 use App\Exceptions\BusinessRuleException;
 use App\Exceptions\InsufficientBalanceException;
+use App\Jobs\StartLobbyMatch;
 use App\Models\GameInvitation;
 use App\Models\GamePlayer;
 use App\Models\GameRoom;
@@ -557,6 +558,9 @@ class LobbyService
                 $endsAt = now()->addSeconds(self::COUNTDOWN_SECONDS);
                 $table->forceFill(['countdown_ends_at' => $endsAt])->save();
                 event(new TableEvent($table->id, GameEvents::COUNTDOWN_STARTED, ['ends_at' => $endsAt->toIso8601ZuluString('millisecond'), 'seconds' => self::COUNTDOWN_SECONDS]));
+                // The server starts the match the moment the countdown ends (not when a player's app
+                // next asks); every seated player then gets `match.started` at the same time.
+                StartLobbyMatch::dispatch($table->id)->delay($endsAt)->afterCommit();
             }
 
             return $table->refresh();

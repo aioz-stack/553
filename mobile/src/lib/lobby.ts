@@ -219,10 +219,14 @@ export function useWaitingRoomUpdates(tableId: number | null, onChange: () => vo
     return () => clearInterval(poll);
   }, [tableId, fast]);
 
-  // The countdown's last moment: look once just after it ends (the server starts the match on that look).
+  // The countdown's last moment: the server starts the match at 0 and sends `match.started` to every
+  // player at once. Look straight after 0, then a few more times in quick succession (in case the
+  // event is missed), so no phone waits a whole poll interval on "Get ready…". Leaving the room
+  // (the match started) clears the remaining looks.
   useEffect(() => {
     if (!tableId || endsAt === null) return undefined;
-    const t = setTimeout(() => cb.current(), Math.max(0, endsAt - Date.now()) + 150);
-    return () => clearTimeout(t);
+    const base = Math.max(0, endsAt - Date.now());
+    const timers = [60, 360, 760, 1_260, 2_010, 3_010].map((ms) => setTimeout(() => cb.current(), base + ms));
+    return () => timers.forEach(clearTimeout);
   }, [tableId, endsAt]);
 }
