@@ -131,3 +131,36 @@ test('a two-player match plays whole rounds: scored, settled, and the bank rotat
         ->and($wallets->escrow(Currency::CH)->fresh()->balance)->toBe(0)
         ->and($wallets->reconcile()['ok'])->toBeTrue();
 });
+
+test('two confirmed seats are enough: a player still choosing a seat does not block the start and is released when it begins', function () {
+    [$owner, $room, [$guest]] = mpLobby($this, 1);
+    $late = lbPlayer();
+    $this->actingAs($late, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join")->assertCreated(); // joined, seat not confirmed
+
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk()
+        ->assertJsonPath('data.seated_count', 3)->assertJsonPath('data.confirmed_count', 2)
+        ->assertJsonPath('data.all_confirmed', true)->assertJsonPath('data.can_press_start', true);
+    // The unconfirmed player still sees Choose Your Seat and cannot press Start.
+    $this->actingAs($late, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk()
+        ->assertJsonPath('data.all_confirmed', false)->assertJsonPath('data.can_press_start', false);
+    $this->actingAs($late, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertStatus(409)->assertJsonPath('error', 'seat_not_confirmed');
+
+    $keys = fn ($u) => (int) app(WalletService::class)->for($u, Currency::KY)->fresh()->balance;
+    $lateKeys = $keys($late);
+
+    $table = lbStart($this, [$owner, $guest], $room);
+    expect($table->fresh()->status->value)->toBe('IN_GAME')
+        ->and(\App\Models\GamePlayer::query()->where('game_table_id', $table->id)->pluck('user_id')->sort()->values()->all())
+        ->toBe(collect([$owner->id, $guest->id])->sort()->values()->all())
+        ->and($keys($late))->toBe($lateKeys)
+        ->and($late->notifications()->where('type', \App\Notifications\RemovedFromLobby::class)->count())->toBe(1);
+});
+
+test('one confirmed seat plus an unconfirmed player is still not enough to start', function () {
+    [$owner, $room] = mpLobby($this, 0);
+    $late = lbPlayer();
+    $this->actingAs($late, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/join")->assertCreated();
+    $this->actingAs($owner, 'sanctum')->getJson("/api/v1/lobbies/{$room['id']}")->assertOk()
+        ->assertJsonPath('data.can_press_start', false)->assertJsonPath('data.seated_count', 2)->assertJsonPath('data.confirmed_count', 1);
+    $this->actingAs($owner, 'sanctum')->postJson("/api/v1/lobbies/{$room['id']}/start")->assertStatus(409)->assertJsonPath('error', 'not_enough_players');
+});

@@ -38,8 +38,9 @@ use Illuminate\Support\Str;
  * - Every player selects one of the tier's bets and must hold Chips ≥ the Minimum Entry and
  *   ≥ 2× that bet, plus the Keys fee — checked on join, on Start and when the game starts. The
  *   Keys are deducted only when the game starts (refunded if no round is ever completed).
- * - 2 to 4 players (MIN_PLAYERS): Start is available once at least 2 are seated with their
- *   seats confirmed (empty seats are fine). The match starts when everyone seated has pressed
+ * - 2 to 4 players (MIN_PLAYERS): Start is available once at least 2 players have confirmed
+ *   their seats (empty seats are fine, and a player still choosing a seat does not hold the start
+ *   up — their reserved seat is released when the match starts). It starts when every confirmed player has pressed
  *   Start (`owner_starts`; tables never start on their own).
  * - Money is the existing banker-match money: each round's bets are held in
  *   escrow from the players' Chips wallets and settled by BankerMatchService, with
@@ -332,11 +333,17 @@ class LobbyService
         }
 
         $seated = $players->firstWhere('user_id', $user->id);
-        $allConfirmed = $players->count() >= self::MIN_PLAYERS && $players->every('seat_confirmed');
+        // Only confirmed seats count towards a start: a player still choosing a seat (reserved) does
+        // not hold the others up, and their seat is released if the match starts without them.
+        $confirmed = $players->where('seat_confirmed', true);
+        $enough = $confirmed->count() >= self::MIN_PLAYERS;
+        // "Ready to start" from your point of view: enough confirmed seats, and yours is one of them
+        // (a seated player who has not confirmed still sees Choose Your Seat).
+        $allConfirmed = $enough && ($seated === null || $seated->seat_confirmed);
         $inGame = $table?->status === TableStatus::InGame;
         $counting = (bool) $table?->countdown_ends_at;
         $unconfirmed = $players->where('seat_confirmed', false)->count();
-        $notStarted = $players->where('is_ready', false)->count();
+        $notStarted = $confirmed->where('is_ready', false)->count();
 
         return $this->summary($room, $seated ? $room->id : null) + [
             'table_id' => $table?->id,
@@ -348,10 +355,11 @@ class LobbyService
             'my_seat_confirmed' => (bool) $seated?->seat_confirmed,
             'my_ready' => (bool) $seated?->is_ready,
             'all_confirmed' => $allConfirmed,
-            // "2/4 Players": a match starts with 2 to 4.
+            // "2/4 Players": a match starts with 2 to 4 confirmed seats.
             'seated_count' => $players->count(),
+            'confirmed_count' => $confirmed->count(),
             'min_players' => self::MIN_PLAYERS,
-            'ready_count' => $players->where('is_ready', true)->count(),
+            'ready_count' => $confirmed->where('is_ready', true)->count(),
             'countdown_ends_at' => $table?->countdown_ends_at?->toIso8601ZuluString('millisecond'),
             'server_time' => now()->toIso8601ZuluString('millisecond'),
             'banker_rule' => $room->game_mode === GameMode::Banker
@@ -361,14 +369,15 @@ class LobbyService
             'my_required_chips' => $seated ? Points::decimal(LobbyEntryService::requiredChips($room, LobbyEntryService::betOf($room, $seated))) : null,
             'my_chips' => Points::decimal($this->wallets->for($user, Currency::CH)->balance),
             'my_keys' => Points::decimal($this->wallets->for($user, Currency::KY)->balance),
-            'can_press_start' => $seated !== null && $allConfirmed && ! $inGame,
+            'can_press_start' => $seated !== null && $seated->seat_confirmed && $enough && ! $inGame,
             'start_hint' => match (true) {
                 $table === null => 'This lobby is closed.',
                 $inGame => 'The game is starting…',
                 $counting => 'Get ready…',
+                $seated !== null && ! $seated->seat_confirmed => $enough ? 'Confirm a seat to play — the game can start without you.' : 'Tap an available seat, then Confirm Seat',
                 $players->count() < self::MIN_PLAYERS => self::MIN_PLAYERS_MESSAGE,
-                ! $allConfirmed => $unconfirmed === 1 ? 'Waiting for 1 player to confirm a seat…' : "Waiting for {$unconfirmed} players to confirm their seats…",
-                $notStarted > 0 => $seated?->is_ready ? "Waiting for {$notStarted} more to press Start…" : 'All seats confirmed — press Start!',
+                ! $enough => $unconfirmed === 1 ? 'Waiting for 1 player to confirm a seat…' : "Waiting for {$unconfirmed} players to confirm their seats…",
+                $notStarted > 0 => $seated?->is_ready ? "Waiting for {$notStarted} more to press Start…" : ($unconfirmed > 0 ? 'Enough seats confirmed — press Start!' : 'All seats confirmed — press Start!'),
                 default => 'Starting…',
             },
         ];
@@ -518,8 +527,8 @@ class LobbyService
     public const MIN_PLAYERS_MESSAGE = 'At least 2 players are required to start the game.';
 
     /**
-     * Press (or withdraw) Start. Only with at least 2 players seated, every seated player's seat
-     * confirmed (empty seats are fine). When everyone seated has pressed it, the server starts the
+     * Press (or withdraw) Start. Only with your seat confirmed and at least 2 confirmed seats (empty
+     * or still-reserved seats are fine). When every confirmed player has pressed it, the server starts the
      * synchronized 3-second countdown; the match begins when it ends (tick) unless someone leaves,
      * withdraws or drops out first, or fewer than 2 remain.
      */
@@ -536,13 +545,14 @@ class LobbyService
             $players = GamePlayer::query()->where('game_table_id', $table->id)->lockForUpdate()->get();
             $me = $players->firstWhere('user_id', $user->id) ?? throw new BusinessRuleException('Join this lobby first.', 404, 'not_seated');
 
-            // Revalidated on every Start: at least 2 players seated (empty seats are fine), every seated
-            // player's seat confirmed. The countdown then needs everyone seated to have pressed Start.
-            if ($ready && $players->count() < self::MIN_PLAYERS) {
-                throw new BusinessRuleException(self::MIN_PLAYERS_MESSAGE, 409, 'not_enough_players');
+            // Revalidated on every Start: your seat confirmed and at least 2 confirmed seats (empty or
+            // still-reserved seats are fine). The countdown then needs every confirmed player's Start.
+            $confirmed = $players->where('seat_confirmed', true);
+            if ($ready && ! $me->seat_confirmed) {
+                throw new BusinessRuleException('Confirm your seat first.', 409, 'seat_not_confirmed');
             }
-            if ($ready && ! $players->every('seat_confirmed')) {
-                throw new BusinessRuleException('Every seated player must confirm their seat first.', 409, 'seats_not_confirmed');
+            if ($ready && $confirmed->count() < self::MIN_PLAYERS) {
+                throw new BusinessRuleException(self::MIN_PLAYERS_MESSAGE, 409, 'not_enough_players');
             }
             // Your Chips (Minimum Entry and 2× your bet) and Keys are checked again before you start.
             if ($ready) {
@@ -554,7 +564,7 @@ class LobbyService
 
             if (! $ready && $table->countdown_ends_at) {
                 $this->cancelCountdown($table, 'player_cancelled');
-            } elseif ($ready && ! $table->countdown_ends_at && $players->every(fn (GamePlayer $p) => $p->user_id === $user->id || $p->is_ready)) {
+            } elseif ($ready && ! $table->countdown_ends_at && $confirmed->every(fn (GamePlayer $p) => $p->user_id === $user->id || $p->is_ready)) {
                 $endsAt = now()->addSeconds(self::COUNTDOWN_SECONDS);
                 $table->forceFill(['countdown_ends_at' => $endsAt])->save();
                 event(new TableEvent($table->id, GameEvents::COUNTDOWN_STARTED, ['ends_at' => $endsAt->toIso8601ZuluString('millisecond'), 'seconds' => self::COUNTDOWN_SECONDS]));
@@ -597,22 +607,34 @@ class LobbyService
             }
 
             if ($table->countdown_ends_at) {
-                // Fewer than 2 left, or anyone seated (a late joiner too) not confirmed, started and here.
-                $missing = $players->count() < self::MIN_PLAYERS || ! $players->every(fn (GamePlayer $p) => $p->is_ready && $p->seat_confirmed && $p->is_connected);
+                // Fewer than 2 confirmed left, or a confirmed player withdrew Start or dropped out.
+                // Players still choosing a seat (reserved) don't hold the start up.
+                $confirmed = $players->where('seat_confirmed', true)->values();
+                $unconfirmed = $players->where('seat_confirmed', false)->values();
+                $missing = $confirmed->count() < self::MIN_PLAYERS || ! $confirmed->every(fn (GamePlayer $p) => $p->is_ready && $p->is_connected);
                 if ($missing) {
                     $this->cancelCountdown($table, 'player_disconnected');
                 } elseif ($now->gte($table->countdown_ends_at)) {
                     $table->forceFill(['countdown_ends_at' => null])->save();
-                    // Last check before the game starts (wallets locked): Chips and Keys of all four.
-                    $failing = $this->entry->failing($table->room, $players, lock: true);
+                    // Last check before the game starts (wallets locked): Chips and Keys of everyone playing.
+                    $failing = $this->entry->failing($table->room, $confirmed, lock: true);
                     if ($failing !== []) {
                         $this->cancelCountdown($table, 'requirements_not_met', ['players' => array_map(fn ($f) => ['user_id' => $f['user_id'], 'username' => $f['username'], 'message' => $f['message']], $failing)]);
 
                         return false;
                     }
                     try {
-                        // Starts the match and deducts every player's Keys in this same transaction.
-                        $started = $match->maybeStart($table, byOwner: true);
+                        // Savepoint: release the unconfirmed seats, then start the match (and deduct
+                        // every player's Keys). If the start fails, the released seats come back too.
+                        $started = DB::transaction(function () use ($table, $match, $unconfirmed) {
+                            foreach ($unconfirmed as $p) {
+                                $this->tables->leave($p->user, $table);
+                                $p->user->notify((new \App\Notifications\RemovedFromLobby($table->room, null))->afterCommit());
+                            }
+
+                            return $match->maybeStart($table, byOwner: true)
+                                ?? throw new BusinessRuleException('The game could not start.', 409, 'cannot_start');
+                        });
                     } catch (BusinessRuleException|InsufficientBalanceException) {
                         $started = null;
                     }

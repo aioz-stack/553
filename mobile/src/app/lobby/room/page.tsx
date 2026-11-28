@@ -460,7 +460,7 @@ export default function ChooseYourSeat() {
                 </>
               ) : (
                 <div className="cs-rise flex flex-col items-center gap-3">
-                  <p className="font-display text-[26px] font-black text-[#ffe9b0]">{(() => { const n = lobby.seated_count ?? players; return `${n === 4 ? 'All four' : `All ${n}`} seats confirmed · ${lobby.ready_count}/${n} pressed Start`; })()}</p>
+                  <p className="font-display text-[26px] font-black text-[#ffe9b0]">{(() => { const seated = lobby.seated_count ?? players; const n = lobby.confirmed_count ?? seated; return `${n === 4 ? 'All four seats' : n === seated ? `All ${n} seats` : `${n} seats`} confirmed · ${lobby.ready_count}/${n} pressed Start`; })()}</p>
                   {lobby.my_ready ? (
                     <>
                       <span className="rounded-full bg-black/55 px-8 py-3 font-display text-[30px] font-black text-white" role="status">

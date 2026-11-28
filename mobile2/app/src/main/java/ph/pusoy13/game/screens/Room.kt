@@ -282,7 +282,7 @@ fun RoomScreen(roomId: Int) {
                             26, align = TextAlign.Center, modifier = Modifier.padding(top = 4.u),
                         )
                     } else {
-                        Txt("${if (l.seatedCount == 4) "All four" else "All ${l.seatedCount}"} seats confirmed · ${l.readyCount}/${l.seatedCount} pressed Start", 26, color = C.Cream, align = TextAlign.Center)
+                        Txt("${if (l.confirmedCount == 4) "All four seats" else if (l.confirmedCount == l.seatedCount) "All ${l.confirmedCount} seats" else "${l.confirmedCount} seats"} confirmed · ${l.readyCount}/${l.confirmedCount} pressed Start", 26, color = C.Cream, align = TextAlign.Center)
                         if (l.myReady) {
                             Txt(l.startHint, 24, align = TextAlign.Center)
                             Txt("Cancel Start", 20, color = C.White.copy(alpha = 0.75f), modifier = Modifier.tap { act({ Api.post("/lobbies/${l.summary.id}/start", Api.body("ready" to false)) }, null) })

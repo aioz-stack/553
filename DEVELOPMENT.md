@@ -2234,3 +2234,13 @@ The Betting-Phase-only rule (see "Leave Game only in the Betting Phase") is enfo
 - **Closing the app, refreshing, navigating away or losing the connection never removes a player.** The sweep marks them disconnected; they stay seated, their hand is auto-arranged when the timer runs out, and the round settles normally. A leave request in the meantime gets 409 `leave_not_allowed`. Leave works again in the next round's Betting Phase.
 - **mobile2:** the Leave panel now matches /mobile: Stay and Leave buttons in every phase, with Leave disabled outside the Betting Phase and the server's reason shown. The "Game Home" button that let a player walk away from the table mid-round is removed. The Android back button opens this panel.
 - Test: `LeaveRulesTest` "closing the app or refreshing mid-round is not a way out".
+
+## Multiplayer: 2 confirmed seats are enough to start
+
+Previously a lobby player who had joined but not confirmed a seat ("reserved") blocked Start for everyone, because every seated player had to confirm. Now only **confirmed** seats count: once at least 2 players have confirmed their seats, they can press Start, even with the other seats empty or still reserved.
+
+- `LobbyService::show`: `confirmed_count` is new; `ready_count` counts confirmed players only; `can_press_start` needs your own seat confirmed and 2 or more confirmed seats. `all_confirmed` now means "enough confirmed seats, and yours is one of them", so a reserved player still sees Choose Your Seat (hint: "Confirm a seat to play — the game can start without you.").
+- `pressStart`: 409 `seat_not_confirmed` if your seat isn't confirmed; 409 `not_enough_players` with fewer than 2 confirmed. The countdown starts when every confirmed player has pressed Start.
+- `tick`: the countdown is cancelled only by confirmed players (fewer than 2, Start withdrawn, disconnected). When it ends, the reserved players' seats are released (`TableService::leave`, notified with `RemovedFromLobby` and no actor; no Keys charged) and the match starts, inside one savepoint, so a failed start restores them.
+- Apps (`/mobile` and `mobile2`): "N seats confirmed · R/N pressed Start" uses `confirmed_count`.
+- Tests: `LobbyMinPlayersTest` "two confirmed seats are enough…" and "one confirmed seat plus an unconfirmed player is still not enough".

@@ -244,6 +244,8 @@ data class LobbyDetail(
     val allConfirmed: Boolean,
     val readyCount: Int,
     val seatedCount: Int,
+    /** Seats confirmed; only these count towards a start (2 are enough, empty seats are fine). */
+    val confirmedCount: Int,
     val countdownEndsAt: Long?,
     val serverTime: Long?,
     val canPressStart: Boolean,
@@ -256,7 +258,7 @@ data class LobbyDetail(
         fun of(o: JSONObject) = LobbyDetail(
             LobbySummary.of(o), o.intOrNull("table_id"), o.str("table_status"), o.objs("seats").map(LobbySeat::of), o.bool("is_owner"), o.bool("is_seated"),
             o.intOrNull("my_seat"), o.bool("my_seat_confirmed"), o.bool("my_ready"), o.bool("all_confirmed"), o.int("ready_count"),
-            o.int("seated_count", o.int("players")), instant(o.str("countdown_ends_at")), instant(o.str("server_time")), o.bool("can_press_start"),
+            o.int("seated_count", o.int("players")), o.int("confirmed_count", o.int("seated_count", o.int("players"))), instant(o.str("countdown_ends_at")), instant(o.str("server_time")), o.bool("can_press_start"),
             o.text("start_hint"), o.numOrNull("my_bet"), o.numOrNull("my_required_chips"), o.num("my_keys"),
         )
     }
