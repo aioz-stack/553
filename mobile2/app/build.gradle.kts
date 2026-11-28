@@ -42,9 +42,10 @@ android {
 
         buildConfigField("String", "API_URL", "\"$apiUrl\"")
         buildConfigField("String", "REVERB_KEY", "\"${(findProperty("reverbKey") as String?) ?: envOr("REVERB_APP_KEY", "")}\"")
-        buildConfigField("String", "REVERB_HOST", "\"${envOr("REVERB_HOST", "10.0.2.2")}\"")
-        buildConfigField("int", "REVERB_PORT", envOr("REVERB_PORT", "8080"))
-        buildConfigField("String", "REVERB_SCHEME", "\"${envOr("REVERB_SCHEME", "http")}\"")
+        // -PreverbHost / -PreverbPort / -PreverbScheme override .env (e.g. a LAN test build).
+        buildConfigField("String", "REVERB_HOST", "\"${(findProperty("reverbHost") as String?) ?: envOr("REVERB_HOST", "10.0.2.2")}\"")
+        buildConfigField("int", "REVERB_PORT", (findProperty("reverbPort") as String?) ?: envOr("REVERB_PORT", "8080"))
+        buildConfigField("String", "REVERB_SCHEME", "\"${(findProperty("reverbScheme") as String?) ?: envOr("REVERB_SCHEME", "http")}\"")
         // Plain-http backends (local development) need cleartext traffic; production uses https/wss only.
         manifestPlaceholders["cleartext"] = apiUrl.startsWith("http://").toString()
     }
