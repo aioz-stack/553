@@ -635,7 +635,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
 
       {/* Final results after round 12 (or an early end) */}
       {matchOver && (
-        <div className="absolute inset-0 overlay-bleed z-40 flex items-center justify-center bg-black/60">
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60">
           <div role="dialog" aria-label="Match results" className="sp-pop lx-gold w-[900px] rounded-[40px] p-[10px] shadow-[0_12px_0_#7a3e00]">
             <div className="rounded-[32px] bg-gradient-to-b from-[#8f1015] to-[#3a0204] p-8 text-center text-white">
               {(() => {
@@ -679,7 +679,7 @@ export default function MultiplayerTable({ table, session, userId, chips, live, 
       )}
 
       {panel && (
-        <div className="absolute inset-0 overlay-bleed z-[45] flex items-center justify-center bg-black/55" onClick={() => setPanel(null)}>
+        <div className="absolute inset-0 z-[45] flex items-center justify-center bg-black/55" onClick={() => setPanel(null)}>
           <div role="dialog" aria-label={{ settings: 'Settings', help: 'How to play', leave: 'Leave table' }[panel]} onClick={(e) => e.stopPropagation()} className="lx-gold relative w-[900px] rounded-[40px] p-[10px] shadow-[0_12px_0_#7a3e00]">
             <div className="max-h-[840px] overflow-y-auto rounded-[32px] bg-gradient-to-b from-[#8f1015] to-[#3a0204] p-8 text-white">
               <button type="button" aria-label="Close" onClick={() => setPanel(null)} className="absolute right-6 top-6 flex h-[60px] w-[60px] items-center justify-center rounded-full border-4 border-[#ffc531] bg-gradient-to-b from-[#ff6b6b] to-[#c0101a] font-display text-[30px] font-black">

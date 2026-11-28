@@ -55,7 +55,7 @@ function BambooLeaves({ x, y, flip }: { x: number; y: number; flip?: boolean }) 
 /** The room: red walls, a night window with moon and pagoda, a lantern, blossoms and bamboo. */
 export function LanternRoom({ className = '' }: { className?: string }) {
   return (
-    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" className={`scene-bg ${className}`} aria-hidden="true">
+    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" className={className} aria-hidden="true">
       <defs>
         <radialGradient id="tb-wall" cx="0.5" cy="0.45" r="0.8">
           <stop offset="0" stopColor="#b5161c" />

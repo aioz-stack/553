@@ -14,7 +14,7 @@ function Panel({ title, label, onClose, tone, children }: { title: ReactNode; la
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
   return createPortal(
-    <div className="fixed inset-0 overlay-bleed z-[200] flex items-center justify-center bg-black/65 p-3" onClick={onClose}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/65 p-3" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()} className="sp-pop lx-gold flex max-h-[94vh] w-full max-w-[680px] flex-col rounded-[28px] p-[6px] shadow-[0_10px_0_#5a2a00,0_18px_40px_rgb(0_0_0/0.5)]">
         <div className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[23px] bg-gradient-to-b text-white ${tone}`}>
           <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">

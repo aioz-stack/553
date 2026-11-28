@@ -50,7 +50,7 @@ function Hibiscus({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
 
 export default function BeachLandscape({ className = '' }: { className?: string }) {
   return (
-    <svg className={`scene-bg ${className}`} viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <svg className={className} viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
         <linearGradient id="bl-sky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#1f9ae8" />

@@ -16,22 +16,35 @@ export const useToStage = () => useContext(StageContext);
  * that cannot lock orientation) the whole scene is rotated 90° so it still
  * reads as landscape; the native app locks landscape on the home screen.
  */
-export default function LandscapeStage({ background, children }: { background: ReactNode; children: ReactNode }) {
+export default function LandscapeStage({ background, children, className = '' }: { background: ReactNode; children: ReactNode; className?: string }) {
   const [vp, setVp] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
-    const update = () => setVp({ w: window.innerWidth, h: window.innerHeight });
-    update();
+    let frame: number | null = null;
+    const measure = () => setVp((current) => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      return current?.w === w && current.h === h ? current : { w, h };
+    });
+    measure();
+    const update = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        measure();
+      });
+    };
     window.addEventListener('resize', update);
     window.addEventListener('orientationchange', update);
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       window.removeEventListener('resize', update);
       window.removeEventListener('orientationchange', update);
     };
   }, []);
 
   if (!vp) {
-    return <div className="fixed inset-0 bg-[#1f9ae8]" />;
+    return <div className="fixed inset-0 bg-[#0d0524]" />;
   }
 
   const portrait = vp.h > vp.w;
@@ -47,14 +60,13 @@ export default function LandscapeStage({ background, children }: { background: R
   };
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-[#1f9ae8]">
+    <div className={`fixed inset-0 overflow-hidden bg-[#0d0524] ${className}`}>
       <div
         className="absolute left-1/2 top-1/2"
         style={{ width: W, height: H, transform: `translate(-50%, -50%) rotate(${portrait ? 90 : 0}deg)` }}
       >
         <div className="absolute inset-0">{background}</div>
         <div
-          data-stage
           className="absolute left-1/2 top-1/2"
           style={{ width: STAGE_W, height: STAGE_H, transform: `translate(-50%, -50%) scale(${scale})` }}
         >

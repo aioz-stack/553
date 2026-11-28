@@ -27,7 +27,8 @@ import { useResumeMatch } from '@/lib/useResumeMatch';
 import { useGoldWallet } from '@/lib/useGoldWallet';
 import { fetchGold, type GoldWallet } from '@/lib/gold';
 import { practiceUrl } from '@/lib/singlePlayer';
-import { useLandscapeLock } from '@/lib/useLandscapeLock';
+ import { useLandscapeLock } from '@/lib/useLandscapeLock';
+import { useQuality, type Quality } from '@/lib/motion';
 
 /**
  * Landscape main menu (laid out on a 1600×900 stage that scales to the
@@ -45,10 +46,25 @@ interface Burst {
 /** Gold star particles that fly out from a tap point (stage coordinates, relative to the element). */
 function useBursts() {
   const [bursts, setBursts] = useState<Burst[]>([]);
+  const current = useRef<Burst[]>([]);
+  const timers = useRef<Set<number>>(new Set());
+  useEffect(() => () => {
+    timers.current.forEach((timer) => clearTimeout(timer));
+    timers.current.clear();
+  }, []);
   const fire = (x: number, y: number) => {
+    // Bound simultaneous particle subtrees; stale taps are cheaper than an unbounded burst list.
+    if (current.current.length >= 3) return;
     const id = Date.now() + Math.random();
-    setBursts((b) => [...b, { id, x, y }]);
-    setTimeout(() => setBursts((b) => b.filter((p) => p.id !== id)), 750);
+    const next = [...current.current, { id, x, y }];
+    current.current = next;
+    setBursts(next);
+    const timer = window.setTimeout(() => {
+      current.current = current.current.filter((p) => p.id !== id);
+      setBursts(current.current);
+      timers.current.delete(timer);
+    }, 750);
+    timers.current.add(timer);
   };
   const layer = bursts.map((b) => (
     <span key={b.id} className="pointer-events-none absolute" style={{ left: b.x, top: b.y }}>
@@ -74,15 +90,36 @@ function useBursts() {
 function Tile({ x, y, w, h, from, to, label, onClick, href, children, sweepDelay = 0 }: { x: number; y: number; w: number; h: number; from: string; to: string; label: string; onClick?: () => void; href?: string; children: ReactNode; sweepDelay?: number }) {
   const toStage = useToStage();
   const { fire, layer } = useBursts();
-  const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
+  const tileRef = useRef<HTMLElement | null>(null);
+  const tiltFrame = useRef<number | null>(null);
+  const pendingTilt = useRef({ rx: 0, ry: 0 });
 
   const local = (e: { clientX: number; clientY: number }) => {
     const p = toStage(e.clientX, e.clientY);
     return { lx: p.x - x, ly: p.y - y };
   };
+  const setTilt = (rx: number, ry: number) => {
+    const el = tileRef.current;
+    if (!el) return;
+    el.style.setProperty('--rx', `${rx}deg`);
+    el.style.setProperty('--ry', `${ry}deg`);
+  };
+  useEffect(() => () => {
+    if (tiltFrame.current !== null) cancelAnimationFrame(tiltFrame.current);
+  }, []);
   const onMove = (e: ReactPointerEvent) => {
     const { lx, ly } = local(e);
-    setTilt({ rx: (0.5 - ly / h) * 10, ry: (lx / w - 0.5) * 12 });
+    pendingTilt.current = { rx: (0.5 - ly / h) * 10, ry: (lx / w - 0.5) * 12 };
+    if (tiltFrame.current !== null) return;
+    tiltFrame.current = requestAnimationFrame(() => {
+      tiltFrame.current = null;
+      setTilt(pendingTilt.current.rx, pendingTilt.current.ry);
+    });
+  };
+  const resetTilt = () => {
+    if (tiltFrame.current !== null) cancelAnimationFrame(tiltFrame.current);
+    tiltFrame.current = null;
+    setTilt(0, 0);
   };
   const onDown = (e: ReactPointerEvent) => {
     const { lx, ly } = local(e);
@@ -91,7 +128,7 @@ function Tile({ x, y, w, h, from, to, label, onClick, href, children, sweepDelay
   };
 
   const body = (
-    <span style={{ ['--glint-delay' as string]: `${sweepDelay}s` }} className="lx-gold relative block h-full w-full rounded-[44px] p-[11px] shadow-[0_12px_0_#8a4a00,0_22px_36px_rgb(0_0_0/0.4),inset_0_2px_0_rgb(255_255_255/0.8)]">
+    <span className="lx-gold relative block h-full w-full rounded-[44px] p-[11px] shadow-[0_12px_0_#8a4a00,0_22px_36px_rgb(0_0_0/0.4),inset_0_2px_0_rgb(255_255_255/0.8)]">
       <span
         className="lx-gloss relative flex h-full w-full flex-col items-center justify-center rounded-[34px] shadow-[inset_0_-10px_24px_rgb(0_0_0/0.3),inset_0_4px_0_rgb(255_255_255/0.35)]"
         style={{ background: `radial-gradient(120% 90% at 50% 22%, ${from}, ${to})`, ['--sweep-delay' as string]: `${sweepDelay}s` }}
@@ -114,12 +151,13 @@ function Tile({ x, y, w, h, from, to, label, onClick, href, children, sweepDelay
   const props = {
     'aria-label': label,
     className: 'lx-tile lx-spring absolute block touch-manipulation',
-    style: { ...springStyle(label, 3.2, 1.4), left: x, top: y, width: w, height: h, ['--rx' as string]: `${tilt.rx}deg`, ['--ry' as string]: `${tilt.ry}deg` },
+    ref: (node: HTMLElement | null) => { tileRef.current = node; },
+    style: { ...springStyle(label, 3.2, 1.4), left: x, top: y, width: w, height: h },
     onPointerMove: onMove,
     onPointerDown: onDown,
-    onPointerLeave: () => setTilt({ rx: 0, ry: 0 }),
+    onPointerLeave: resetTilt,
+    onPointerCancel: resetTilt,
   };
-
   return href ? (
     <Link href={href} {...props} onClick={() => play('tap')}>
       {body}
@@ -147,8 +185,8 @@ function ShopArt() {
   );
 }
 
-/** Animates a number from its previous value to the new one. */
-function useCountUp(target: number | undefined): number | undefined {
+/** Animates a number from its previous value to the new one in High quality only. */
+function useCountUp(target: number | undefined, quality: Quality): number | undefined {
   const [shown, setShown] = useState(target);
   const from = useRef(target);
 
@@ -156,10 +194,8 @@ function useCountUp(target: number | undefined): number | undefined {
     if (target === undefined) return undefined;
     const start = from.current ?? target;
     from.current = target;
-    if (start === target) {
-      setShown(target);
-      return undefined;
-    }
+    setShown(target);
+    if (quality !== 'high' || start === target) return undefined;
     const t0 = performance.now();
     let raf = 0;
     const step = (t: number) => {
@@ -169,7 +205,7 @@ function useCountUp(target: number | undefined): number | undefined {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [target]);
+  }, [target, quality]);
 
   return shown;
 }
@@ -179,9 +215,10 @@ function useCountUp(target: number | undefined): number | undefined {
  * balance re-renders only these badges each frame, not the whole Home screen.
  */
 function CountingWallets({ gold, chips, keys, onBuyKeys }: { gold?: number; chips?: number; keys?: number; onBuyKeys: () => void }) {
-  const coins = useCountUp(gold);
-  const chipCount = useCountUp(chips);
-  const keyCount = useCountUp(keys);
+  const [quality] = useQuality();
+  const coins = useCountUp(gold, quality);
+  const chipCount = useCountUp(chips, quality);
+  const keyCount = useCountUp(keys, quality);
 
   return <WalletStack className="absolute right-[24px] top-[50px] z-10" gold={coins} chips={chipCount} keys={keyCount} onBuyKeys={onBuyKeys} />;
 }
@@ -249,7 +286,7 @@ export default function Home() {
 
   return (
     <Screen title="Home" immersive>
-      <LandscapeStage background={<BeachLandscape className="h-full w-full" />}>
+      <LandscapeStage background={<BeachLandscape className="h-full w-full" />} className="home-stage">
         {/* Profile (display only — not clickable; the pencil badge opens Choose Your Avatar) */}
         <div role="group" aria-label="Profile" className="absolute left-[40px] top-[22px] flex items-center gap-4">
           <span className="lx-gold lx-glow lx-spring-soft relative rounded-full p-[8px] shadow-[0_8px_0_#8a4a00]" style={springStyle('avatar', 4, 1)}>
@@ -263,7 +300,7 @@ export default function Home() {
               <span className="flex h-full w-full items-center gap-2 rounded-full bg-[#241433] pr-2">
               <span className="ml-[-2px] flex h-[44px] items-center rounded-full bg-gradient-to-b from-[#ffd75a] to-[#e89a00] px-3 font-display text-[28px] font-black text-[#5a2600]">Lv. {level?.level ?? 1}</span>
               <span className="h-[22px] flex-1 overflow-hidden rounded-full bg-black/60" aria-label={`${xpPct}% to next level`}>
-                <span className="lx-gold relative block h-full rounded-full" style={{ width: `${xpPct}%`, transition: 'width 1s ease' }} />
+                <span className="lx-gold relative block h-full w-full origin-left rounded-full" style={{ transform: `scaleX(${xpPct / 100})`, transition: 'transform 1s ease' }} />
               </span>
               </span>
             </span>
@@ -353,8 +390,7 @@ export default function Home() {
           />
         )}
         {picker && <SinglePlayerPicker onClose={() => setPicker(false)} onContinue={(sel) => router.push(practiceUrl(sel))} />}
-
-      </LandscapeStage>
+       </LandscapeStage>
     </Screen>
   );
 }

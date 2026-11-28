@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { lightNow, reducedNow } from '@/lib/motion';
 import { play } from '@/lib/sound';
 import { CardBackArt, CardFaceArt } from '@/components/CardArt';
@@ -240,22 +240,22 @@ function toFrames(keys: Key[], duration: number = PHASES.done, shadow = false): 
 }
 
 /** The 553 card back (shared card design), with a sliver of card thickness. */
-function Back() {
+const Back = memo(function Back() {
   return (
     <span className="absolute inset-0 overflow-hidden rounded-[8px] shadow-[0_1px_0_#e9c46a,0_2px_0_#9a6a14,0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden]">
       <CardBackArt className="absolute inset-0 h-full w-full" />
     </span>
   );
-}
+});
 
 /** Your card face (shared card design), on the far side until the card turns over. */
-function Face({ code }: { code: string }) {
+const Face = memo(function Face({ code }: { code: string }) {
   return (
     <span className="absolute inset-0 overflow-hidden rounded-[8px] bg-white shadow-[0_3px_4px_rgb(0_0_0/0.35)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
       <CardFaceArt code={code} className="absolute inset-0 h-full w-full" />
     </span>
   );
-}
+});
 
 const lowEnd = () => {
   if (typeof navigator === 'undefined') return false;

@@ -164,7 +164,7 @@ const TONES: Record<Tone, { cls: string; lip: string }> = {
   blue: { cls: 'bg-gradient-to-b from-sky-400 to-brand-600 text-white', lip: '#1f2aa6' },
   purple: { cls: 'bg-gradient-to-b from-felt-400 to-felt-700 text-white', lip: '#2a1f7a' },
   red: { cls: 'bg-gradient-to-b from-red-400 to-red-600 text-white', lip: '#8f1b14' },
-  glass: { cls: 'bg-white/12 text-white backdrop-blur', lip: 'rgba(0,0,0,0.35)' },
+  glass: { cls: 'bg-white/12 text-white', lip: 'rgba(0,0,0,0.35)' },
 };
 
 export function GameButton({ tone = 'gold', size = 'md', className, style, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; size?: 'sm' | 'md' | 'lg' }) {

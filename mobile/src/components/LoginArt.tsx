@@ -74,10 +74,7 @@ export default function LoginArt({ username, password, onUsername, onPassword, o
   };
 
   return (
-    <div className="fixed inset-0 overflow-clip bg-[#12060f]">
-      {/* Ambient light far from the artwork (behind the mirrored edges): a soft, darkened copy over the whole screen. */}
-      {/* eslint-disable-next-line @next/next/no-img-element -- decorative copy of the artwork */}
-      <img src={LOGIN_ART.src} alt="" aria-hidden draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-45 blur-3xl" />
+    <div className="fixed inset-0 overflow-clip bg-[radial-gradient(ellipse_at_center,#5a2036_0%,#261020_45%,#12060f_100%)]">
       <div className="absolute left-1/2 top-1/2 h-[100dvh] w-[100dvw] -translate-x-1/2 -translate-y-1/2 overflow-clip portrait:h-[100dvw] portrait:w-[100dvh] portrait:rotate-90">
         <div
           className="absolute inset-0 grid place-items-center overflow-clip"
@@ -86,7 +83,7 @@ export default function LoginArt({ username, password, onUsername, onPassword, o
           <form onSubmit={submit} className="relative" aria-label="Sign in" style={stageStyle(layout.width, layout.height, (layout.user.y + layout.button.y + layout.button.h) / 2)}>
             <MirrorFill src={layout.src} />
             {/* eslint-disable-next-line @next/next/no-img-element -- static export: plain image */}
-            <img src={layout.src} alt="Pusoy553" draggable={false} className="absolute inset-0 h-full w-full select-none object-contain" />
+            <img src={layout.src} alt="Pusoy553" width={layout.width} height={layout.height} decoding="async" fetchPriority="high" draggable={false} className="absolute inset-0 h-full w-full select-none object-contain" />
 
             <input
               name="username"
@@ -195,7 +192,7 @@ function MirrorFill({ src }: { src: string }) {
     <>
       {MIRRORS.map(([x, y]) => (
         // eslint-disable-next-line @next/next/no-img-element -- decorative copy of the artwork
-        <img key={`${x}${y}`} src={src} alt="" aria-hidden draggable={false} className="select-none object-contain" style={mirrorStyle(x, y)} />
+        <img key={`${x}${y}`} src={src} alt="" aria-hidden width={LOGIN_ART.width} height={LOGIN_ART.height} decoding="async" draggable={false} className="select-none object-contain" style={mirrorStyle(x, y)} />
       ))}
     </>
   );

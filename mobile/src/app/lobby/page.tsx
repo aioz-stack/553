@@ -300,17 +300,10 @@ export default function MultiplayerLobby() {
 
   return (
     <Screen title="Multiplayer" immersive>
-      <LandscapeStage
-        background={
-          <>
-            <LanternRoom className="h-full w-full" />
-            {/* Scene shade: in the full-screen backdrop, so phones wider than 16:9 show no seam. */}
-            <div className="absolute inset-0 bg-gradient-to-b from-[#1a0420]/30 via-transparent to-[#1a0420]/50" />
-          </>
-        }
-      >
+      <LandscapeStage background={<LanternRoom className="h-full w-full" />}>
         {/* Cinematic hand-off: the lobby zooms and fades out as you go to a table. */}
         <div className={`absolute inset-0 ${leaving ? 'cs-exit' : ''}`}>
+        <div className="absolute inset-0 bg-gradient-to-b from-[#1a0420]/30 via-transparent to-[#1a0420]/50" />
 
         {/* ---- top bar ---- */}
         <div className="absolute left-[20px] top-[14px] z-10 flex items-center gap-4">

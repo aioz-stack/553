@@ -5,7 +5,7 @@
  */
 export default function BeachScene({ className = '' }: { className?: string }) {
   return (
-    <svg className={`scene-bg ${className}`} viewBox="0 0 400 860" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <svg className={className} viewBox="0 0 400 860" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#2aa7ea" />

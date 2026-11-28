@@ -69,7 +69,7 @@ export function CandyButton({
 export function Modal({ title, children, onClose, width = 920, label, compact, maxHeight = 800, footer }: { title: string; children: ReactNode; onClose: () => void; width?: number; label?: string; compact?: boolean; maxHeight?: number; footer?: ReactNode }) {
   if (compact) {
     return (
-      <div className="absolute inset-0 overlay-bleed z-50 flex items-center justify-center bg-black/60 pt-[36px]" onClick={onClose}>
+      <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 pt-[36px]" onClick={onClose}>
         <div role="dialog" aria-modal="true" aria-label={label ?? title} onClick={(e) => e.stopPropagation()} className="sp-pop lx-gold relative rounded-[36px] p-[8px] shadow-[0_10px_0_#5a2a00,0_16px_32px_rgb(0_0_0/0.5)]" style={{ width, maxWidth: 'calc(100% - 40px)', maxHeight }}>
           <div className="absolute -top-[34px] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-[26px] border-[4px] border-[#ffd34d] bg-gradient-to-b from-[#c47cff] via-[#8f2ff0] to-[#5a12b0] px-8 py-1 font-display text-[36px] font-black text-white shadow-[0_6px_0_#36086e]">{title}</div>
           <button
@@ -94,7 +94,7 @@ export function Modal({ title, children, onClose, width = 920, label, compact, m
     );
   }
   return (
-    <div className="absolute inset-0 overlay-bleed z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={label ?? title} onClick={(e) => e.stopPropagation()} className="sp-pop lx-gold relative rounded-[46px] p-[10px] shadow-[0_14px_0_#5a2a00,0_20px_40px_rgb(0_0_0/0.5)]" style={{ width }}>
         <div className="absolute -top-[42px] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-[30px] border-[5px] border-[#ffd34d] bg-gradient-to-b from-[#c47cff] via-[#8f2ff0] to-[#5a12b0] px-10 py-2 font-display text-[44px] font-black text-white shadow-[0_7px_0_#36086e] drop-shadow-[0_3px_0_#2a0660]">{title}</div>
         <button

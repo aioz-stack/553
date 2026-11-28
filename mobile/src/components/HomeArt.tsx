@@ -20,7 +20,6 @@ const delay = (s: number): CSSProperties => ({ animationDelay: `${s}s` });
 /** Bubbly title text: gold gradient, thick outline, drop shadow and a glossy top highlight. */
 export function CandyText({ text, width, height, size, stroke = '#6b2300', className = '', fill = ['#fffbe0', '#ffe14d', '#ffa514'], sweepDelay = 0 }: { text: string; width: number; height: number; size: number; stroke?: string; className?: string; fill?: [string, string, string]; sweepDelay?: number }) {
   const id = `candy${useId().replace(/:/g, '')}`;
-  const reduced = useReducedMotion();
   const y = height / 2 + size * 0.36;
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className={className} aria-hidden="true">
@@ -34,8 +33,10 @@ export function CandyText({ text, width, height, size, stroke = '#6b2300', class
           <stop offset="0" stopColor="#fff" stopOpacity="0" />
           <stop offset="0.5" stopColor="#fff" stopOpacity="0.95" />
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
-          {!reduced && <animateTransform attributeName="gradientTransform" type="translate" values={`${-width * 0.5} 0; ${width * 1.3} 0; ${width * 1.3} 0`} keyTimes="0; 0.45; 1" dur="4.5s" begin={`${sweepDelay}s`} repeatCount="indefinite" />}
         </linearGradient>
+        <clipPath id={`${id}-clip`}>
+          <text className="font-display" x={width / 2} y={y} fontSize={size} fontWeight="900" textAnchor="middle">{text}</text>
+        </clipPath>
         <linearGradient id={`${id}-hl`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#fff" stopOpacity="0.95" />
           <stop offset="0.45" stopColor="#fff" stopOpacity="0" />
@@ -51,11 +52,9 @@ export function CandyText({ text, width, height, size, stroke = '#6b2300', class
         <text x={width / 2} y={y} fill={`url(#${id}-hl)`}>
           {text}
         </text>
-        {!reduced && (
-          <text x={width / 2} y={y} fill={`url(#${id}-sw)`}>
-            {text}
-          </text>
-        )}
+        <g clipPath={`url(#${id}-clip)`}>
+          <rect className="lx-candy-sheen" x={-width} y={-height * 0.1} width={width * 2} height={height * 1.2} fill={`url(#${id}-sw)`} style={{ animationDelay: `${sweepDelay}s` }} />
+        </g>
       </g>
     </svg>
   );

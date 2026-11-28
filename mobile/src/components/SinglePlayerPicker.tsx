@@ -257,7 +257,7 @@ export default function SinglePlayerPicker({ onClose, onContinue }: { onClose: (
 
   return (
     <div className="absolute inset-0 z-40" role="dialog" aria-modal="true" aria-label="Single Player — Select Difficulty Level">
-      <div className="sp-fade absolute inset-0 overlay-bleed bg-[#0a0420]/70 backdrop-blur-[2px]" onClick={close} />
+      <div className="sp-fade absolute inset-0 bg-[#0a0420]/70 backdrop-blur-[2px]" onClick={close} />
 
       <div className="sp-pop absolute left-[150px] top-[150px] h-[730px] w-[1300px]">
         <div className="lx-gold absolute inset-0 rounded-[56px] shadow-[0_14px_0_#7a3e00,0_30px_60px_rgb(0_0_0/0.6)]" />

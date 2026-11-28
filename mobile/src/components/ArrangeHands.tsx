@@ -59,9 +59,10 @@ export default function ArrangeHands({
   const [busy, setBusy] = useState(false);
   const [confirmLucky, setConfirmLucky] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [hovering, setHovering] = useState<Zone | null>(null);
   const suppressClick = useRef(false);
   const dragRef = useRef<Drag | null>(null);
-
+  const ghostRef = useRef<HTMLDivElement | null>(null);
   const placed = useMemo(() => new Set([...rows.front, ...rows.middle, ...rows.back]), [rows]);
   const hand = sortCards(cards.filter((c) => !placed.has(c)), sortBy);
   const complete = rows.front.length === 3 && rows.middle.length === 5 && rows.back.length === 5;
@@ -123,20 +124,39 @@ export default function ArrangeHands({
       return undefined;
     }
 
+    let frame: number | null = null;
+    const updateFrame = () => {
+      frame = null;
+      const d = dragRef.current;
+      if (!d?.moving) return;
+
+      const target = (document.elementFromPoint(d.x, d.y) as HTMLElement | null)?.closest('[data-zone]') as HTMLElement | null;
+      const zone = (target?.dataset.zone as Zone | undefined) ?? null;
+      setHovering((current) => current === zone ? current : zone);
+
+      const ghost = ghostRef.current;
+      if (ghost) {
+        ghost.style.transform = `translate3d(${d.x}px, ${d.y}px, 0) translate(-50%, -50%) rotate(6deg)`;
+      }
+    };
+
     const onMove = (e: PointerEvent) => {
       const d = dragRef.current;
-      if (!d) {
-        return;
-      }
+      if (!d) return;
       const next = { ...d, x: e.clientX, y: e.clientY, moving: d.moving || Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 8 };
       dragRef.current = next;
-      setDrag(next);
+      if (!next.moving) return;
+      if (!d.moving) setDrag(next);
+      if (frame === null) frame = requestAnimationFrame(updateFrame);
     };
 
     const onUp = (e: PointerEvent) => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
       const d = dragRef.current;
       dragRef.current = null;
       setDrag(null);
+      setHovering(null);
 
       if (!d?.moving) {
         return;
@@ -163,20 +183,13 @@ export default function ArrangeHands({
     window.addEventListener('pointercancel', onUp);
 
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag?.card, drag?.from, selected]);
-
-  const hovering = (() => {
-    if (!drag?.moving) {
-      return null;
-    }
-    const el = (document.elementFromPoint(drag.x, drag.y) as HTMLElement | null)?.closest('[data-zone]') as HTMLElement | null;
-    return (el?.dataset.zone as Zone | undefined) ?? null;
-  })();
 
   const submit = async () => {
     setBusy(true);
@@ -334,7 +347,7 @@ export default function ArrangeHands({
       </GameButton>
 
       {drag?.moving && (
-        <div className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rotate-6 drop-shadow-[0_10px_16px_rgb(0_0_0/0.5)]" style={{ left: drag.x, top: drag.y }}>
+        <div ref={ghostRef} className="pointer-events-none fixed left-0 top-0 z-50 drop-shadow-[0_10px_16px_rgb(0_0_0/0.5)] will-change-transform" style={{ transform: `translate3d(${drag.x}px, ${drag.y}px, 0) translate(-50%, -50%) rotate(6deg)` }}>
           <PlayingCard code={drag.card} />
           {drag.from === 'hand' && selected.includes(drag.card) && selected.length > 1 && (
             <span className="absolute -right-2 -top-2 rounded-full bg-candy-500 px-1.5 font-display text-xs font-black">{selected.length}</span>

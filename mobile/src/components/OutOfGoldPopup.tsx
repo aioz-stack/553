@@ -51,7 +51,7 @@ export default function OutOfGoldPopup({ initial, onClose, onPlay }: { initial: 
   };
 
   return (
-    <div className="absolute inset-0 overlay-bleed z-40 flex items-center justify-center bg-black/65" onClick={step === 'claimed' ? onClose : undefined}>
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/65" onClick={step === 'claimed' ? onClose : undefined}>
       <div role="alertdialog" aria-label="Out of Gold" onClick={(e) => e.stopPropagation()} className="sp-pop lx-gold relative w-[860px] rounded-[48px] p-[12px] shadow-[0_14px_0_#7a3e00,0_30px_60px_rgb(0_0_0/0.6)]">
         {/* glowing rays behind the coins */}
         <div aria-hidden className="og-rays pointer-events-none absolute left-1/2 top-[40px] h-[460px] w-[460px] -translate-x-1/2 rounded-full" />

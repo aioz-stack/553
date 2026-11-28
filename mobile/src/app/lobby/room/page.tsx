@@ -482,7 +482,7 @@ export default function ChooseYourSeat() {
 
           {/* countdown 3 → 2 → 1 (server-timed) */}
           {count !== null && (
-            <div className="pointer-events-none absolute inset-0 overlay-bleed z-40 flex items-center justify-center bg-black/35" role="timer" aria-label={`Match starts in ${count}`}>
+            <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-black/35" role="timer" aria-label={`Match starts in ${count}`}>
               <div className="relative flex h-[340px] w-[340px] items-center justify-center [perspective:800px]">
                 <span key={`r${count}`} className="cs-ring absolute inset-0 rounded-full border-[10px] border-[#ffe14d] shadow-[0_0_60px_rgb(255_225_77/0.8)]" />
                 <span key={count} className="cs-count font-display text-[260px] font-black leading-none text-[#ffe14d] drop-shadow-[0_10px_0_#7a3e00] [text-shadow:0_0_40px_rgb(255_200_60/0.9)]">

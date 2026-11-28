@@ -39,6 +39,7 @@ interface Live {
   pos: Pt; // where it is drawn now (stage)
   rot: number;
   moving: boolean;
+  reduced: boolean;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -77,7 +78,7 @@ export function useCardDrag({ enabled = true, resolve }: { enabled?: boolean; re
   const loop = () => {
     const v = live.current;
     if (!v) return;
-    const reduced = reducedNow();
+    const reduced = v.reduced;
     const prevX = v.pos.x;
     const k = reduced ? 1 : 0.55;
     v.pos = { x: v.pos.x + (v.target.x - v.pos.x) * k, y: v.pos.y + (v.target.y - v.pos.y) * k };
@@ -112,6 +113,7 @@ export function useCardDrag({ enabled = true, resolve }: { enabled?: boolean; re
       pos: centre,
       rot: 0,
       moving: false,
+      reduced: reducedNow(),
     };
   };
 

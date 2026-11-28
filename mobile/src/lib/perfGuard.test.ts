@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { quality, setQuality } from './motion';
-import { AUTO_QUALITY_KEY, MOTION_BOOT_SCRIPT } from './motionBoot';
+import { QUALITY_KEY, MOTION_BOOT_SCRIPT } from './motionBoot';
 import { lighter, measureFps, startPerfGuard } from './perfGuard';
 
 /** Run every queued timer and let awaited measurements settle. */
@@ -42,7 +42,7 @@ describe('perf guard: phones that drop frames step Motion Effects down by themse
     while (calls < 4) await vi.runOnlyPendingTimersAsync();
     await vi.advanceTimersByTimeAsync(0);
     expect(quality()).toBe('low');
-    expect(localStorage.getItem(AUTO_QUALITY_KEY)).toBe('low');
+    expect(localStorage.getItem(QUALITY_KEY)).toBe('low');
     stop();
   });
 
@@ -51,7 +51,7 @@ describe('perf guard: phones that drop frames step Motion Effects down by themse
     const stop = startPerfGuard(async () => fps.shift() ?? 60);
     await flush(20);
     expect(quality()).toBe('high');
-    expect(localStorage.getItem(AUTO_QUALITY_KEY)).toBeNull();
+    expect(localStorage.getItem(QUALITY_KEY)).toBeNull();
     stop();
   });
 
@@ -66,7 +66,7 @@ describe('perf guard: phones that drop frames step Motion Effects down by themse
   });
 
   it('picking a level in Settings wins over the automatic one', () => {
-    localStorage.setItem(AUTO_QUALITY_KEY, 'low');
+    localStorage.setItem(QUALITY_KEY, 'low');
     expect(quality()).toBe('low');
     setQuality('high');
     expect(quality()).toBe('high');

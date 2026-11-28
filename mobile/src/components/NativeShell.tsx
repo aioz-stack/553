@@ -3,18 +3,15 @@
 import { useEffect } from 'react';
 import { useMotionSync } from '@/lib/motion';
 import { useMusicPlayer } from '@/lib/music';
-import { startPerfGuard } from '@/lib/perfGuard';
 import { initOrientation } from '@/lib/useLandscapeLock';
 
 /**
- * Native integration on device: status bar style, splash hide, keyboard
+ * Native integration on device: orientation, readiness-based splash hide, the iOS keyboard
  * accessory bar, and the Android hardware back button.
  */
 export default function NativeShell() {
   useMotionSync();
   useMusicPlayer();
-  // Phones that cannot draw every effect smoothly step Motion Effects down by themselves.
-  useEffect(() => startPerfGuard(), []);
   useEffect(() => {
     (async () => {
       const { Capacitor } = await import('@capacitor/core');
@@ -23,23 +20,18 @@ export default function NativeShell() {
         return;
       }
 
-      const [{ StatusBar, Style }, { SplashScreen }, { Keyboard }, { App }] = await Promise.all([
-        import('@capacitor/status-bar'),
+      const [{ SplashScreen }, { App }] = await Promise.all([
         import('@capacitor/splash-screen'),
-        import('@capacitor/keyboard'),
         import('@capacitor/app'),
       ]);
 
       // Portrait screens start in portrait (landscape screens lock landscape themselves).
       void initOrientation();
-      await StatusBar.setStyle({ style: Style.Dark }).catch(() => undefined);
 
-      if (Capacitor.getPlatform() === 'android') {
-        await StatusBar.setBackgroundColor({ color: '#170a3a' }).catch(() => undefined);
+      if (Capacitor.getPlatform() === 'ios') {
+        const { Keyboard } = await import('@capacitor/keyboard');
+        await Keyboard.setAccessoryBarVisible({ isVisible: true }).catch(() => undefined);
       }
-
-      await Keyboard.setAccessoryBarVisible({ isVisible: true }).catch(() => undefined);
-      await SplashScreen.hide().catch(() => undefined);
 
       App.addListener('backButton', ({ canGoBack }) => {
         // In a game (Multiplayer table, Single Player): the screen's own Leave rules decide.
@@ -53,6 +45,15 @@ export default function NativeShell() {
           App.minimizeApp();
         }
       });
+
+      // Hide only after the hydrated web UI has painted two frames, avoiding a native splash
+      // removal before the first WebView frame (which shows a blank background on some devices).
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          void SplashScreen.hide().catch(() => undefined);
+        });
+      });
+
     })();
   }, []);
 

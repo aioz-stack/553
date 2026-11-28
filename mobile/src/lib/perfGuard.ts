@@ -1,6 +1,6 @@
 'use client';
 
-import { autoQuality, quality, qualityChosen, setAutoQuality, type Quality } from './motion';
+import { quality, qualityChosen, setQuality, type Quality } from './motion';
 
 /**
  * Native app only: keeps the game smooth on phones whose GPU cannot draw every effect.
@@ -66,8 +66,8 @@ export function startPerfGuard(measure: (ms: number) => Promise<number | null> =
     if (fps !== null) {
       bad = fps < MIN_FPS ? bad + 1 : 0;
       if (bad >= 2) {
-        const next = lighter(autoQuality() ?? quality());
-        if (next && !qualityChosen()) setAutoQuality(next);
+        const next = lighter(quality());
+        if (next && !qualityChosen()) setQuality(next);
         bad = 0;
       }
     }

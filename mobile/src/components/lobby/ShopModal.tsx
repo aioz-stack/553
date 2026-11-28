@@ -163,7 +163,7 @@ export default function ShopModal({ onClose }: { onClose: () => void }) {
   const frame: CSSProperties = { width: '80vw', height: '80vh', containerType: 'size' };
 
   return createPortal(
-    <div className="fixed inset-0 overlay-bleed z-[200] flex items-center justify-center bg-black/70" onClick={() => !busy && onClose()}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70" onClick={() => !busy && onClose()}>
       <div
         role="dialog"
         aria-modal="true"

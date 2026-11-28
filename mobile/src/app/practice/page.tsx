@@ -869,7 +869,7 @@ export default function Practice() {
               {hand.map((c, i) => {
                 const on = picked.includes(c);
                 return (
-                  <span key={c} data-card={c} onPointerDown={bindDrag(c)} className={`absolute touch-none transition-[left] ${dragging === c ? 'opacity-0' : ''}`} style={{ left: i * Math.min(56, 420 / Math.max(hand.length - 1, 1)), top: 8 }}>
+                  <span key={c} data-card={c} onPointerDown={bindDrag(c)} className={`absolute left-0 top-2 touch-none transition-transform ${dragging === c ? 'opacity-0' : ''}`} style={{ transform: `translate3d(${i * Math.min(56, 420 / Math.max(hand.length - 1, 1))}px, 0, 0)` }}>
                     <PlayingCard
                       code={c}
                       selected={on}
@@ -958,7 +958,7 @@ export default function Practice() {
         )}
 
         {notice && (
-          <div className="absolute inset-0 overlay-bleed z-[60] flex items-center justify-center bg-black/55">
+          <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/55">
             <div role="alertdialog" aria-label={notice === 'lucky' ? 'Declared Luck' : 'No luck'} className={`sp-pop lx-gold relative w-[640px] rounded-[44px] p-[10px] shadow-[0_12px_0_#7a3e00] ${notice === 'lucky' ? 'tb-winner' : ''}`}>
               <div className={`flex flex-col items-center rounded-[36px] px-8 pb-8 pt-6 text-center ${notice === 'lucky' ? 'bg-[radial-gradient(circle_at_50%_25%,#b06bff,#4a0f9a_70%)]' : 'bg-[radial-gradient(circle_at_50%_25%,#8f1015,#3a0204_70%)]'}`}>
                 <span className={notice === 'lucky' ? 'tb-clover-burst' : 'tb-sad'}>
@@ -1022,7 +1022,7 @@ export default function Practice() {
 
         {/* Panels */}
         {panel && (
-          <div className="absolute inset-0 overlay-bleed z-40 flex items-center justify-center bg-black/55" onClick={() => setPanel(null)}>
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/55" onClick={() => setPanel(null)}>
             <div role="dialog" aria-label={{ settings: 'Settings', help: 'How to play', leave: 'Leave table', summary: 'Match results' }[panel]} onClick={(e) => e.stopPropagation()} className="lx-gold relative w-[900px] rounded-[40px] p-[10px] shadow-[0_12px_0_#7a3e00]">
               <div className="max-h-[840px] overflow-y-auto rounded-[32px] bg-gradient-to-b from-[#8f1015] to-[#3a0204] p-8 text-white">
                 <button type="button" aria-label="Close" onClick={() => setPanel(null)} className="absolute right-6 top-6 flex h-[60px] w-[60px] items-center justify-center rounded-full border-4 border-[#ffc531] bg-gradient-to-b from-[#ff6b6b] to-[#c0101a] font-display text-[30px] font-black">

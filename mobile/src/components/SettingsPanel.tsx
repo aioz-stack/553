@@ -123,7 +123,7 @@ function Toggle({ on, label, onClick }: { on: boolean; label: string; onClick: (
       className={`relative h-[60px] w-[150px] shrink-0 rounded-full border-[4px] transition-colors ${on ? 'border-[#9cf08a] bg-gradient-to-b from-[#3fd04f] to-[#138a24] shadow-[0_5px_0_#0b5e18]' : 'border-[#e3cfb5] bg-gradient-to-b from-[#c9b49b] to-[#9a8268] shadow-[0_5px_0_#6b5640]'}`}
     >
       <span className={`absolute top-1/2 -translate-y-1/2 font-display text-[27px] font-black text-white drop-shadow-[0_2px_0_rgb(0_0_0/0.3)] ${on ? 'left-[16px]' : 'right-[16px]'}`}>{on ? 'ON' : 'OFF'}</span>
-      <span className={`absolute top-1/2 h-[46px] w-[46px] -translate-y-1/2 rounded-full bg-gradient-to-b from-white to-[#dcdcdc] shadow-[0_3px_4px_rgb(0_0_0/0.35)] transition-all ${on ? 'left-[92px]' : 'left-[4px]'}`} />
+      <span className={`absolute left-[4px] top-1/2 h-[46px] w-[46px] -translate-y-1/2 rounded-full bg-gradient-to-b from-white to-[#dcdcdc] shadow-[0_3px_4px_rgb(0_0_0/0.35)] transition-transform ${on ? 'translate-x-[88px]' : 'translate-x-0'}`} />
     </button>
   );
 }
@@ -191,7 +191,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="absolute inset-0 overlay-bleed z-50 flex justify-center bg-black/55" onClick={onClose}>
+    <div className="absolute inset-0 z-50 flex justify-center bg-black/55" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()} className="sp-pop relative mt-[30px] h-[858px] w-[1060px] rounded-[58px] bg-gradient-to-b from-[#f9b25a] via-[#e8822c] to-[#b14d12] p-[12px] shadow-[0_14px_0_#6a2a0c,0_20px_40px_rgb(0_0_0/0.45)]">
         {/* header ribbon */}
         <div className="absolute -top-[40px] left-1/2 z-20 flex -translate-x-1/2 items-end">

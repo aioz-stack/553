@@ -99,7 +99,10 @@ body {
     radial-gradient(80% 50% at 100% 100%, rgb(240 66 143 / 0.25), transparent 60%),
     radial-gradient(70% 40% at 0% 80%, rgb(31 166 240 / 0.18), transparent 60%),
     linear-gradient(180deg, var(--color-night-800), var(--color-night-950));
-  background-attachment: fixed;
+  background-attachment: scroll;
+}
+@media (hover: hover) and (pointer: fine) {
+  .game-bg { background-attachment: fixed; }
 }
 
 .suit-pattern {
@@ -155,29 +158,29 @@ body {
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.18),
     0 10px 30px rgb(0 0 0 / 0.35);
-  backdrop-filter: blur(10px);
+  /* Translucent dark glass keeps the same depth without a live mobile blur pass. */
 }
 
 /* Gold rim used around avatars, tables and featured tiles. */
 @utility gold-rim {
   position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(110deg, var(--color-gold-700) 0%, var(--color-gold-400) 18%, #fff7c2 26%, var(--color-gold-400) 36%, var(--color-gold-700) 55%, var(--color-gold-300) 72%, #fff3a6 80%, var(--color-gold-700) 100%);
   &::after {
     content: '';
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: inherit;
-    background: conic-gradient(from var(--lx-a), transparent 0deg 95deg, rgb(255 255 255 / 0.5) 112deg, #fff 120deg, rgb(255 255 255 / 0.5) 128deg, transparent 145deg 255deg, rgb(255 236 150 / 0.55) 285deg, #fff 312deg, #ffffff 328deg, #fff3a0 336deg, rgb(255 236 150 / 0.4) 350deg, transparent 360deg);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-    animation: lx-orbit 4.2s linear infinite;
+    top: -20%;
+    bottom: -20%;
+    left: 0;
+    width: 34%;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / .65), transparent);
+    transform: translateX(-160%) skewX(-18deg);
+    animation: lx-sweep 5.2s ease-in-out infinite;
     pointer-events: none;
-    z-index: 6;
+    z-index: 0;
   }
-  background: linear-gradient(110deg, var(--color-gold-700) 0%, var(--color-gold-400) 18%, #fff7c2 26%, var(--color-gold-400) 36%, var(--color-gold-700) 55%, var(--color-gold-300) 72%, #fff3a6 80%, var(--color-gold-700) 100%);
-  background-size: 260% 100%;
-  animation: lx-shimmer 6s linear infinite;
+  > * { position: relative; z-index: 1; }
 }
 
 @utility text-gold {
@@ -237,11 +240,13 @@ body {
 .lx-breathe { animation: lx-breathe 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 .lx-in { animation: lx-in .45s cubic-bezier(.2,1.3,.4,1) both; }
 
-/* Moving gold shimmer for rims, bars and pills. */
+/* Moving gold shimmer for rims, bars and pills. The frame stays static; one
+   transform-only sheen crosses it. Animating background-position or a masked
+   conic angle repaints the frame every frame and stalls High mode on phones. */
 .lx-gold {
   background: linear-gradient(110deg, #b86a00 0%, #ffd34d 18%, #fff7c2 26%, #ffc531 36%, #c97a00 55%, #ffd95e 72%, #fff3a6 80%, #c47300 100%);
-  background-size: 260% 100%;
-  animation: lx-shimmer 5s linear infinite;
+  background-size: 100% 100%;
+  overflow: hidden;
 }
 /* Glossy dome highlight + a gloss sweep that crosses every few seconds. */
 /* Callers set position (relative/absolute). */
@@ -266,7 +271,9 @@ body {
 .lx-tile {
   transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--lift, 0px)) scale(var(--s, 1));
   transition: transform .25s cubic-bezier(.2,1.4,.4,1), filter .25s;
-  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lx-tile { will-change: transform; }
 }
 .lx-tile:hover { --lift: -8px; filter: brightness(1.08) saturate(1.1); }
 .lx-tile:active { --s: .95; --lift: 4px; filter: brightness(1.15); transition-duration: .08s; }
@@ -293,7 +300,6 @@ body {
 @keyframes lx-pulse-dot { 0% { box-shadow: 0 0 0 0 rgb(47 209 79 / .7); } 100% { box-shadow: 0 0 0 14px rgb(47 209 79 / 0); } }
 @keyframes lx-breathe { 0%, 100% { transform: scale(1); opacity: .8; } 50% { transform: scale(1.1); opacity: 1; } }
 @keyframes lx-in { from { transform: translateX(-24px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes lx-shimmer { from { background-position: 0% 50%; } to { background-position: 260% 50%; } }
 @keyframes lx-sweep { 0% { transform: translateX(-160%) skewX(-18deg); } 55%, 100% { transform: translateX(520%) skewX(-18deg); } }
 @keyframes lx-burst { 0% { transform: translate(0, 0) scale(.3) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(1.1) rotate(160deg); opacity: 0; } }
 
@@ -303,32 +309,33 @@ body {
 /* ------------------------------------------------------------------
  * Sparkle layer: travelling border glints, glitter, text shine, sheen.
  * ------------------------------------------------------------------ */
-@property --lx-a {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-/* A bright glint that orbits along a frame. Drawn only on the ring between the
- * element's edge and its padding (gold frames), or on a --rim-wide ring (.lx-rim). */
-.lx-gold::after,
+/* Standalone rim glints use a static gold ring with a clipped transform-only sheen. */
 .lx-rim {
-  content: '';
   position: absolute;
   inset: 0;
+  overflow: hidden;
   border-radius: inherit;
-  padding: inherit;
-  background: conic-gradient(from var(--lx-a), transparent 0deg 95deg, rgb(255 255 255 / 0.5) 112deg, #fff 120deg, rgb(255 255 255 / 0.5) 128deg, transparent 145deg 255deg, rgb(255 236 150 / 0.55) 285deg, #fff 312deg, #ffffff 328deg, #fff3a0 336deg, rgb(255 236 150 / 0.4) 350deg, transparent 360deg);
+  padding: var(--rim, 3px);
+  background: linear-gradient(135deg, #9a5b03, #fff3a6 24%, #d79518 48%, #fff7c4 70%, #9a5b03);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: lx-orbit 4.2s linear infinite;
-  animation-delay: var(--glint-delay, 0s);
   filter: drop-shadow(0 0 3px rgb(255 245 200 / 0.9));
   pointer-events: none;
   z-index: 6;
 }
-.lx-rim { padding: var(--rim, 3px); }
+.lx-rim::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / .85), transparent);
+  transform: translateX(-160%) skewX(-18deg);
+  animation: lx-sweep 4.2s ease-in-out infinite;
+  animation-delay: var(--glint-delay, 0s);
+}
 
 /* Glitter flecks (positioned by the Glitter component). */
 .lx-fleck {
@@ -374,7 +381,9 @@ body {
   pointer-events: none;
 }
 
-@keyframes lx-orbit { to { --lx-a: 360deg; } }
+/* Candy title shine moves a clipped band; no SMIL gradient repaint. */
+.lx-candy-sheen { transform-box: view-box; animation: lx-candy-sweep 4.5s ease-in-out infinite; }
+@keyframes lx-candy-sweep { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
 @keyframes lx-fleck {
   0%, 100% { transform: scale(0.2) rotate(0deg); opacity: 0; }
   45% { transform: scale(1) rotate(45deg); opacity: 1; }
@@ -387,8 +396,34 @@ body {
 }
 @keyframes lx-sheen { 0% { transform: translateX(-35%); } 55%, 100% { transform: translateX(35%); } }
 
-:root[data-motion='reduce'] .lx-gold::after, :root[data-motion='reduce'] .lx-rim, :root[data-motion='reduce'] .lx-fleck, :root[data-motion='reduce'] .lx-dot, :root[data-motion='reduce'] .lx-text-shine, :root[data-motion='reduce'] .lx-text-glow, :root[data-motion='reduce'] .lx-sheen::after { animation: none !important; }
-:root[data-motion='reduce'] .lx-fleck, :root[data-motion='reduce'] .lx-dot, :root[data-motion='reduce'] .lx-gold::after, :root[data-motion='reduce'] .lx-rim { opacity: 0; }
+:root[data-motion='reduce'] .lx-gold::after, :root[data-motion='reduce'] .lx-rim, :root[data-motion='reduce'] .lx-fleck, :root[data-motion='reduce'] .lx-dot, :root[data-motion='reduce'] .lx-text-shine, :root[data-motion='reduce'] .lx-text-glow, :root[data-motion='reduce'] .lx-sheen::after, :root[data-motion='reduce'] .lx-candy-sheen { animation: none !important; }
+:root[data-motion='reduce'] .lx-fleck, :root[data-motion='reduce'] .lx-dot, :root[data-motion='reduce'] .lx-gold::after, :root[data-motion='reduce'] .lx-rim, :root[data-motion='reduce'] .lx-candy-sheen { opacity: 0; }
+
+/* Touch High keeps tile and character motion. Full-screen scene loops and tiny repeating
+ * sparkles stay visible but static; animating them repaints the whole canvas. */
+@media (pointer: coarse) {
+  :root[data-quality='high'] .home-stage .lx-fleck,
+  :root[data-quality='high'] .home-stage .lx-dot,
+  :root[data-quality='high'] .home-stage .lx-twinkle,
+  :root[data-quality='high'] .home-stage .lx-twinkle-soft,
+  :root[data-quality='high'] .home-stage .lx-palm,
+  :root[data-quality='high'] .home-stage .lx-sea,
+  :root[data-quality='high'] .home-stage .lx-drift-rev,
+  :root[data-quality='high'] .home-stage .lx-gloss::after,
+  :root[data-quality='high'] .home-stage .lx-rim::after,
+  :root[data-quality='high'] .home-stage .gold-rim::after,
+  :root[data-quality='high'] .home-stage .lx-text-shine,
+  :root[data-quality='high'] .home-stage .lx-glint,
+  :root[data-quality='high'] .home-stage .lx-breathe,
+  :root[data-quality='high'] .home-stage .lx-spin,
+  :root[data-quality='high'] .home-stage .lx-nudge,
+  :root[data-quality='high'] .home-stage .lx-bob-slow,
+  :root[data-quality='high'] .home-stage .lx-candy-sheen { animation: none !important; }
+  :root[data-quality='high'] .home-stage .lx-fleck,
+  :root[data-quality='high'] .home-stage .lx-dot,
+  :root[data-quality='high'] .home-stage .lx-twinkle,
+  :root[data-quality='high'] .home-stage .lx-twinkle-soft { opacity: 0.85; }
+}
 
 /* ------------------------------------------------------------------
  * Idle spring bounce. Runs continuously with per-element timing
@@ -537,10 +572,64 @@ body {
 @keyframes rv-shake { 0%, 100% { translate: 0 0; } 20% { translate: -6px 2px; } 40% { translate: 5px -3px; } 60% { translate: -4px 3px; } 80% { translate: 3px -2px; } }
 :root[data-motion='reduce'] [class*='rv-'] { animation: none !important; transition: none !important; }
 
-/* Medium motion quality (Settings → Motion Effects): game animations stay, ambient decoration loops
-   (sparkles, rim shimmer, shine sweeps, petals) stop. Low quality = data-motion="reduce" above. */
-:root[data-quality='medium'] .lx-fleck, :root[data-quality='medium'] .lx-dot, :root[data-quality='medium'] .lx-sheen::after, :root[data-quality='medium'] .lx-gold::after, :root[data-quality='medium'] .lx-rim, :root[data-quality='medium'] .lx-text-shine, :root[data-quality='medium'] .lx-gloss::after, :root[data-quality='medium'] .tb-petal { animation: none !important; }
-:root[data-quality='medium'] .lx-fleck, :root[data-quality='medium'] .lx-dot, :root[data-quality='medium'] .tb-petal { opacity: 0; }
+/* Medium motion quality (Settings → Motion Effects): game and reveal animations stay, but all
+   continuous ambient decoration stops. This removes persistent repaint/filter/SMIL work. Low
+   quality still removes every animation via data-motion="reduce" above. */
+:root[data-quality='medium'] .lx-fleck,
+:root[data-quality='medium'] .lx-dot,
+:root[data-quality='medium'] .lx-sheen::after,
+:root[data-quality='medium'] .lx-gold::after,
+:root[data-quality='medium'] .lx-rim,
+:root[data-quality='medium'] .lx-text-shine,
+:root[data-quality='medium'] .lx-text-glow,
+:root[data-quality='medium'] .lx-gloss::after,
+:root[data-quality='medium'] .lx-gold,
+:root[data-quality='medium'] .gold-rim,
+:root[data-quality='medium'] .gold-rim::after,
+:root[data-quality='medium'] .lx-bob,
+:root[data-quality='medium'] .lx-bob-slow,
+:root[data-quality='medium'] .lx-sway,
+:root[data-quality='medium'] .lx-sway-card,
+:root[data-quality='medium'] .lx-coin,
+:root[data-quality='medium'] .lx-twinkle,
+:root[data-quality='medium'] .lx-twinkle-soft,
+:root[data-quality='medium'] .lx-spin,
+:root[data-quality='medium'] .lx-wave,
+:root[data-quality='medium'] .lx-nudge,
+:root[data-quality='medium'] .lx-wiggle,
+:root[data-quality='medium'] .lx-ring,
+:root[data-quality='medium'] .lx-glint,
+:root[data-quality='medium'] .lx-glow,
+:root[data-quality='medium'] .lx-drift,
+:root[data-quality='medium'] .lx-drift-rev,
+:root[data-quality='medium'] .lx-sea,
+:root[data-quality='medium'] .lx-palm,
+:root[data-quality='medium'] .lx-pulse-dot,
+:root[data-quality='medium'] .lx-breathe,
+:root[data-quality='medium'] .lx-shimmer,
+:root[data-quality='medium'] .lx-sweep,
+:root[data-quality='medium'] .lx-spring,
+:root[data-quality='medium'] .lx-spring-icon,
+:root[data-quality='medium'] .lx-spring-soft,
+:root[data-quality='medium'] .sp-card-selected::after,
+:root[data-quality='medium'] .tb-swing,
+:root[data-quality='medium'] .tb-sway-soft,
+:root[data-quality='medium'] .tb-winner,
+:root[data-quality='medium'] .tb-clover,
+:root[data-quality='medium'] .cs-free,
+:root[data-quality='medium'] .cs-plus,
+:root[data-quality='medium'] .cs-start-glow,
+:root[data-quality='medium'] .og-rays,
+:root[data-quality='medium'] .og-float,
+:root[data-quality='medium'] .og-twinkle,
+:root[data-quality='medium'] .og-claim,
+:root[data-quality='medium'] .tb-petal { animation: none !important; }
+:root[data-quality='medium'] .lx-fleck,
+:root[data-quality='medium'] .lx-dot,
+:root[data-quality='medium'] .lx-gold::after,
+:root[data-quality='medium'] .lx-rim,
+:root[data-quality='medium'] .tb-petal { opacity: 0; }
+:root[data-quality='medium'] .lx-candy-sheen { animation: none; opacity: 0; }
 
 /* Card drag (components/table/useCardDrag.tsx): the lifted card rises and casts a deeper shadow —
    its size never changes. */
@@ -591,93 +680,3 @@ body {
 @keyframes og-twinkle { 0%, 100% { opacity: .2; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.15); } }
 @keyframes og-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 [data-quality="low"] .og-rays, [data-motion="reduce"] .og-rays, [data-motion="reduce"] .og-float, [data-motion="reduce"] .og-twinkle, [data-motion="reduce"] .og-claim { animation: none; }
-
-/* ------------------------------------------------------------------
- * Native app (Capacitor WebView) performance.
- * <html data-native> is set before first paint by lib/nativeBoot.ts.
- *
- * A desktop browser has the GPU headroom to repaint the effects below on every frame; a phone
- * WebView does not, which makes the APK stutter while `npm run dev` on localhost looks smooth.
- * Only animations of transform / opacity run on the compositor; anything that animates a
- * gradient angle (--lx-a), background-position, filter, text-shadow or box-shadow — and any
- * animation *inside* an SVG — forces a main-thread repaint each frame. Here those are frozen on
- * a good-looking frame or replaced with transform/opacity versions. Browsers are untouched.
- * ------------------------------------------------------------------ */
-
-/* Fixed backgrounds repaint the whole screen on every scroll frame in mobile WebViews. */
-:root[data-native] .game-bg { background-attachment: scroll; }
-
-/* Backdrop blur re-blurs everything underneath on every frame; the tints alone look the same here. */
-:root[data-native] .glass,
-:root[data-native] [class*='backdrop-blur'] {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-
-/* Rotating conic rims (animated custom property) and sliding gold / text shimmers: hold still. */
-:root[data-native] .gold-rim,
-:root[data-native] .gold-rim::after,
-:root[data-native] .lx-gold,
-:root[data-native] .lx-gold::after,
-:root[data-native] .lx-rim,
-:root[data-native] .lx-text-shine { animation: none !important; }
-:root[data-native] .lx-gold,
-:root[data-native] .gold-rim { background-position: 30% 50%; }
-:root[data-native] .lx-rim { filter: none; }
-
-/* Glitter (components/Sparkles.tsx): dozens of separately animated flecks. Each becomes its own GPU
-   layer and pushes everything painted above it onto layers too — measured on the Android home
-   screen: 200 layers / 43 Mpx at ~8 fps with them, 24 layers at ~58 fps without. Same as Medium. */
-:root[data-native] .lx-fleck,
-:root[data-native] .lx-dot { display: none !important; }
-
-/* Pulsing glows animated through filter / text-shadow / box-shadow → opacity / transform. */
-:root[data-native] .lx-glow { animation: none; filter: drop-shadow(0 0 10px rgb(255 210 80 / 0.7)); }
-:root[data-native] .lx-glint { animation: nx-glint 3.5s ease-in-out infinite; }
-:root[data-native] .lx-twinkle-soft { animation: nx-pulse 2.4s ease-in-out infinite; }
-:root[data-native] .cs-start-glow { animation: nx-pulse 1.4s ease-in-out infinite; filter: drop-shadow(0 0 14px rgb(255 225 77 / 0.7)); }
-:root[data-native] .lx-text-glow { animation: none; text-shadow: 0 3px 0 rgb(0 0 0 / 0.45), 0 0 10px rgb(255 214 90 / 0.6); }
-:root[data-native] .lx-pulse-dot { animation: none; box-shadow: 0 0 0 3px rgb(47 209 79 / 0.35); }
-@keyframes nx-glint { 0%, 100% { transform: rotate(-6deg) scale(1); } 50% { transform: rotate(6deg) scale(1.08); } }
-@keyframes nx-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
-
-/* Short scene transitions: same motion without the per-frame blur. */
-:root[data-native] .cs-enter { animation-name: nx-cs-enter; }
-:root[data-native] .cs-exit { animation-name: nx-cs-exit; }
-:root[data-native] .cs-count { animation-name: nx-cs-count; }
-@keyframes nx-cs-enter { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
-@keyframes nx-cs-exit { to { opacity: 0; transform: scale(1.12); } }
-@keyframes nx-cs-count { 0% { opacity: 0; transform: scale(2.6) rotateX(50deg); } 30% { opacity: 1; transform: scale(1) rotateX(0); } 80% { opacity: 1; transform: scale(.94); } 100% { opacity: 0; transform: scale(.6); } }
-
-/* Dragged card: lift with transform only; the deeper shadow is applied once, not animated. */
-:root[data-native] .cd-lift { animation: nx-lift .14s ease-out both; filter: drop-shadow(0 12px 10px rgb(0 0 0 / .4)); }
-@keyframes nx-lift { from { transform: translateY(0); } to { transform: translateY(-8px); } }
-
-/* Full-screen SVG backdrops (table room, beach): on their own GPU layer, so the scene's own motion
-   (waves, clouds, palms, lantern, stars, petals) repaints only the scene and cards / UI animating
-   over it never force it to re-rasterise. The motion plays at High, as in the browser; at Medium
-   (picked, or set by lib/perfGuard.ts on a phone that drops frames) the native Medium rule below
-   holds it still and hides the petals. */
-:root[data-native] .scene-bg { transform: translateZ(0); }
-
-/* Native app at Medium (picked in Settings, or set automatically by lib/perfGuard.ts when the phone
-   drops frames): also hold the idle decoration loops — the motion inside SVG artwork (redrawn on
-   the CPU each frame) and the idle spring bounce. Traced on the Android home screen this cuts the
-   per-frame layerize work ~5x and draw work ~4x. Game animations (deal, reveal, drag) still play. */
-:root[data-native][data-quality='medium'] svg [class*='lx-'],
-:root[data-native][data-quality='medium'] svg [class*='tb-'],
-:root[data-native][data-quality='medium'] .lx-spring,
-:root[data-native][data-quality='medium'] .lx-spring-icon,
-:root[data-native][data-quality='medium'] .lx-spring-soft,
-:root[data-native][data-quality='medium'] .lx-bob-slow { animation: none !important; }
-:root[data-native][data-quality='medium'] .lx-tile { will-change: auto; }
-
-/* Dialog backdrops on the fixed 16:9 stage (components/LandscapeStage.tsx). A phone that is wider
-   or taller than 16:9 (e.g. 20:9) shows margins around the stage, and a backdrop sized to the stage
-   left them undimmed — a visible box edge around every dialog. The transparent border reaches the
-   screen edges (the background paints under it) while the dialog's content box stays exactly where
-   it was. Inside the stage, `fixed` is relative to the stage too (it is transformed), so both need it. */
-[data-stage] .overlay-bleed {
-  inset: -1600px;
-  border: 1600px solid transparent;
-}

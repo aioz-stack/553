@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { memo, useEffect, useState, type ReactNode } from 'react';
 import PlayingCard from '@/components/PlayingCard';
 import { api } from '@/lib/api';
 import type { GoldWallet } from '@/lib/gold';
@@ -22,7 +22,7 @@ const LANES: Lane[] = ['front', 'middle', 'back'];
 const CARD = { w: 104, h: 140, f: 32 };
 const fmt = (n: number) => n.toLocaleString('en-US');
 
-function Fan({ count = 7, w = 62, h = 86, spread = 9 }: { count?: number; w?: number; h?: number; spread?: number }) {
+const Fan = memo(function Fan({ count = 7, w = 62, h = 86, spread = 9 }: { count?: number; w?: number; h?: number; spread?: number }) {
   const mid = (count - 1) / 2;
   return (
     <div className="relative" style={{ width: w + count * 16, height: h + 24 }}>
@@ -33,27 +33,27 @@ function Fan({ count = 7, w = 62, h = 86, spread = 9 }: { count?: number; w?: nu
       ))}
     </div>
   );
-}
+});
 
 /** An opponent's place: just its fan of face-down cards (no avatar or name plate). */
-function BotSeat({ name, x }: { name: string; x: number }) {
+const BotSeat = memo(function BotSeat({ name, x }: { name: string; x: number }) {
   return (
     <div className="absolute top-[150px] flex w-[220px] justify-center" style={{ left: x }} aria-label={`${name}'s cards`}>
       <Fan />
     </div>
   );
-}
+});
 
-function Mark({ ok }: { ok: boolean | null | undefined }) {
+const Mark = memo(function Mark({ ok }: { ok: boolean | null | undefined }) {
   if (ok === null || ok === undefined) return <span className="h-[60px] w-[60px]" />;
   return (
     <span aria-label={ok ? 'In order' : 'Out of order'} className={`flex h-[60px] w-[60px] items-center justify-center rounded-full border-[4px] border-white shadow-[0_4px_0_rgb(0_0_0/0.35)] ${ok ? 'bg-gradient-to-b from-[#7dff8a] to-[#13a344]' : 'bg-gradient-to-b from-[#ff6b6b] to-[#b3121a]'}`}>
       <svg viewBox="0 0 24 24" className="h-8 w-8" aria-hidden="true">
-        {ok ? <path d="M5 12.5l4.5 4.5L19 7" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /> : <path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" />}
+        {ok ? <path d="M5 12.5l4.5 4.5L19 7" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /> : <path d="M6 6l12 12M18 6L6 18" stroke="#fff" strokeWidth="3.5" fill="none" strokeLinecap="round" />}
       </svg>
     </span>
   );
-}
+});
 
 const SIZE: Record<Lane, number> = { front: 3, middle: 5, back: 5 };
 
@@ -210,7 +210,7 @@ export default function LuckPopup({
 
   return (
     <div className="absolute inset-0 z-40" role="dialog" aria-modal="true" aria-label="Declared Luck">
-      <div className="sp-fade absolute inset-0 overlay-bleed bg-black/60" />
+      <div className="sp-fade absolute inset-0 bg-black/60" />
       <div className="sp-pop absolute left-[60px] top-[24px] h-[852px] w-[1480px]">
         <div className="lx-gold absolute inset-0 rounded-[48px] shadow-[0_14px_0_#7a3e00,0_30px_60px_rgb(0_0_0/0.6)]" />
         <div className="absolute inset-[12px] overflow-hidden rounded-[38px] bg-[radial-gradient(90%_80%_at_50%_45%,#1fa046,#0e6a2a_70%,#09481c)]">
