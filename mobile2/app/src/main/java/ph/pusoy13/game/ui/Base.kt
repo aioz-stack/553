@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
@@ -173,6 +174,13 @@ object ArtStore {
         }
     }
 
+    /** Decode the full-screen scenes off the main thread at start-up so the first screen doesn't stall. */
+    fun preload(vararg names: String) {
+        Thread {
+            names.forEach { n -> piece(n)?.layers?.forEach { bitmap("art/$n/${it.file}") } }
+        }.apply { priority = Thread.MIN_PRIORITY; isDaemon = true }.start()
+    }
+
     fun bitmap(path: String): ImageBitmap? {
         bitmaps.get(path)?.let { return it }
         val bmp = runCatching { context.assets.open(path).use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }.getOrNull() ?: return null
@@ -213,36 +221,73 @@ private fun ease(x: Float, timing: Int): Float = when (timing) {
     else -> (0.5 - 0.5 * cos(PI * x)).toFloat()
 }
 
-private fun poseAt(stops: List<Pair<Float, FloatArray>>, t: Float, timing: Int): FloatArray {
+private fun poseAt(stops: List<Pair<Float, FloatArray>>, t: Float, timing: Int, out: FloatArray): FloatArray {
     var i = 0
     while (i < stops.size - 2 && t > stops[i + 1].first) i++
     val (o0, a) = stops[i]
     val (o1, b) = stops[i + 1]
     val k = ease(if (o1 > o0) ((t - o0) / (o1 - o0)).coerceIn(0f, 1f) else 0f, timing)
-    return FloatArray(7) { j ->
+    for (j in 0 until 7) {
         val u = if (a[j].isNaN()) DEFAULTS[j] else a[j]
         val v = if (b[j].isNaN()) DEFAULTS[j] else b[j]
-        u + (v - u) * k
+        out[j] = u + (v - u) * k
     }
+    return out
 }
 
-private fun DrawScope.layer(piece: ArtPiece, l: ArtLayer, s: Float, clock: Float?) {
-    val bmp = ArtStore.bitmap("art/${piece.name}/${l.file}") ?: return
+/** A layer ready to draw: bitmap and keyframes resolved once instead of every frame. */
+private class Prepared(val l: ArtLayer, val bmp: ImageBitmap, val stops: List<Pair<Float, FloatArray>>?)
+
+/** Consecutive layers that are all still or all moving, drawn together in one render layer. */
+private class Run(val moving: Boolean, val layers: MutableList<Prepared> = mutableListOf(), val pose: FloatArray = FloatArray(7))
+
+private fun DrawScope.layer(p: Prepared, s: Float, clock: Float?, pose: FloatArray) {
+    val l = p.l
     val dst = IntSize(max(1, (l.w * s).toInt()), max(1, (l.h * s).toInt()))
-    val stops = l.anim?.let { KEYFRAMES[it] }
+    val stops = p.stops
     if (stops == null || clock == null) {
-        drawImage(bmp, dstOffset = IntOffset((l.x * s).toInt(), (l.y * s).toInt()), dstSize = dst, filterQuality = FilterQuality.Medium)
+        drawImage(p.bmp, dstOffset = IntOffset((l.x * s).toInt(), (l.y * s).toInt()), dstSize = dst, filterQuality = FilterQuality.Medium)
         return
     }
     val raw = (clock - l.delay) / (if (l.duration > 0) l.duration else 1f)
-    val q = poseAt(stops, raw - floor(raw), l.timing)
+    val q = poseAt(stops, raw - floor(raw), l.timing, pose)
     val dir = if (l.flip) -1f else 1f
     val unit = l.unit * s
     val pivot = if (l.pivotX != null && l.pivotY != null) Offset((l.pivotX - l.x) * s, (l.pivotY - l.y) * s) else Offset(dst.width / 2f, dst.height / 2f)
     translate(l.x * s + q[0] * unit * dir, l.y * s + q[1] * unit + q[2] * l.h * s) {
         rotate(q[3] * dir, pivot) {
             scale(q[4], q[5], pivot) {
-                drawImage(bmp, dstSize = dst, alpha = q[6].coerceIn(0f, 1f), filterQuality = FilterQuality.Medium)
+                drawImage(p.bmp, dstSize = dst, alpha = q[6].coerceIn(0f, 1f), filterQuality = FilterQuality.Medium)
+            }
+        }
+    }
+}
+
+private fun runs(piece: ArtPiece, animate: Boolean): List<Run> {
+    val out = mutableListOf<Run>()
+    piece.layers.forEach { l ->
+        val bmp = ArtStore.bitmap("art/${piece.name}/${l.file}") ?: return@forEach
+        val stops = l.anim?.let { KEYFRAMES[it] }
+        val moving = animate && stops != null
+        if (out.isEmpty() || out.last().moving != moving) out.add(Run(moving))
+        out.last().layers.add(Prepared(l, bmp, stops))
+    }
+    return out
+}
+
+/**
+ * Draws a piece as runs of still / moving layers, each in its own render layer: only the moving
+ * runs re-record per frame, while still layers (and everything else on screen) are reused as-is.
+ */
+@Composable
+private fun ArtRuns(piece: ArtPiece, animate: Boolean, modifier: Modifier, place: DrawScope.(draw: DrawScope.(Float) -> Unit) -> Unit) {
+    val clock = if (animate) LocalClock.current else null
+    val groups = remember(piece, clock != null) { runs(piece, clock != null) }
+    Box(modifier) {
+        groups.forEach { run ->
+            Canvas(Modifier.matchParentSize().graphicsLayer()) {
+                val t = if (run.moving) clock?.floatValue else null
+                place { s -> run.layers.forEach { layer(it, s, t, run.pose) } }
             }
         }
     }
@@ -252,25 +297,16 @@ private fun DrawScope.layer(piece: ArtPiece, l: ArtLayer, s: Float, clock: Float
 @Composable
 fun Art(name: String, modifier: Modifier, animate: Boolean = true) {
     val piece = remember(name) { ArtStore.piece(name) } ?: return
-    val clock = if (animate) LocalClock.current else null
-    Canvas(modifier) {
-        val s = size.width / piece.width
-        val t = clock?.floatValue
-        piece.layers.forEach { layer(piece, it, s, t) }
-    }
+    ArtRuns(piece, animate, modifier) { draw -> draw(size.width / piece.width) }
 }
 
 /** A full-screen scene (beach / lantern room / table) covering the screen like CSS `slice`. */
 @Composable
 fun Scene(name: String, animate: Boolean = true) {
     val piece = remember(name) { ArtStore.piece(name) } ?: return
-    val clock = if (animate) LocalClock.current else null
-    Canvas(Modifier.fillMaxSize()) {
+    ArtRuns(piece, animate, Modifier.fillMaxSize()) { draw ->
         val s = max(size.width / piece.width, size.height / piece.height)
-        val t = clock?.floatValue
-        translate((size.width - piece.width * s) / 2, (size.height - piece.height * s) / 2) {
-            piece.layers.forEach { layer(piece, it, s, t) }
-        }
+        translate((size.width - piece.width * s) / 2, (size.height - piece.height * s) / 2) { draw(s) }
     }
 }
 

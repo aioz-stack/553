@@ -20,6 +20,7 @@ class PusoyApp : Application() {
     override fun onCreate() {
         super.onCreate()
         ArtStore.init(this)
+        ArtStore.preload("lantern", "beach", "table")
         Session.init(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) = Session.appResumed()
