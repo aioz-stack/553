@@ -81,10 +81,7 @@ class BankerMatchService
     // ------------------------------------------------------------------
 
     /**
-     * Start the match once enough players are seated and every one is ready.
-     */
-    /**
-     * Start the match once everyone seated is ready. Lobby tables (`owner_starts`) never start on
+     * Start the match once at least minPlayers() are seated and everyone seated is ready. Lobby tables (`owner_starts`) never start on
      * their own: the lobby owner presses Start (LobbyService::start → $byOwner = true).
      */
     public function maybeStart(GameTable $table, bool $byOwner = false): ?GameSession

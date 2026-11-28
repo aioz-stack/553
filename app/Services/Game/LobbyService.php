@@ -37,8 +37,9 @@ use Illuminate\Support\Str;
  * - Every player selects one of the tier's bets and must hold Chips ≥ the Minimum Entry and
  *   ≥ 2× that bet, plus the Keys fee — checked on join, on Start and when the game starts. The
  *   Keys are deducted only when the game starts (refunded if no round is ever completed).
- * - Exactly four players: the owner presses Start once all four are seated and
- *   the others are ready (`owner_starts`; tables never start on their own).
+ * - 2 to 4 players (MIN_PLAYERS): Start is available once at least 2 are seated with their
+ *   seats confirmed (empty seats are fine). The match starts when everyone seated has pressed
+ *   Start (`owner_starts`; tables never start on their own).
  * - Money is the existing banker-match money: each round's bets are held in
  *   escrow from the players' Chips wallets and settled by BankerMatchService, with
  *   idempotent ledger entries. The minimum bet is Minimum Entry ÷ 10, so a

@@ -105,3 +105,29 @@ test('a repeated Start (double tap) starts one match only', function () {
     expect($table->fresh()->current_session_id)->toBe($first)
         ->and(GameSession::query()->where('game_table_id', $table->id)->count())->toBe(1);
 });
+
+test('a two-player match plays whole rounds: scored, settled, and the bank rotates to the other player', function () {
+    [$owner, $room, [$guest]] = mpLobby($this, 1);
+    $table = lbStart($this, [$owner, $guest], $room);
+    $wallets = app(WalletService::class);
+
+    $first = lbPlayRound($table);
+    expect($first->status->value)->toBe('COMPLETED')
+        ->and(\App\Models\GameResult::query()->where('game_session_id', $first->id)->count())->toBe(2)
+        ->and(\App\Models\GameResult::query()->where('game_session_id', $first->id)->pluck('user_id')->sort()->values()->all())
+        ->toBe(collect([$owner->id, $guest->id])->sort()->values()->all())
+        ->and($wallets->escrow(Currency::CH)->fresh()->balance)->toBe(0);
+
+    // Round 2 starts with the same two players (nobody else needed) and the other one banks.
+    $this->travel(10)->seconds();
+    $second = app(\App\Services\Game\BankerMatchService::class)->startRound($table->fresh());
+    expect($second)->not->toBeNull()
+        ->and($second->round_number)->toBe(2)
+        ->and($second->banker_user_id)->not->toBe($first->banker_user_id)
+        ->and($second->banker_user_id)->toBeIn([$owner->id, $guest->id]);
+
+    $second = lbPlayRound($table);
+    expect($second->status->value)->toBe('COMPLETED')
+        ->and($wallets->escrow(Currency::CH)->fresh()->balance)->toBe(0)
+        ->and($wallets->reconcile()['ok'])->toBeTrue();
+});
